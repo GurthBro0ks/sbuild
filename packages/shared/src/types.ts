@@ -22,6 +22,17 @@ export type BlockEffect =
   | "pulse"
   | "hover-grow";
 
+export interface BlockLayout {
+  widthMode?: "full" | "wide" | "medium" | "narrow" | "custom";
+  widthPercent?: number;
+  maxWidthPx?: number;
+  minHeightPx?: number;
+  heightMode?: "auto" | "fixed" | "aspect";
+  heightPx?: number;
+  aspectRatio?: string;
+  alignSelf?: "left" | "center" | "right" | "stretch";
+}
+
 export interface BlockStyles {
   backgroundColor?: string;
   backgroundImage?: string;
@@ -37,6 +48,7 @@ export interface BlockStyles {
   borderRadius?: number;
   shadow?: string;
   effects?: BlockEffect[];
+  layout?: BlockLayout;
 }
 
 export interface SBuildNavItem {
@@ -103,8 +115,18 @@ export interface SpacerBlockData {
   height: number;
 }
 
+export type DividerStyle = "solid" | "dashed" | "dotted" | "double" | "gradient" | "glow" | "zigzag" | "wave" | "spacer-line";
+
 export interface DividerBlockData {
-  style?: "solid" | "dashed";
+  style?: DividerStyle;
+  thickness?: number;
+  color?: string;
+  widthPercent?: number;
+  alignment?: "left" | "center" | "right";
+  marginTop?: number;
+  marginBottom?: number;
+  label?: string;
+  glowIntensity?: number;
 }
 
 export interface HtmlBlockData {
@@ -152,6 +174,24 @@ export interface SBuildGlobalStyles {
   };
 }
 
+export interface SBuildThemePreset {
+  name: string;
+  colors: {
+    bg: string;
+    surface: string;
+    text: string;
+    accent: string;
+    muted: string;
+    primary?: string;
+    secondary?: string;
+    nav?: string;
+  };
+  headingFont?: string;
+  bodyFont?: string;
+  buttonStyle?: "rounded" | "pill" | "square";
+  isDark?: boolean;
+}
+
 export interface SBuildSiteSettings {
   siteName: string;
   domain?: string;
@@ -163,6 +203,21 @@ export interface SBuildSiteSettings {
 export interface SBuildAISettings {
   provider: "mock" | "opencode" | "openai";
   model: string;
+}
+
+export interface SBuildProviderStatus {
+  name: string;
+  status: "connected" | "not_configured" | "unknown" | "error";
+  message?: string;
+}
+
+export interface SBuildSecretConfig {
+  openCodePath?: string;
+  openCodeDetected?: boolean;
+  imageGenApiKey?: string;
+  imageAnalyzeApiKey?: string;
+  imageGenKeySource?: "env" | "local" | "missing";
+  imageAnalyzeKeySource?: "env" | "local" | "missing";
 }
 
 export interface SBuildDeploySettings {

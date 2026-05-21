@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Block,
   BlockType,
+  DividerBlockData,
+  DividerStyle,
   ImageSizeDecision,
   ImageTargetContext,
   SBuildNavItem,
@@ -18,77 +20,51 @@ import {
   MapBlockData,
   MarqueeBlockData,
   SpacerBlockData,
-  DividerBlockData,
   HtmlBlockData,
-  BlockEffect
+  BlockEffect,
+  SBuildProviderStatus,
+  SBuildSecretConfig
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "ai" | "status";
-
 type ChatItem = { role: "user" | "assistant"; text: string };
-
 type PaintPoint = { x: number; y: number };
+type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
+type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string } | null;
 
 const BLOCK_TYPES: BlockType[] = [
-  "hero",
-  "text",
-  "image",
-  "cards",
-  "hours",
-  "gallery",
-  "contact",
-  "testimonial",
-  "map",
-  "marquee",
-  "spacer",
-  "divider",
-  "html"
+  "hero", "text", "image", "cards", "hours", "gallery", "contact",
+  "testimonial", "map", "marquee", "spacer", "divider", "html"
 ];
 
 const EFFECTS: BlockEffect[] = ["glow", "marquee", "fade-in", "gradient-text", "parallax", "pulse", "hover-grow"];
 
+const DIVIDER_STYLES: DividerStyle[] = ["solid", "dashed", "dotted", "double", "gradient", "glow", "zigzag", "wave", "spacer-line"];
+
+const ASPECT_RATIOS = ["auto", "1:1", "4:3", "16:9", "3:2", "9:16"];
+
 const themePresets = [
-  {
-    name: "Harvest",
-    bg: "#f6f3e9",
-    surface: "#fffef9",
-    text: "#1f2a24",
-    accent: "#2f6b3f",
-    muted: "#6f7f73"
-  },
-  {
-    name: "Ocean",
-    bg: "#eef6fb",
-    surface: "#ffffff",
-    text: "#1b2f3b",
-    accent: "#1a7ba8",
-    muted: "#5f7380"
-  },
-  {
-    name: "Sunset",
-    bg: "#fff1e8",
-    surface: "#fffaf4",
-    text: "#3a241f",
-    accent: "#cc5f2f",
-    muted: "#8b6b60"
-  }
+  { name: "Harvest Light", colors: { bg: "#f6f3e9", surface: "#fffef9", text: "#1f2a24", accent: "#2f6b3f", muted: "#6f7f73" }, headingFont: "Nunito Sans", isDark: false },
+  { name: "Farmstand Dark", colors: { bg: "#1a1f1c", surface: "#242b26", text: "#e8f0e9", accent: "#5cb85c", muted: "#8a9a8d" }, headingFont: "Nunito Sans", isDark: true },
+  { name: "Slimy Neon", colors: { bg: "#0a0a12", surface: "#12121f", text: "#e0e0ff", accent: "#00ffaa", muted: "#6b6b8a" }, headingFont: "Space Grotesk", isDark: true },
+  { name: "Midnight Orchard", colors: { bg: "#0f1419", surface: "#1a2028", text: "#d4dde5", accent: "#7eb8da", muted: "#5a6b7a" }, headingFont: "Lato", isDark: true },
+  { name: "Retro Terminal", colors: { bg: "#0c0c0c", surface: "#1a1a1a", text: "#33ff33", accent: "#ffff33", muted: "#555555" }, headingFont: "Space Grotesk", isDark: true },
+  { name: "Clean Market", colors: { bg: "#fafafa", surface: "#ffffff", text: "#1a1a1a", accent: "#ff6b35", muted: "#888888" }, headingFont: "Poppins", isDark: false },
+  { name: "Ocean", colors: { bg: "#eef6fb", surface: "#ffffff", text: "#1b2f3b", accent: "#1a7ba8", muted: "#5f7380" }, headingFont: "Lato", isDark: false },
+  { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60" }, headingFont: "Playfair Display", isDark: false }
 ];
 
-function apiBase(): string {
-  return "";
-}
+function apiBase(): string { return ""; }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBase()}${url}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init
-  });
+  const res = await fetch(`${apiBase()}${url}`, { headers: { "Content-Type": "application/json" }, ...init });
   return (await res.json()) as T;
 }
 
 function blockStyleToCss(block: Block): Record<string, string | number> {
   const s = block.styles || {};
+  const layout = s.layout || {};
   const css: Record<string, string | number> = {
     background: s.backgroundColor || "#fff",
     backgroundImage: s.backgroundImage ? `url(${s.backgroundImage})` : "",
@@ -103,9 +79,18 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
     padding: `${s.padding ?? 16}px`,
     margin: `${s.margin ?? 8}px 0`,
     borderRadius: `${s.borderRadius ?? 12}px`,
-    boxShadow: s.shadow || ""
+    boxShadow: s.shadow || "",
+    width: layout.widthMode === "full" ? "100%" : layout.widthMode === "wide" ? "85%" : layout.widthMode === "medium" ? "70%" : layout.widthMode === "narrow" ? "50%" : layout.widthPercent ? `${layout.widthPercent}%` : "100%",
+    maxWidth: layout.maxWidthPx ? `${layout.maxWidthPx}px` : "",
+    minHeight: layout.minHeightPx ? `${layout.minHeightPx}px` : "",
+    height: layout.heightMode === "fixed" && layout.heightPx ? `${layout.heightPx}px` : "",
+    alignSelf: layout.alignSelf === "center" ? "center" : layout.alignSelf === "right" ? "flex-end" : layout.alignSelf === "left" ? "flex-start" : "stretch",
+    marginLeft: layout.alignSelf === "center" ? "auto" : layout.alignSelf === "right" ? "auto" : "",
+    marginRight: layout.alignSelf === "center" ? "auto" : layout.alignSelf === "left" ? "auto" : ""
   };
-
+  if (layout.aspectRatio && layout.aspectRatio !== "auto") {
+    css.aspectRatio = layout.aspectRatio.replace(":", "/");
+  }
   if ((s.effects || []).includes("glow")) css.textShadow = "0 0 12px rgba(70, 130, 255, .5)";
   if ((s.effects || []).includes("gradient-text")) {
     css.background = "linear-gradient(90deg,#1f5fff,#34c48a)";
@@ -115,50 +100,26 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   if ((s.effects || []).includes("pulse")) css.animation = "pulse 2.2s infinite";
   if ((s.effects || []).includes("hover-grow")) css.transition = "transform .2s ease";
   if ((s.effects || []).includes("parallax")) css.backgroundAttachment = "fixed";
-
   return css;
 }
 
 function defaultBlock(type: BlockType): Block {
   const base = { id: `${type}-${Math.random().toString(36).slice(2, 8)}`, type, styles: { padding: 16 } };
   switch (type) {
-    case "hero":
-      return { ...base, data: { heading: "New Hero", subheading: "Tell your story", ctaLabel: "Learn More", ctaHref: "#" } };
-    case "text":
-      return { ...base, data: { title: "New Section", body: "Add your text here." } };
-    case "image":
-      return { ...base, data: { src: "", alt: "Image", caption: "" } };
-    case "cards":
-      return {
-        ...base,
-        data: {
-          title: "Cards",
-          cards: [
-            { id: "c1", title: "Card 1", body: "Description" },
-            { id: "c2", title: "Card 2", body: "Description" }
-          ]
-        }
-      };
-    case "hours":
-      return { ...base, data: { title: "Hours", rows: [{ day: "Mon", open: "9:00", close: "17:00" }] } };
-    case "gallery":
-      return { ...base, data: { title: "Gallery", images: [{ id: "g1", src: "", alt: "Image" }] } };
-    case "contact":
-      return { ...base, data: { title: "Contact", phone: "", email: "", address: "" } };
-    case "testimonial":
-      return { ...base, data: { quote: "Great service!", author: "Happy Customer" } };
-    case "map":
-      return { ...base, data: { address: "Address", embedUrl: "" } };
-    case "marquee":
-      return { ...base, data: { text: "Scrolling highlight text" } };
-    case "spacer":
-      return { ...base, data: { height: 36 } };
-    case "divider":
-      return { ...base, data: { style: "solid" } };
-    case "html":
-      return { ...base, data: { html: "<p>Custom HTML</p>" } };
-    default:
-      return { ...base, data: { body: "Unknown block" } as TextBlockData };
+    case "hero": return { ...base, data: { heading: "New Hero", subheading: "Tell your story", ctaLabel: "Learn More", ctaHref: "#" } };
+    case "text": return { ...base, data: { title: "New Section", body: "Add your text here." } };
+    case "image": return { ...base, data: { src: "", alt: "Image", caption: "" } };
+    case "cards": return { ...base, data: { title: "Cards", cards: [{ id: "c1", title: "Card 1", body: "Description" }, { id: "c2", title: "Card 2", body: "Description" }] } };
+    case "hours": return { ...base, data: { title: "Hours", rows: [{ day: "Mon", open: "9:00", close: "17:00" }] } };
+    case "gallery": return { ...base, data: { title: "Gallery", images: [{ id: "g1", src: "", alt: "Image" }] } };
+    case "contact": return { ...base, data: { title: "Contact", phone: "", email: "", address: "" } };
+    case "testimonial": return { ...base, data: { quote: "Great service!", author: "Happy Customer" } };
+    case "map": return { ...base, data: { address: "Address", embedUrl: "" } };
+    case "marquee": return { ...base, data: { text: "Scrolling highlight text" } };
+    case "spacer": return { ...base, data: { height: 36 } };
+    case "divider": return { ...base, data: { style: "solid" as DividerStyle, thickness: 2, color: "#ccc", widthPercent: 100, alignment: "center", marginTop: 16, marginBottom: 16 } };
+    case "html": return { ...base, data: { html: "<p>Custom HTML</p>" } };
+    default: return { ...base, data: { body: "Unknown block" } as TextBlockData };
   }
 }
 
@@ -229,9 +190,10 @@ const TextBlock = ({ block, onText }: { block: Block; onText: (field: string, va
 
 const ImageBlock = ({ block }: { block: Block }) => {
   const data = block.data as ImageBlockData;
+  const fit = block.styles?.backgroundSize || "cover";
   return (
     <section>
-      {data.src ? <img src={data.src} alt={data.alt} className="block-image" /> : <div className="image-placeholder">Image Placeholder</div>}
+      {data.src ? <img src={data.src} alt={data.alt} className="block-image" style={{ objectFit: fit }} /> : <div className="image-placeholder">Image Placeholder</div>}
       <p>{data.caption}</p>
     </section>
   );
@@ -270,12 +232,13 @@ const HoursBlock = ({ block }: { block: Block }) => {
 
 const GalleryBlock = ({ block }: { block: Block }) => {
   const data = block.data as GalleryBlockData;
+  const fit = block.styles?.backgroundSize || "cover";
   return (
     <section>
       <h2>{data.title}</h2>
       <div className="gallery-grid">
         {data.images.map((img) => (
-          <figure key={img.id}>{img.src ? <img src={img.src} alt={img.alt} className="block-image" /> : <div className="image-placeholder">Gallery Image</div>}</figure>
+          <figure key={img.id}>{img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit }} /> : <div className="image-placeholder">Gallery Image</div>}</figure>
         ))}
       </div>
     </section>
@@ -298,7 +261,7 @@ const TestimonialBlock = ({ block }: { block: Block }) => {
   const data = block.data as TestimonialBlockData;
   return (
     <section>
-      <blockquote>“{data.quote}”</blockquote>
+      <blockquote>"{data.quote}"</blockquote>
       <cite>{data.author}</cite>
     </section>
   );
@@ -321,7 +284,84 @@ const SpacerBlock = ({ block }: { block: Block }) => {
 
 const DividerBlock = ({ block }: { block: Block }) => {
   const data = block.data as DividerBlockData;
-  return <hr style={{ borderStyle: data.style || "solid" }} />;
+  const thickness = data.thickness ?? 2;
+  const color = data.color || "#cccccc";
+  const width = data.widthPercent ?? 100;
+  const align = data.alignment || "center";
+  const mt = data.marginTop ?? 16;
+  const mb = data.marginBottom ?? 16;
+  const label = data.label || "";
+  const glow = data.glowIntensity ?? 8;
+
+  const alignStyle: React.CSSProperties = {
+    marginTop: mt,
+    marginBottom: mb,
+    marginLeft: align === "center" ? "auto" : align === "right" ? "auto" : 0,
+    marginRight: align === "center" ? "auto" : align === "left" ? "auto" : 0,
+    width: `${width}%`
+  };
+
+  if (data.style === "zigzag") {
+    const h = Math.max(thickness * 3, 8);
+    const step = 10;
+    let pts = "";
+    for (let x = 0; x <= 100; x += step) {
+      const y = (x / step) % 2 === 0 ? 0 : h;
+      pts += `${x},${y} `;
+    }
+    return (
+      <div style={alignStyle}>
+        {label && <span style={{ fontSize: 12, color }}>{label}</span>}
+        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: h, display: "block" }}>
+          <polyline points={pts} fill="none" stroke={color} strokeWidth={thickness} />
+        </svg>
+      </div>
+    );
+  }
+
+  if (data.style === "wave") {
+    const h = Math.max(thickness * 4, 12);
+    return (
+      <div style={alignStyle}>
+        {label && <span style={{ fontSize: 12, color }}>{label}</span>}
+        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: h, display: "block" }}>
+          <path d={`M0,${h / 2} Q25,0 50,${h / 2} T100,${h / 2}`} fill="none" stroke={color} strokeWidth={thickness} />
+        </svg>
+      </div>
+    );
+  }
+
+  if (data.style === "spacer-line") {
+    return (
+      <div style={{ ...alignStyle, height: Math.max(thickness * 4, 24), display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: "100%", height: thickness, background: color, borderRadius: thickness }} />
+      </div>
+    );
+  }
+
+  const hrStyle: React.CSSProperties = {
+    border: "none",
+    height: data.style === "double" ? thickness * 3 : thickness,
+    marginTop: mt,
+    marginBottom: mb,
+    marginLeft: align === "center" ? "auto" : align === "right" ? "auto" : 0,
+    marginRight: align === "center" ? "auto" : align === "left" ? "auto" : 0,
+    width: `${width}%`
+  };
+
+  if (data.style === "solid") hrStyle.background = color;
+  if (data.style === "dashed") { hrStyle.background = "transparent"; hrStyle.borderTop = `${thickness}px dashed ${color}`; hrStyle.height = 0; }
+  if (data.style === "dotted") { hrStyle.background = "transparent"; hrStyle.borderTop = `${thickness}px dotted ${color}`; hrStyle.height = 0; }
+  if (data.style === "double") { hrStyle.background = "transparent"; hrStyle.borderTop = `${thickness}px double ${color}`; hrStyle.borderBottom = `${thickness}px double ${color}`; }
+  if (data.style === "gradient") hrStyle.background = `linear-gradient(90deg, transparent, ${color}, transparent)`;
+  if (data.style === "glow") { hrStyle.background = color; hrStyle.boxShadow = `0 0 ${glow}px ${color}`; }
+
+  return (
+    <div style={alignStyle}>
+      {label && <div style={{ textAlign: "center", fontSize: 12, color, marginBottom: 4 }}>{label}</div>}
+      <hr style={hrStyle} />
+    </div>
+  );
 };
 
 const HtmlBlock = ({ block }: { block: Block }) => {
@@ -331,34 +371,20 @@ const HtmlBlock = ({ block }: { block: Block }) => {
 
 function renderTypedBlock(block: Block, onText: (field: string, value: string) => void): JSX.Element {
   switch (block.type) {
-    case "hero":
-      return <HeroBlock block={block} onText={onText} />;
-    case "text":
-      return <TextBlock block={block} onText={onText} />;
-    case "image":
-      return <ImageBlock block={block} />;
-    case "cards":
-      return <CardsBlock block={block} />;
-    case "hours":
-      return <HoursBlock block={block} />;
-    case "gallery":
-      return <GalleryBlock block={block} />;
-    case "contact":
-      return <ContactBlock block={block} />;
-    case "testimonial":
-      return <TestimonialBlock block={block} />;
-    case "map":
-      return <MapBlock block={block} />;
-    case "marquee":
-      return <MarqueeBlock block={block} />;
-    case "spacer":
-      return <SpacerBlock block={block} />;
-    case "divider":
-      return <DividerBlock block={block} />;
-    case "html":
-      return <HtmlBlock block={block} />;
-    default:
-      return <div>Unknown block</div>;
+    case "hero": return <HeroBlock block={block} onText={onText} />;
+    case "text": return <TextBlock block={block} onText={onText} />;
+    case "image": return <ImageBlock block={block} />;
+    case "cards": return <CardsBlock block={block} />;
+    case "hours": return <HoursBlock block={block} />;
+    case "gallery": return <GalleryBlock block={block} />;
+    case "contact": return <ContactBlock block={block} />;
+    case "testimonial": return <TestimonialBlock block={block} />;
+    case "map": return <MapBlock block={block} />;
+    case "marquee": return <MarqueeBlock block={block} />;
+    case "spacer": return <SpacerBlock block={block} />;
+    case "divider": return <DividerBlock block={block} />;
+    case "html": return <HtmlBlock block={block} />;
+    default: return <div>Unknown block</div>;
   }
 }
 
@@ -391,21 +417,27 @@ export function App() {
   const [photoEditInstruction, setPhotoEditInstruction] = useState("");
   const [photoEditStatus, setPhotoEditStatus] = useState("");
   const [lastEditedImage, setLastEditedImage] = useState("");
-
   const [paintPath, setPaintPath] = useState<PaintPoint[]>([]);
   const [paintPrompt, setPaintPrompt] = useState("");
   const [paintOpen, setPaintOpen] = useState(false);
+  const [drag, setDrag] = useState<DragState>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [themeApplied, setThemeApplied] = useState("");
+  const [providerStatus, setProviderStatus] = useState<SBuildProviderStatus[]>([]);
+  const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
+  const [secretStatusMsg, setSecretStatusMsg] = useState("");
+  const [resizeStatus, setResizeStatus] = useState("");
+  const canvasRef = useRef<HTMLDivElement>(null);
 
-  const selectedPage = useMemo(
-    () => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0],
-    [project, selectedPageId]
-  );
+  const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
 
   useEffect(() => {
     void loadProject();
     void loadFonts();
     void loadImages();
+    void loadProviders();
   }, []);
 
   useEffect(() => {
@@ -429,9 +461,7 @@ export function App() {
     try {
       const data = await fetchJson<{ fonts: Array<{ family: string }> }>("/api/fonts");
       setFonts(data.fonts || []);
-    } catch {
-      setFonts([]);
-    }
+    } catch { setFonts([]); }
   }
 
   async function loadImages() {
@@ -439,12 +469,15 @@ export function App() {
       const data = await fetchJson<{ ok: boolean; images: string[] }>("/api/images");
       const next = data.images || [];
       setUploadedImages(next);
-      if (!selectedUploadImage && next.length > 0) {
-        setSelectedUploadImage(next[0]);
-      }
-    } catch {
-      setUploadedImages([]);
-    }
+      if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0]);
+    } catch { setUploadedImages([]); }
+  }
+
+  async function loadProviders() {
+    try {
+      const data = await fetchJson<{ ok: boolean; providers: SBuildProviderStatus[] }>("/api/ai/providers/status");
+      setProviderStatus(data.providers || []);
+    } catch { setProviderStatus([]); }
   }
 
   function patchCurrentPage(nextPage: SBuildPage) {
@@ -456,10 +489,7 @@ export function App() {
 
   function patchSelectedBlock(mutator: (block: Block) => Block) {
     if (!selectedPage || !selectedBlock) return;
-    patchCurrentPage({
-      ...selectedPage,
-      blocks: updateBlock(selectedPage.blocks, selectedBlock.id, mutator)
-    });
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, selectedBlock.id, mutator) });
   }
 
   function patchSelectedBlockData(patch: Record<string, unknown>) {
@@ -480,62 +510,29 @@ export function App() {
 
   function applyImageToSelectedBlock(nextImage: string, altText: string) {
     if (!selectedPage || !nextImage) return;
-
     if (selectedBlock?.type === "image") {
-      patchSelectedBlock((b) => ({
-        ...b,
-        data: {
-          ...(b.data as ImageBlockData),
-          src: nextImage,
-          alt: altText,
-          caption: (b.data as ImageBlockData).caption || "AI image"
-        }
-      }));
+      patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as ImageBlockData), src: nextImage, alt: altText, caption: (b.data as ImageBlockData).caption || "AI image" } }));
       return;
     }
-
     if (selectedBlock?.type === "hero") {
-      patchSelectedBlock((b) => ({
-        ...b,
-        styles: {
-          ...(b.styles || {}),
-          backgroundImage: nextImage,
-          backgroundSize: "cover",
-          backgroundPosition: "center"
-        }
-      }));
+      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center" } }));
       return;
     }
-
     if (selectedBlock?.type === "gallery") {
       patchSelectedBlock((b) => {
         const data = b.data as GalleryBlockData;
         const existing = data.images.findIndex((img) => !img.src);
         const images = [...data.images];
         const next = { id: `g-${Date.now()}`, src: nextImage, alt: altText };
-        if (existing >= 0) {
-          images[existing] = next;
-        } else {
-          images.push(next);
-        }
+        if (existing >= 0) images[existing] = next; else images.push(next);
         return { ...b, data: { ...data, images } };
       });
       return;
     }
-
     if (selectedBlock?.type === "cards") {
-      patchSelectedBlock((b) => ({
-        ...b,
-        styles: {
-          ...(b.styles || {}),
-          backgroundImage: nextImage,
-          backgroundSize: "cover",
-          backgroundPosition: "center"
-        }
-      }));
+      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center" } }));
       return;
     }
-
     const imgBlock = defaultBlock("image");
     imgBlock.data = { src: nextImage, alt: altText, caption: "Applied image" } as ImageBlockData;
     patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, imgBlock] });
@@ -545,15 +542,8 @@ export function App() {
   async function saveProject() {
     if (!project) return;
     setStatus("Saving...");
-    const data = await fetchJson<{ ok: boolean }>("/api/project", {
-      method: "PUT",
-      body: JSON.stringify({ project })
-    });
-    if (data.ok) {
-      setDirty(false);
-      setStatus("Saved");
-      setLastAction("save");
-    }
+    const data = await fetchJson<{ ok: boolean }>("/api/project", { method: "PUT", body: JSON.stringify({ project }) });
+    if (data.ok) { setDirty(false); setStatus("Saved"); setLastAction("save"); }
   }
 
   async function runBuild() {
@@ -566,10 +556,7 @@ export function App() {
   async function runPublish() {
     setStatus("Publishing...");
     const data = await fetchJson<{ ok: boolean; dryRun?: boolean; target?: string }>("/api/publish", { method: "POST", body: "{}" });
-    if (data.ok) {
-      setStatus(data.dryRun ? `Dry-run publish complete → ${data.target}` : `Published → ${data.target}`);
-      setLastAction("publish");
-    }
+    if (data.ok) { setStatus(data.dryRun ? `Dry-run publish complete → ${data.target}` : `Published → ${data.target}`); setLastAction("publish"); }
   }
 
   async function chat() {
@@ -577,10 +564,7 @@ export function App() {
     const prompt = chatInput.trim();
     setChatHistory((h) => [...h, { role: "user", text: prompt }]);
     setChatInput("");
-    const data = await fetchJson<{ response: string }>("/api/ai/chat", {
-      method: "POST",
-      body: JSON.stringify({ prompt })
-    });
+    const data = await fetchJson<{ response: string }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
     setChatHistory((h) => [...h, { role: "assistant", text: data.response }]);
   }
 
@@ -592,85 +576,44 @@ export function App() {
   }
 
   async function runWizard() {
-    const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/ai/wizard", {
-      method: "POST",
-      body: JSON.stringify(wizardForm)
-    });
-    if (data.ok) {
-      setProject(data.project);
-      setDirty(true);
-      setShowWizard(false);
-      setStatus("Wizard applied");
-      setLastAction("wizard");
-    }
+    const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/ai/wizard", { method: "POST", body: JSON.stringify(wizardForm) });
+    if (data.ok) { setProject(data.project); setDirty(true); setShowWizard(false); setStatus("Wizard applied"); setLastAction("wizard"); }
   }
 
   async function uploadImages(files: FileList | null) {
     if (!files || files.length === 0) return;
-    setUploadingImage(true);
-    setPhotoEditStatus("Uploading...");
+    setUploadingImage(true); setPhotoEditStatus("Uploading...");
     try {
       const body = new FormData();
       Array.from(files).forEach((file) => body.append("images", file));
       const response = await fetch("/api/images", { method: "POST", body });
       const data = (await response.json()) as { ok: boolean; uploads?: Array<{ url: string }> };
-      if (!response.ok || !data.ok) {
-        setPhotoEditStatus("Upload failed.");
-        return;
-      }
+      if (!response.ok || !data.ok) { setPhotoEditStatus("Upload failed."); return; }
       const firstUrl = data.uploads?.[0]?.url;
       await loadImages();
       if (firstUrl) setSelectedUploadImage(firstUrl);
-      setPhotoEditStatus("Upload complete.");
-      setLastAction("upload-image");
-    } catch (error) {
-      setPhotoEditStatus(`Upload failed: ${String(error)}`);
-    } finally {
-      setUploadingImage(false);
-    }
+      setPhotoEditStatus("Upload complete."); setLastAction("upload-image");
+    } catch (error) { setPhotoEditStatus(`Upload failed: ${String(error)}`); }
+    finally { setUploadingImage(false); }
   }
 
   async function generateImage() {
     const prompt = imagePrompt.trim();
-    if (!prompt) {
-      setImageStatus("Enter an image prompt first.");
-      return;
-    }
-
+    if (!prompt) { setImageStatus("Enter an image prompt first."); return; }
     const targetContext = currentTargetContext();
     setImageStatus("Generating image for selected block...");
-    const data = await fetchJson<{
-      ok: boolean;
-      unavailable?: boolean;
-      message?: string;
-      imageUrl?: string;
-      originalImageUrl?: string;
-      warnings?: string[];
-      sizeDecision?: ImageSizeDecision;
-      error?: string;
-    }>("/api/ai/image", {
+    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; originalImageUrl?: string; warnings?: string[]; sizeDecision?: ImageSizeDecision; error?: string }>("/api/ai/image", {
       method: "POST",
-      body: JSON.stringify({
-        prompt,
-        targetContext,
-        explicitSize: providerSizeOverride || undefined
-      })
+      body: JSON.stringify({ prompt, targetContext, explicitSize: providerSizeOverride || undefined })
     });
-
-    if (data.sizeDecision) {
-      setImageSizeDecision(data.sizeDecision);
-    }
-
+    if (data.sizeDecision) setImageSizeDecision(data.sizeDecision);
     const nextImage = data.imageUrl || "";
     const warningText = (data.warnings || []).join(" ");
     if (!data.ok || !nextImage) {
       setImageStatus(data.message || data.error || "Image generation unavailable.");
-      if (warningText) {
-        setImageStatus((current) => `${current} ${warningText}`.trim());
-      }
+      if (warningText) setImageStatus((current) => `${current} ${warningText}`.trim());
       return;
     }
-
     setLastGeneratedImage(nextImage);
     setImageStatus(`Image ready for ${targetContext.blockType}.${warningText ? ` ${warningText}` : ""}`);
     setLastAction("image-generate");
@@ -678,39 +621,14 @@ export function App() {
   }
 
   async function applyPhotoEdit() {
-    if (!selectedUploadImage) {
-      setPhotoEditStatus("Select an uploaded image first.");
-      return;
-    }
+    if (!selectedUploadImage) { setPhotoEditStatus("Select an uploaded image first."); return; }
     const targetContext = currentTargetContext();
-    const data = await fetchJson<{
-      ok: boolean;
-      unavailable?: boolean;
-      message?: string;
-      error?: string;
-      editedImageUrl?: string;
-      originalImageUrl?: string;
-      sizeDecision?: ImageSizeDecision;
-      warnings?: string[];
-    }>("/api/images/edit", {
+    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; error?: string; editedImageUrl?: string; originalImageUrl?: string; sizeDecision?: ImageSizeDecision; warnings?: string[] }>("/api/images/edit", {
       method: "POST",
-      body: JSON.stringify({
-        imagePath: selectedUploadImage,
-        instruction: photoEditInstruction,
-        editType: photoEditType,
-        targetContext
-      })
+      body: JSON.stringify({ imagePath: selectedUploadImage, instruction: photoEditInstruction, editType: photoEditType, targetContext })
     });
-
-    if (data.sizeDecision) {
-      setImageSizeDecision(data.sizeDecision);
-    }
-
-    if (!data.ok || !data.editedImageUrl) {
-      setPhotoEditStatus(data.message || data.error || "Photo edit unavailable.");
-      return;
-    }
-
+    if (data.sizeDecision) setImageSizeDecision(data.sizeDecision);
+    if (!data.ok || !data.editedImageUrl) { setPhotoEditStatus(data.message || data.error || "Photo edit unavailable."); return; }
     setLastEditedImage(data.editedImageUrl);
     applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${photoEditType})`);
     await loadImages();
@@ -718,29 +636,38 @@ export function App() {
     setLastAction("photo-edit");
   }
 
-  function duplicateBlock() {
-    if (!selectedPage || !selectedBlock) return;
-    const copy: Block = { ...selectedBlock, id: `${selectedBlock.id}-copy-${Math.random().toString(36).slice(2, 6)}` };
+  function duplicateBlock(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    const target = selectedPage.blocks.find((b) => b.id === targetId);
+    if (!target) return;
+    const copy: Block = { ...target, id: `${target.id}-copy-${Math.random().toString(36).slice(2, 6)}` };
     patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, copy] });
     setSelectedBlockId(copy.id);
     setLastAction("duplicate-block");
   }
 
-  function deleteBlock() {
-    if (!selectedPage || !selectedBlock) return;
-    const next = selectedPage.blocks.filter((b) => b.id !== selectedBlock.id);
+  function deleteBlock(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    const next = selectedPage.blocks.filter((b) => b.id !== targetId);
     patchCurrentPage({ ...selectedPage, blocks: next });
     setSelectedBlockId(next[0]?.id || "");
     setLastAction("delete-block");
+    setContextMenu(null);
   }
 
-  function moveBlock(direction: "up" | "down") {
-    if (!selectedPage || !selectedBlock) return;
-    const index = selectedPage.blocks.findIndex((b) => b.id === selectedBlock.id);
+  function moveBlock(direction: "up" | "down", blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    const index = selectedPage.blocks.findIndex((b) => b.id === targetId);
     const to = direction === "up" ? index - 1 : index + 1;
     if (to < 0 || to >= selectedPage.blocks.length) return;
     patchCurrentPage({ ...selectedPage, blocks: move(selectedPage.blocks, index, to) });
     setLastAction(`move-${direction}`);
+    setContextMenu(null);
   }
 
   function applyTheme(index: number) {
@@ -750,17 +677,13 @@ export function App() {
       ...project,
       globalStyles: {
         ...project.globalStyles,
-        colors: {
-          bg: theme.bg,
-          surface: theme.surface,
-          text: theme.text,
-          accent: theme.accent,
-          muted: theme.muted
-        }
+        headingFont: theme.headingFont || project.globalStyles.headingFont,
+        colors: { ...project.globalStyles.colors, ...theme.colors }
       }
     });
     setDirty(true);
     setLastAction(`theme-${theme.name}`);
+    setThemeApplied(theme.name);
   }
 
   function addBlock(type: BlockType) {
@@ -840,24 +763,86 @@ export function App() {
     if (!project || !selectedPage) return;
     const data = await fetchJson<{ ok: boolean; project: SBuildProject; notes: string[] }>("/api/ai/paint-fix", {
       method: "POST",
-      body: JSON.stringify({
-        instruction: paintPrompt,
-        pageId: selectedPage.id,
-        bounds: { width: 0, height: 0 },
-        points: paintPath,
-        selectedBlockId,
-        project
-      })
+      body: JSON.stringify({ instruction: paintPrompt, pageId: selectedPage.id, bounds: { width: 0, height: 0 }, points: paintPath, selectedBlockId, project })
     });
-    if (data.ok) {
-      setProject(data.project);
-      setDirty(true);
-      setStatus(`Paint fix applied: ${data.notes.join("; ")}`);
-      setLastAction("paint-fix");
+    if (data.ok) { setProject(data.project); setDirty(true); setStatus(`Paint fix applied: ${data.notes.join("; ")}`); setLastAction("paint-fix"); }
+    setPaintOpen(false); setPaintPrompt(""); setPaintPath([]);
+  }
+
+  // Drag reorder handlers
+  function handleDragStart(blockId: string, index: number) {
+    setDrag({ blockId, startIndex: index, currentIndex: index });
+    setStatus(`Dragging block: ${blockId}`);
+  }
+
+  function handleDragEnter(targetIndex: number) {
+    if (!drag || !selectedPage) return;
+    if (drag.currentIndex === targetIndex) return;
+    const newBlocks = move(selectedPage.blocks, drag.currentIndex, targetIndex);
+    patchCurrentPage({ ...selectedPage, blocks: newBlocks });
+    setDrag({ ...drag, currentIndex: targetIndex });
+  }
+
+  function handleDragEnd() {
+    if (!drag) return;
+    setStatus(`Moved block ${drag.startIndex} → ${drag.currentIndex}`);
+    setDrag(null);
+  }
+
+  // Context menu handlers
+  function openContextMenu(e: React.MouseEvent | React.TouchEvent, blockId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    let x = 0, y = 0;
+    if ("clientX" in e) { x = e.clientX; y = e.clientY; }
+    else if ("touches" in e && e.touches.length > 0) { x = e.touches[0].clientX; y = e.touches[0].clientY; }
+    setContextMenu({ visible: true, x, y, blockId });
+  }
+
+  function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
+    if (e.button !== 0) return;
+    const timer = setTimeout(() => {
+      openContextMenu(e, blockId);
+      setLongPressTimer(null);
+    }, 600);
+    setLongPressTimer(timer);
+  }
+
+  function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
+    if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    if (!drag) { setSelectedBlockId(blockId); }
+  }
+
+  function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
+    if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    if (drag && drag.blockId === blockId) {
+      // dragging
     }
-    setPaintOpen(false);
-    setPaintPrompt("");
-    setPaintPath([]);
+  }
+
+  async function saveSecrets() {
+    setSecretStatusMsg("Saving...");
+    try {
+      await fetchJson("/api/secrets/image-keys", {
+        method: "POST",
+        body: JSON.stringify({ imageGenApiKey: secretInputs.imageGenApiKey, imageAnalyzeApiKey: secretInputs.imageAnalyzeApiKey })
+      });
+      setSecretStatusMsg("Keys saved locally.");
+      setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
+      await loadProviders();
+    } catch (error) {
+      setSecretStatusMsg(`Failed: ${String(error)}`);
+    }
+  }
+
+  async function testProvider(provider: string) {
+    setSecretStatusMsg(`Testing ${provider}...`);
+    try {
+      const data = await fetchJson<{ ok: boolean; status: string; message: string }>("/api/ai/providers/test", { method: "POST", body: JSON.stringify({ provider }) });
+      setSecretStatusMsg(`${provider}: ${data.status} — ${data.message}`);
+    } catch (error) {
+      setSecretStatusMsg(`Test failed: ${String(error)}`);
+    }
   }
 
   if (!project || !selectedPage) {
@@ -885,13 +870,12 @@ export function App() {
         <aside className="left-drawer">
           <p className="panel-status">
             <strong>Left panel:</strong> page {selectedPage.title} · blocks {selectedPage.blocks.length}
+            {drag && ` · dragging ${drag.blockId.slice(0, 12)}`}
           </p>
           <section>
             <h3>Pages</h3>
             {project.pages.map((page) => (
-              <button key={page.id} className={page.id === selectedPage.id ? "selected" : ""} onClick={() => setSelectedPageId(page.id)}>
-                {page.title}
-              </button>
+              <button key={page.id} className={page.id === selectedPage.id ? "selected" : ""} onClick={() => setSelectedPageId(page.id)}>{page.title}</button>
             ))}
           </section>
           <section>
@@ -904,25 +888,23 @@ export function App() {
           </section>
           <section>
             <h3>Theme Presets</h3>
-            {themePresets.map((t, i) => (
-              <button key={t.name} onClick={() => applyTheme(i)}>{t.name}</button>
-            ))}
+            <div className="theme-grid">
+              {themePresets.map((t, i) => (
+                <button key={t.name} onClick={() => applyTheme(i)} className="theme-swatch" title={t.name}>
+                  <span className="swatch-color" style={{ background: t.colors.bg, borderColor: t.colors.accent }} />
+                  <span className="swatch-name">{t.name}</span>
+                  {t.isDark && <span className="swatch-badge">D</span>}
+                </button>
+              ))}
+            </div>
+            {themeApplied && <p className="panel-status">Theme applied: {themeApplied}</p>}
           </section>
           <section>
             <h3>Fonts</h3>
             <input value={fontSearch} onChange={(e) => setFontSearch(e.target.value)} placeholder="Search fonts" />
             <div className="font-list">
               {filteredFonts.map((f) => (
-                <button
-                  key={f.family}
-                  onClick={() => {
-                    addRecentFont(f.family);
-                    setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: f.family } });
-                    setDirty(true);
-                  }}
-                >
-                  {f.family}
-                </button>
+                <button key={f.family} onClick={() => { addRecentFont(f.family); setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: f.family } }); setDirty(true); }}>{f.family}</button>
               ))}
             </div>
           </section>
@@ -936,16 +918,20 @@ export function App() {
             <button onClick={() => setDeviceMode("desktop")} className={deviceMode === "desktop" ? "selected" : ""}>Desktop</button>
             <button onClick={() => setDeviceMode("tablet")} className={deviceMode === "tablet" ? "selected" : ""}>Tablet</button>
             <button onClick={() => setDeviceMode("phone")} className={deviceMode === "phone" ? "selected" : ""}>Phone</button>
-            <button onClick={duplicateBlock}>Duplicate</button>
-            <button onClick={deleteBlock}>Delete</button>
+            <button onClick={() => duplicateBlock()}>Duplicate</button>
+            <button onClick={() => deleteBlock()}>Delete</button>
             <button onClick={() => moveBlock("up")}>Up</button>
             <button onClick={() => moveBlock("down")}>Down</button>
           </div>
           <p className="panel-status">
             <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
+            {drag && ` · dragging ${drag.blockId.slice(0, 12)} ${drag.startIndex}→${drag.currentIndex}`}
+            {resizeStatus && ` · ${resizeStatus}`}
+            {themeApplied && ` · theme: ${themeApplied}`}
           </p>
 
           <div
+            ref={canvasRef}
             className={`canvas-frame ${deviceMode}`}
             style={{ background: project.globalStyles.colors.bg, color: project.globalStyles.colors.text }}
             onPointerDown={beginPaint}
@@ -961,14 +947,28 @@ export function App() {
               </div>
             </nav>
 
-            {selectedPage.blocks.map((block) => (
+            {selectedPage.blocks.map((block, index) => (
               <div
                 key={block.id}
-                className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""}`}
+                className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
                 style={blockStyleToCss(block)}
                 onClick={() => setSelectedBlockId(block.id)}
+                onContextMenu={(e) => openContextMenu(e, block.id)}
+                onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
+                onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
+                onPointerMove={(e) => handleBlockPointerMove(e, block.id, index)}
+                draggable
+                onDragStart={() => handleDragStart(block.id, index)}
+                onDragEnter={() => handleDragEnter(index)}
+                onDragEnd={handleDragEnd}
               >
-                {!previewMode && <div className="block-meta">{block.type} · {block.id}</div>}
+                {!previewMode && (
+                  <div className="block-meta">
+                    <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
+                    {block.type} · {block.id.slice(0, 12)}
+                    <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
+                  </div>
+                )}
                 {renderTypedBlock(block, (field, value) => {
                   patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
                 })}
@@ -977,12 +977,7 @@ export function App() {
 
             {paintMode && (
               <svg className="paint-overlay" viewBox="0 0 1200 1200" preserveAspectRatio="none">
-                <polyline
-                  points={paintPath.map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill="none"
-                  stroke="#2b6dff"
-                  strokeWidth="3"
-                />
+                <polyline points={paintPath.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#2b6dff" strokeWidth="3" />
               </svg>
             )}
           </div>
@@ -1010,6 +1005,8 @@ export function App() {
               <p className="panel-status">
                 <strong>Properties debug:</strong> {selectedBlock.type} · {selectedBlock.id}
               </p>
+
+              {/* Block-specific fields */}
               {selectedBlock.type === "hero" && (
                 <>
                   <label>Heading <input value={(selectedBlock.data as HeroBlockData).heading || ""} onChange={(e) => patchSelectedBlockData({ heading: e.target.value })} /></label>
@@ -1036,16 +1033,8 @@ export function App() {
                   <label>Section Title <input value={(selectedBlock.data as CardsBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
                   {(selectedBlock.data as CardsBlockData).cards.map((card, i) => (
                     <div key={card.id} className="nested-row">
-                      <label>Card {i + 1} Title <input value={card.title} onChange={(e) => {
-                        const cards = [...(selectedBlock.data as CardsBlockData).cards];
-                        cards[i] = { ...cards[i], title: e.target.value };
-                        patchSelectedBlockData({ cards });
-                      }} /></label>
-                      <label>Card {i + 1} Body <input value={card.body} onChange={(e) => {
-                        const cards = [...(selectedBlock.data as CardsBlockData).cards];
-                        cards[i] = { ...cards[i], body: e.target.value };
-                        patchSelectedBlockData({ cards });
-                      }} /></label>
+                      <label>Card {i + 1} Title <input value={card.title} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], title: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
+                      <label>Card {i + 1} Body <input value={card.body} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], body: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
                     </div>
                   ))}
                 </>
@@ -1055,21 +1044,9 @@ export function App() {
                   <label>Section Title <input value={(selectedBlock.data as HoursBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
                   {(selectedBlock.data as HoursBlockData).rows.map((row, i) => (
                     <div key={`${row.day}-${i}`} className="nested-row">
-                      <label>Day <input value={row.day} onChange={(e) => {
-                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
-                        rows[i] = { ...rows[i], day: e.target.value };
-                        patchSelectedBlockData({ rows });
-                      }} /></label>
-                      <label>Open <input value={row.open} onChange={(e) => {
-                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
-                        rows[i] = { ...rows[i], open: e.target.value };
-                        patchSelectedBlockData({ rows });
-                      }} /></label>
-                      <label>Close <input value={row.close} onChange={(e) => {
-                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
-                        rows[i] = { ...rows[i], close: e.target.value };
-                        patchSelectedBlockData({ rows });
-                      }} /></label>
+                      <label>Day <input value={row.day} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], day: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
+                      <label>Open <input value={row.open} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], open: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
+                      <label>Close <input value={row.close} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], close: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
                     </div>
                   ))}
                 </>
@@ -1079,16 +1056,8 @@ export function App() {
                   <label>Section Title <input value={(selectedBlock.data as GalleryBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
                   {(selectedBlock.data as GalleryBlockData).images.map((img, i) => (
                     <div key={img.id} className="nested-row">
-                      <label>Image {i + 1} Path <input value={img.src || ""} onChange={(e) => {
-                        const images = [...(selectedBlock.data as GalleryBlockData).images];
-                        images[i] = { ...images[i], src: e.target.value };
-                        patchSelectedBlockData({ images });
-                      }} /></label>
-                      <label>Image {i + 1} Alt <input value={img.alt || ""} onChange={(e) => {
-                        const images = [...(selectedBlock.data as GalleryBlockData).images];
-                        images[i] = { ...images[i], alt: e.target.value };
-                        patchSelectedBlockData({ images });
-                      }} /></label>
+                      <label>Image {i + 1} Path <input value={img.src || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], src: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
+                      <label>Image {i + 1} Alt <input value={img.alt || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], alt: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
                     </div>
                   ))}
                 </>
@@ -1120,12 +1089,27 @@ export function App() {
                 <label>Spacer Height <input type="number" value={(selectedBlock.data as SpacerBlockData).height || 36} onChange={(e) => patchSelectedBlockData({ height: Number(e.target.value) })} /></label>
               )}
               {selectedBlock.type === "divider" && (
-                <label>Divider Style
-                  <select value={(selectedBlock.data as DividerBlockData).style || "solid"} onChange={(e) => patchSelectedBlockData({ style: e.target.value as "solid" | "dashed" })}>
-                    <option value="solid">solid</option>
-                    <option value="dashed">dashed</option>
-                  </select>
-                </label>
+                <>
+                  <label>Divider Style
+                    <select value={(selectedBlock.data as DividerBlockData).style || "solid"} onChange={(e) => patchSelectedBlockData({ style: e.target.value as DividerStyle })}>
+                      {DIVIDER_STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <label>Thickness <input type="number" value={(selectedBlock.data as DividerBlockData).thickness || 2} onChange={(e) => patchSelectedBlockData({ thickness: Number(e.target.value) })} /></label>
+                  <label>Color <input type="color" value={(selectedBlock.data as DividerBlockData).color || "#cccccc"} onChange={(e) => patchSelectedBlockData({ color: e.target.value })} /></label>
+                  <label>Width % <input type="range" min={10} max={100} value={(selectedBlock.data as DividerBlockData).widthPercent || 100} onChange={(e) => patchSelectedBlockData({ widthPercent: Number(e.target.value) })} /></label>
+                  <label>Alignment
+                    <select value={(selectedBlock.data as DividerBlockData).alignment || "center"} onChange={(e) => patchSelectedBlockData({ alignment: e.target.value as "left" | "center" | "right" })}>
+                      <option value="left">left</option>
+                      <option value="center">center</option>
+                      <option value="right">right</option>
+                    </select>
+                  </label>
+                  <label>Margin Top <input type="number" value={(selectedBlock.data as DividerBlockData).marginTop || 16} onChange={(e) => patchSelectedBlockData({ marginTop: Number(e.target.value) })} /></label>
+                  <label>Margin Bottom <input type="number" value={(selectedBlock.data as DividerBlockData).marginBottom || 16} onChange={(e) => patchSelectedBlockData({ marginBottom: Number(e.target.value) })} /></label>
+                  <label>Label <input value={(selectedBlock.data as DividerBlockData).label || ""} onChange={(e) => patchSelectedBlockData({ label: e.target.value })} placeholder="Optional label text" /></label>
+                  <label>Glow Intensity <input type="range" min={1} max={30} value={(selectedBlock.data as DividerBlockData).glowIntensity || 8} onChange={(e) => patchSelectedBlockData({ glowIntensity: Number(e.target.value) })} /></label>
+                </>
               )}
               {selectedBlock.type === "html" && (
                 <label>HTML <textarea rows={6} value={(selectedBlock.data as HtmlBlockData).html || ""} onChange={(e) => patchSelectedBlockData({ html: e.target.value })} /></label>
@@ -1134,11 +1118,7 @@ export function App() {
               <h3>Block Styles</h3>
               <label>Background <input type="color" value={selectedBlock.styles?.backgroundColor || "#ffffff"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: e.target.value } }))} /></label>
               <label>Background Image URL
-                <input
-                  value={selectedBlock.styles?.backgroundImage || ""}
-                  onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: e.target.value } }))}
-                  placeholder="/project/images/example.png"
-                />
+                <input value={selectedBlock.styles?.backgroundImage || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: e.target.value } }))} placeholder="/project/images/example.png" />
               </label>
               <label>Background Fit
                 <select value={selectedBlock.styles?.backgroundSize || "cover"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundSize: e.target.value as "cover" | "contain" | "fill" } }))}>
@@ -1149,11 +1129,7 @@ export function App() {
               </label>
               <label>Text Color <input type="color" value={selectedBlock.styles?.textColor || "#222222"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textColor: e.target.value } }))} /></label>
               <label>Font Family
-                <input
-                  value={selectedBlock.styles?.fontFamily || ""}
-                  onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontFamily: e.target.value } }))}
-                  placeholder="e.g. Poppins"
-                />
+                <input value={selectedBlock.styles?.fontFamily || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontFamily: e.target.value } }))} placeholder="e.g. Poppins" />
               </label>
               <label>Font Size <input type="number" value={selectedBlock.styles?.fontSize || 18} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontSize: Number(e.target.value) } }))} /></label>
               <label>Font Weight <input type="number" value={selectedBlock.styles?.fontWeight || 500} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontWeight: Number(e.target.value) } }))} /></label>
@@ -1171,22 +1147,53 @@ export function App() {
                 <input value={selectedBlock.styles?.shadow || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), shadow: e.target.value } }))} placeholder="0 4px 12px rgba(0,0,0,.15)" />
               </label>
 
+              <h3>Layout</h3>
+              <label>Width Mode
+                <select value={selectedBlock.styles?.layout?.widthMode || "full"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["widthMode"] } } }))}>
+                  <option value="full">full</option>
+                  <option value="wide">wide (85%)</option>
+                  <option value="medium">medium (70%)</option>
+                  <option value="narrow">narrow (50%)</option>
+                  <option value="custom">custom %</option>
+                </select>
+              </label>
+              {selectedBlock.styles?.layout?.widthMode === "custom" && (
+                <label>Width % <input type="range" min={10} max={100} value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthPercent: Number(e.target.value) } } }))} /></label>
+              )}
+              <label>Max Width (px) <input type="number" value={selectedBlock.styles?.layout?.maxWidthPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), maxWidthPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 800" /></label>
+              <label>Min Height (px) <input type="number" value={selectedBlock.styles?.layout?.minHeightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), minHeightPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 200" /></label>
+              <label>Height Mode
+                <select value={selectedBlock.styles?.layout?.heightMode || "auto"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["heightMode"] } } }))}>
+                  <option value="auto">auto</option>
+                  <option value="fixed">fixed</option>
+                  <option value="aspect">aspect ratio</option>
+                </select>
+              </label>
+              {selectedBlock.styles?.layout?.heightMode === "fixed" && (
+                <label>Height (px) <input type="number" value={selectedBlock.styles?.layout?.heightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightPx: e.target.value ? Number(e.target.value) : undefined } } }))} /></label>
+              )}
+              <label>Aspect Ratio
+                <select value={selectedBlock.styles?.layout?.aspectRatio || "auto"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: e.target.value } } }))}>
+                  {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label>Align Self
+                <select value={selectedBlock.styles?.layout?.alignSelf || "stretch"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), alignSelf: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["alignSelf"] } } }))}>
+                  <option value="left">left</option>
+                  <option value="center">center</option>
+                  <option value="right">right</option>
+                  <option value="stretch">stretch</option>
+                </select>
+              </label>
+              {resizeStatus && <p className="panel-status">{resizeStatus}</p>}
+
               <h4>Effects</h4>
               <div className="effect-list">
                 {EFFECTS.map((effect) => {
                   const has = (selectedBlock.styles?.effects || []).includes(effect);
                   return (
                     <label key={effect}>
-                      <input
-                        type="checkbox"
-                        checked={has}
-                        onChange={(e) => {
-                          const current = new Set(selectedBlock.styles?.effects || []);
-                          if (e.target.checked) current.add(effect);
-                          else current.delete(effect);
-                          patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), effects: [...current] } }));
-                        }}
-                      />
+                      <input type="checkbox" checked={has} onChange={(e) => { const current = new Set(selectedBlock.styles?.effects || []); if (e.target.checked) current.add(effect); else current.delete(effect); patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), effects: [...current] } })); }} />
                       {effect}
                     </label>
                   );
@@ -1218,12 +1225,7 @@ export function App() {
               <h3>Image Generator</h3>
               <label>
                 Prompt
-                <textarea
-                  value={imagePrompt}
-                  onChange={(e) => setImagePrompt(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. aerial view of a catfish farm at golden hour"
-                />
+                <textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} rows={3} placeholder="e.g. aerial view of a catfish farm at golden hour" />
               </label>
               <label>
                 Optional Provider Size Override
@@ -1234,9 +1236,7 @@ export function App() {
                   <option value="1536x1024">1536 x 1024</option>
                 </select>
               </label>
-              <button onClick={() => void generateImage()}>
-                Generate image for this block ({blockTypeForTarget(selectedBlock)})
-              </button>
+              <button onClick={() => void generateImage()}>Generate image for this block ({blockTypeForTarget(selectedBlock)})</button>
               {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
               {imageSizeDecision && (
                 <div className="image-debug">
@@ -1244,32 +1244,20 @@ export function App() {
                   <p><strong>Provider size:</strong> {imageSizeDecision.providerSize}</p>
                   <p><strong>Final output:</strong> {imageSizeDecision.outputWidth} x {imageSizeDecision.outputHeight}</p>
                   <p><strong>Crop mode:</strong> {imageSizeDecision.cropMode}</p>
-                  {imageSizeDecision.warnings.length > 0 && (
-                    <p><strong>Warnings:</strong> {imageSizeDecision.warnings.join(" | ")}</p>
-                  )}
+                  {imageSizeDecision.warnings.length > 0 && <p><strong>Warnings:</strong> {imageSizeDecision.warnings.join(" | ")}</p>}
                 </div>
               )}
-              {lastGeneratedImage && (
-                <img src={lastGeneratedImage} alt="Last generated" className="block-image" />
-              )}
+              {lastGeneratedImage && <img src={lastGeneratedImage} alt="Last generated" className="block-image" />}
 
               <h3>Edit Uploaded Photo</h3>
               <label>
                 Upload source photo
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => void uploadImages(e.target.files)}
-                />
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
               </label>
               <label>
                 Source uploaded image
                 <select value={selectedUploadImage} onChange={(e) => setSelectedUploadImage(e.target.value)}>
-                  {uploadedImages.length === 0 ? (
-                    <option value="">No uploaded images</option>
-                  ) : (
-                    uploadedImages.map((img) => <option key={img} value={img}>{img}</option>)
-                  )}
+                  {uploadedImages.length === 0 ? <option value="">No uploaded images</option> : uploadedImages.map((img) => <option key={img} value={img}>{img}</option>)}
                 </select>
               </label>
               <label>
@@ -1285,16 +1273,9 @@ export function App() {
               </label>
               <label>
                 Instruction
-                <textarea
-                  value={photoEditInstruction}
-                  onChange={(e) => setPhotoEditInstruction(e.target.value)}
-                  rows={3}
-                  placeholder="Optional instruction for edit."
-                />
+                <textarea value={photoEditInstruction} onChange={(e) => setPhotoEditInstruction(e.target.value)} rows={3} placeholder="Optional instruction for edit." />
               </label>
-              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>
-                {uploadingImage ? "Uploading..." : "Apply photo edit"}
-              </button>
+              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>{uploadingImage ? "Uploading..." : "Apply photo edit"}</button>
               {photoEditStatus && <p><strong>Photo edit status:</strong> {photoEditStatus}</p>}
               {lastEditedImage && <img src={lastEditedImage} alt="Last edited" className="block-image" />}
             </div>
@@ -1311,6 +1292,34 @@ export function App() {
               <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
               <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
               <p><strong>Last action:</strong> {lastAction}</p>
+              {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
+              {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
+              <p><strong>Publish:</strong> dry-run (live disabled)</p>
+
+              <h4>Provider Status</h4>
+              {providerStatus.length === 0 && <p>Loading providers...</p>}
+              {providerStatus.map((p) => (
+                <div key={p.name} className={`provider-card provider-${p.status}`}>
+                  <strong>{p.name}</strong>
+                  <span className="provider-badge">{p.status}</span>
+                  <p>{p.message}</p>
+                </div>
+              ))}
+
+              <h4>Image API Keys</h4>
+              <p className="hint">Keys are stored locally, not in project.json.</p>
+              <label>Image Generation API Key
+                <input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." />
+              </label>
+              <label>Image Analysis API Key
+                <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
+              </label>
+              <div className="button-row">
+                <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
+                <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
+                <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
+              </div>
+              {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
 
               <h4>Navigation Editor</h4>
               {project.site.nav.map((item, i) => (
@@ -1326,36 +1335,17 @@ export function App() {
 
               <h4>Deploy Settings</h4>
               <label>Method
-                <select
-                  value={project.deploy.method}
-                  onChange={(e) => {
-                    setProject({ ...project, deploy: { ...project.deploy, method: e.target.value as SBuildProject["deploy"]["method"] } });
-                    setDirty(true);
-                  }}
-                >
+                <select value={project.deploy.method} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, method: e.target.value as SBuildProject["deploy"]["method"] } }); setDirty(true); }}>
                   <option value="dry-run">dry-run</option>
                   <option value="local-web-root">local-web-root</option>
                   <option value="git">git</option>
                 </select>
               </label>
               <label>Web Root
-                <input
-                  value={project.deploy.webRoot}
-                  onChange={(e) => {
-                    setProject({ ...project, deploy: { ...project.deploy, webRoot: e.target.value } });
-                    setDirty(true);
-                  }}
-                />
+                <input value={project.deploy.webRoot} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, webRoot: e.target.value } }); setDirty(true); }} />
               </label>
               <label>GitHub Repo URL
-                <input
-                  value={project.deploy.githubRepo || ""}
-                  onChange={(e) => {
-                    setProject({ ...project, deploy: { ...project.deploy, githubRepo: e.target.value } });
-                    setDirty(true);
-                  }}
-                  placeholder="https://github.com/org/repo"
-                />
+                <input value={project.deploy.githubRepo || ""} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, githubRepo: e.target.value } }); setDirty(true); }} placeholder="https://github.com/org/repo" />
               </label>
               <label>Token Placeholder <input value="" placeholder="not stored in prototype" readOnly /></label>
               <div className="button-row">
@@ -1366,6 +1356,27 @@ export function App() {
           )}
         </aside>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu?.visible && (
+        <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Resize/Layout</button>
+          <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
+          <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
+          <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
+          <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
+          <button onClick={() => {
+            const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
+            if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));
+            setContextMenu(null);
+          }}>Copy Block JSON</button>
+          <button onClick={() => setContextMenu(null)}>Close</button>
+        </div>
+      )}
 
       {showWizard && (
         <div className="modal-backdrop">

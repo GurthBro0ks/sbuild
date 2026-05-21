@@ -15,3 +15,4 @@ export const distDir = path.join(repoRoot, "dist");
 export const publishedPreviewDir = path.join(repoRoot, "published-preview");
 export const backupsDir = path.join(projectDir, "backups");
 export const editorDistDir = path.join(repoRoot, "packages", "editor", "dist");
+export const secretsFile = path.join(repoRoot, ".sbuild-secrets.json");

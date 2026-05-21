@@ -21,7 +21,8 @@ import {
   generatedImagesDir,
   projectFile,
   projectImagesDir,
-  publishedPreviewDir
+  publishedPreviewDir,
+  secretsFile
 } from "./lib/paths.js";
 import {
   applyLocalEditWithSharp,
@@ -586,6 +587,132 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }
+  });
+
+  async function loadSecrets(): Promise<Record<string, unknown>> {
+    try {
+      const text = await fs.readFile(secretsFile, "utf-8");
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  async function saveSecrets(secrets: Record<string, unknown>): Promise<void> {
+    await fs.writeFile(secretsFile, JSON.stringify(secrets, null, 2), "utf-8");
+  }
+
+  function maskKey(key: string): string {
+    if (key.length <= 8) return "****";
+    return `${key.slice(0, 4)}...${key.slice(-4)}`;
+  }
+
+  function detectOpenCode(): { detected: boolean; path?: string; message: string } {
+    const configuredPath = process.env.OPENCODE_CLI_PATH || (process.env.PATH || "").split(":").find((p) => p.includes("opencode"));
+    if (configuredPath) {
+      return { detected: true, path: configuredPath, message: "OpenCode path configured" };
+    }
+    return { detected: false, message: "OpenCode CLI not detected. Set OPENCODE_CLI_PATH or ensure 'opencode' is in PATH." };
+  }
+
+  function getImageApiKeyStatus(): { genKey: string; genSource: string; analyzeKey: string; analyzeSource: string } {
+    const envGen = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_IMAGE_API_KEY || "";
+    const envAnalyze = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_ANALYZE_API_KEY || "";
+    const secrets = {} as Record<string, unknown>;
+    const localGen = String((secrets as Record<string, unknown>).imageGenApiKey || "");
+    const localAnalyze = String((secrets as Record<string, unknown>).imageAnalyzeApiKey || "");
+
+    const genKey = envGen || localGen;
+    const genSource = envGen ? "env" : localGen ? "local" : "missing";
+    const analyzeKey = envAnalyze || localAnalyze;
+    const analyzeSource = envAnalyze ? "env" : localAnalyze ? "local" : "missing";
+
+    return { genKey, genSource, analyzeKey, analyzeSource };
+  }
+
+  app.get("/api/ai/providers/status", async (_req, res) => {
+    const openCode = detectOpenCode();
+    const keyStatus = getImageApiKeyStatus();
+    const providers = [
+      {
+        name: "OpenCode CLI",
+        status: openCode.detected ? "connected" : "not_configured",
+        message: openCode.message,
+        path: openCode.path
+      },
+      {
+        name: "OpenAI ChatGPT (via OpenCode)",
+        status: openCode.detected ? "unknown" : "not_configured",
+        message: openCode.detected ? "OpenCode detected. Run 'opencode auth status' to verify." : "Requires OpenCode CLI."
+      },
+      {
+        name: "Kimi (via OpenCode)",
+        status: openCode.detected ? "unknown" : "not_configured",
+        message: openCode.detected ? "OpenCode detected. Run 'opencode auth status' to verify." : "Requires OpenCode CLI."
+      },
+      {
+        name: "Z.ai (via OpenCode)",
+        status: openCode.detected ? "unknown" : "not_configured",
+        message: openCode.detected ? "OpenCode detected. Run 'opencode auth status' to verify." : "Requires OpenCode CLI."
+      },
+      {
+        name: "Image Generation API",
+        status: keyStatus.genSource !== "missing" ? "connected" : "not_configured",
+        message: keyStatus.genSource !== "missing" ? `Key configured from ${keyStatus.genSource}` : "Missing. Set OPENAI_API_KEY or enter below."
+      },
+      {
+        name: "Image Analysis API",
+        status: keyStatus.analyzeSource !== "missing" ? "connected" : "not_configured",
+        message: keyStatus.analyzeSource !== "missing" ? `Key configured from ${keyStatus.analyzeSource}` : "Missing. Set OPENAI_API_KEY or enter below."
+      }
+    ];
+    res.json({ ok: true, providers });
+  });
+
+  app.post("/api/ai/providers/test", async (req, res) => {
+    const provider = String(req.body?.provider || "");
+    if (provider === "image-gen") {
+      const keyStatus = getImageApiKeyStatus();
+      if (keyStatus.genSource === "missing") {
+        res.json({ ok: false, status: "not_configured", message: "No image generation API key found." });
+        return;
+      }
+      res.json({ ok: true, status: "connected", message: "Key present. Live test not implemented in prototype." });
+      return;
+    }
+    if (provider === "opencode") {
+      const openCode = detectOpenCode();
+      res.json({ ok: openCode.detected, status: openCode.detected ? "connected" : "not_configured", message: openCode.message });
+      return;
+    }
+    res.json({ ok: false, status: "unknown", message: `Unknown provider: ${provider}` });
+  });
+
+  app.get("/api/secrets/status", async (_req, res) => {
+    const keyStatus = getImageApiKeyStatus();
+    res.json({
+      ok: true,
+      imageGen: {
+        configured: keyStatus.genSource !== "missing",
+        source: keyStatus.genSource,
+        maskedKey: keyStatus.genKey ? maskKey(keyStatus.genKey) : null
+      },
+      imageAnalyze: {
+        configured: keyStatus.analyzeSource !== "missing",
+        source: keyStatus.analyzeSource,
+        maskedKey: keyStatus.analyzeKey ? maskKey(keyStatus.analyzeKey) : null
+      }
+    });
+  });
+
+  app.post("/api/secrets/image-keys", async (req, res) => {
+    const genKey = String(req.body?.imageGenApiKey || "").trim();
+    const analyzeKey = String(req.body?.imageAnalyzeApiKey || "").trim();
+    const secrets = await loadSecrets();
+    if (genKey) secrets.imageGenApiKey = genKey;
+    if (analyzeKey) secrets.imageAnalyzeApiKey = analyzeKey;
+    await saveSecrets(secrets);
+    res.json({ ok: true, message: "Keys stored locally. Not committed to project." });
   });
 
   app.post("/api/build", async (_req, res) => {

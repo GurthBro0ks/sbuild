@@ -13,3 +13,5 @@ proof/
 
 packages/editor/dist-ts
 project/backups
+.sbuild-secrets.json
+.env
