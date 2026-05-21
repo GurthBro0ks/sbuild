@@ -4,20 +4,44 @@ import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import multer from "multer";
-import { SBuildProject } from "@sbuild/shared";
+import {
+  CropMode,
+  ImageSizeDecision,
+  ImageTargetContext,
+  OpenAIImageSize,
+  SBuildProject,
+  decideImageSize
+} from "@sbuild/shared";
 import { applyDeterministicPaintFix, chatWithFallback, wizardFallback } from "./lib/ai.js";
 import {
   backupsDir,
   distDir,
+  editedImagesDir,
   editorDistDir,
+  generatedImagesDir,
   projectFile,
   projectImagesDir,
   publishedPreviewDir
 } from "./lib/paths.js";
+import {
+  applyLocalEditWithSharp,
+  ensureImageSubdir,
+  fetchUrlToBuffer,
+  fitWithSharp,
+  imagePipelineSourceMarker,
+  loadSharp,
+  projectImageUrlFromAbsolute,
+  randomSuffix,
+  resolveProjectImageAbsolutePath,
+  safeFilenameStem,
+  saveBufferAsPng
+} from "./lib/imagePipeline.js";
 import { loadProject, saveProject, validateProjectShape } from "./lib/projectStore.js";
 import { generateSite } from "./generator/generateSite.js";
 
 const upload = multer({ dest: projectImagesDir });
+const validProviderSizes: OpenAIImageSize[] = ["1024x1024", "1024x1536", "1536x1024"];
+const localSharpEditTypes = new Set(["enhance", "black-white", "crop-fit", "color-pop"]);
 
 const curatedFonts = [
   { family: "Playfair Display" },
@@ -41,6 +65,83 @@ async function copyDir(src: string, dest: string): Promise<void> {
     } else {
       await fs.copyFile(s, d);
     }
+  }
+}
+
+function parseTargetContext(input: unknown): ImageTargetContext {
+  const source = (input || {}) as Record<string, unknown>;
+  return {
+    blockType: String(source.blockType || "unknown") as ImageTargetContext["blockType"],
+    usage: String(source.usage || "custom") as ImageTargetContext["usage"],
+    viewportHint: source.viewportHint ? String(source.viewportHint) as ImageTargetContext["viewportHint"] : undefined,
+    aspectRatioHint: source.aspectRatioHint ? String(source.aspectRatioHint) : undefined,
+    currentBlockId: source.currentBlockId ? String(source.currentBlockId) : undefined,
+    currentImagePath: source.currentImagePath ? String(source.currentImagePath) : undefined,
+    cropMode: source.cropMode ? String(source.cropMode) as CropMode : undefined
+  };
+}
+
+function withExplicitSize(decision: ImageSizeDecision, explicitSize: unknown): ImageSizeDecision {
+  const requested = String(explicitSize || "").trim();
+  if (!requested || !validProviderSizes.includes(requested as OpenAIImageSize)) {
+    return decision;
+  }
+  if (requested === decision.providerSize) {
+    return decision;
+  }
+  return {
+    ...decision,
+    providerSize: requested as OpenAIImageSize,
+    warnings: [...decision.warnings, `Explicit size override applied: ${requested}`],
+    reason: `${decision.reason} Explicit size override requested.`
+  };
+}
+
+function imageGenerationPrompt(input: {
+  prompt: string;
+  style?: string;
+  tone?: string;
+}): string {
+  const extras: string[] = [];
+  if (input.style?.trim()) extras.push(`Style: ${input.style.trim()}`);
+  if (input.tone?.trim()) extras.push(`Tone: ${input.tone.trim()}`);
+  return extras.length ? `${input.prompt}\n\n${extras.join("\n")}` : input.prompt;
+}
+
+async function listImagesRecursive(baseDir: string, current = ""): Promise<string[]> {
+  const absolute = path.join(baseDir, current);
+  const entries = await fs.readdir(absolute, { withFileTypes: true });
+  const out: string[] = [];
+  for (const entry of entries) {
+    const next = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await listImagesRecursive(baseDir, next)));
+      continue;
+    }
+    out.push(`/project/images/${next.replace(/\\/g, "/")}`);
+  }
+  return out;
+}
+
+function inferPromptForEdit(editType: string, instruction: string, decision: ImageSizeDecision): string {
+  const base = instruction.trim() || "Edit this photo with natural results.";
+  switch (editType) {
+    case "enhance":
+      return `${base}\nEnhance detail, contrast, and clarity without over-processing.`;
+    case "black-white":
+      return `${base}\nConvert to black and white with strong tonal range.`;
+    case "color-pop":
+      return `${base}\nPreserve subject and increase selective color vibrancy.`;
+    case "crop-fit":
+      return `${base}\nRecompose to ${decision.outputWidth}x${decision.outputHeight} using ${decision.cropMode} fit.`;
+    case "cleanup":
+      return `${base}\nClean up distractions and improve image quality.`;
+    case "background-adjust":
+      return `${base}\nAdjust the background subtly while preserving subject integrity.`;
+    case "style":
+      return `${base}\nApply the requested artistic style.`;
+    default:
+      return base;
   }
 }
 
@@ -85,6 +186,16 @@ export function createApp(): express.Express {
       url: `/project/images/${file.filename}`
     }));
     res.json({ ok: true, uploads });
+  });
+
+  app.get("/api/images", async (_req, res) => {
+    try {
+      await fs.mkdir(projectImagesDir, { recursive: true });
+      const images = await listImagesRecursive(projectImagesDir);
+      res.json({ ok: true, images: images.sort() });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
   });
 
   app.get("/api/fonts", async (_req, res) => {
@@ -132,22 +243,29 @@ export function createApp(): express.Express {
   });
 
   app.post("/api/ai/image", async (req, res) => {
-    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-    if (!key) {
-      res.status(200).json({ ok: false, unavailable: true, message: "Image generation unavailable: API key not configured." });
-      return;
-    }
-
     const prompt = String(req.body?.prompt || "").trim();
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
     }
 
-    const requestedSize = String(req.body?.size || "1024x1024");
-    const size = new Set(["1024x1024", "1024x1536", "1536x1024"]).has(requestedSize)
-      ? requestedSize
-      : "1024x1024";
+    const targetContext = parseTargetContext(req.body?.targetContext);
+    let sizeDecision = decideImageSize(targetContext);
+    sizeDecision = withExplicitSize(sizeDecision, req.body?.explicitSize ?? req.body?.size);
+    const warnings: string[] = [...sizeDecision.warnings];
+
+    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    if (!key) {
+      warnings.push("OpenAI key missing. Generation unavailable.");
+      res.status(200).json({
+        ok: false,
+        unavailable: true,
+        message: "Image generation unavailable: API key not configured.",
+        sizeDecision,
+        warnings
+      });
+      return;
+    }
 
     const model = process.env.SBUILD_IMAGE_MODEL || "gpt-image-1";
     try {
@@ -159,8 +277,12 @@ export function createApp(): express.Express {
         },
         body: JSON.stringify({
           model,
-          prompt,
-          size,
+          prompt: imageGenerationPrompt({
+            prompt,
+            style: req.body?.style ? String(req.body.style) : undefined,
+            tone: req.body?.tone ? String(req.body.tone) : undefined
+          }),
+          size: sizeDecision.providerSize,
           quality: "medium"
         })
       });
@@ -174,35 +296,229 @@ export function createApp(): express.Express {
         res.status(502).json({
           ok: false,
           unavailable: true,
-          message: payload.error?.message || `Image provider returned ${r.status}`
+          message: payload.error?.message || `Image provider returned ${r.status}`,
+          sizeDecision,
+          warnings
         });
         return;
       }
 
       const item = payload.data?.[0];
-      if (item?.b64_json) {
-        res.json({
-          ok: true,
-          model,
-          size,
-          imageDataUrl: `data:image/png;base64,${item.b64_json}`
+      if (!item?.b64_json && !item?.url) {
+        res.status(502).json({
+          ok: false,
+          unavailable: true,
+          message: "Image provider returned no image data.",
+          sizeDecision,
+          warnings
         });
         return;
       }
 
-      if (item?.url) {
-        res.json({ ok: true, model, size, imageUrl: item.url });
-        return;
+      const generatedDir = await ensureImageSubdir("generated");
+      const stem = safeFilenameStem(prompt).slice(0, 48);
+      const suffix = randomSuffix();
+      const originalPath = path.join(generatedDir, `${stem}-original-${suffix}.png`);
+
+      const originalBuffer = item.b64_json
+        ? Buffer.from(item.b64_json, "base64")
+        : await fetchUrlToBuffer(item.url!);
+      await saveBufferAsPng(originalPath, originalBuffer);
+
+      let imagePath = originalPath;
+      const sharpMod = await loadSharp();
+      if (!sharpMod) {
+        warnings.push("sharp not available; returning original generated image.");
+      } else {
+        try {
+          const fitted = await fitWithSharp({
+            input: originalBuffer,
+            cropMode: sizeDecision.cropMode,
+            outputWidth: sizeDecision.outputWidth,
+            outputHeight: sizeDecision.outputHeight
+          });
+          const fittedPath = path.join(generatedDir, `${stem}-fitted-${suffix}.png`);
+          await saveBufferAsPng(fittedPath, fitted);
+          imagePath = fittedPath;
+        } catch (error) {
+          warnings.push(`Image fitting failed; original kept. ${String(error)}`);
+        }
       }
 
-      res.status(502).json({ ok: false, unavailable: true, message: "Image provider returned no image data." });
+      res.json({
+        ok: true,
+        model,
+        imageUrl: projectImageUrlFromAbsolute(imagePath),
+        originalImageUrl: imagePath === originalPath ? undefined : projectImageUrlFromAbsolute(originalPath),
+        sizeDecision,
+        warnings
+      });
     } catch (error) {
       res.status(502).json({
         ok: false,
         unavailable: true,
-        message: `Image generation failed: ${String(error)}`
+        message: `Image generation failed: ${String(error)}`,
+        sizeDecision,
+        warnings
       });
     }
+  });
+
+  async function handleImageEdit(req: express.Request, res: express.Response): Promise<void> {
+    const editType = String(req.body?.editType || "custom");
+    const instruction = String(req.body?.instruction || "");
+    const targetContext = parseTargetContext(req.body?.targetContext);
+    const sizeDecision = decideImageSize(targetContext);
+    const warnings: string[] = [...sizeDecision.warnings];
+
+    const sourceInput = String(req.body?.imagePath || req.body?.imageUrl || targetContext.currentImagePath || "").trim();
+    if (!sourceInput) {
+      res.status(400).json({ ok: false, error: "imagePath is required", sizeDecision, warnings });
+      return;
+    }
+
+    let sourcePath: string;
+    try {
+      sourcePath = resolveProjectImageAbsolutePath(sourceInput);
+      await fs.access(sourcePath);
+    } catch (error) {
+      res.status(400).json({ ok: false, error: `Invalid imagePath: ${String(error)}`, sizeDecision, warnings });
+      return;
+    }
+
+    const originalImageUrl = projectImageUrlFromAbsolute(sourcePath);
+    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const model = process.env.SBUILD_IMAGE_EDIT_MODEL || process.env.SBUILD_IMAGE_MODEL || "gpt-image-1";
+    const editedDir = await ensureImageSubdir("edited");
+    const suffix = randomSuffix();
+    const stem = safeFilenameStem(path.basename(sourcePath, path.extname(sourcePath)));
+
+    if (key) {
+      try {
+        const sourceBuffer = await fs.readFile(sourcePath);
+        const prompt = inferPromptForEdit(editType, instruction, sizeDecision);
+        const form = new FormData();
+        form.append("model", model);
+        form.append("prompt", prompt);
+        form.append("size", sizeDecision.providerSize);
+        form.append("image", new Blob([sourceBuffer]), `${stem}.png`);
+
+        const maskPath = String(req.body?.maskPath || "").trim();
+        if (maskPath) {
+          try {
+            const absoluteMask = resolveProjectImageAbsolutePath(maskPath);
+            const maskBuffer = await fs.readFile(absoluteMask);
+            form.append("mask", new Blob([maskBuffer]), "mask.png");
+          } catch {
+            warnings.push("maskPath ignored because mask file could not be loaded.");
+          }
+        }
+
+        const response = await fetch("https://api.openai.com/v1/images/edits", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}` },
+          body: form
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: { message?: string };
+          data?: Array<{ b64_json?: string; url?: string }>;
+        };
+
+        if (!response.ok) {
+          warnings.push(payload.error?.message || `OpenAI edit failed: ${response.status}`);
+        } else {
+          const editedItem = payload.data?.[0];
+          if (editedItem?.b64_json || editedItem?.url) {
+            const editedBuffer = editedItem.b64_json
+              ? Buffer.from(editedItem.b64_json, "base64")
+              : await fetchUrlToBuffer(editedItem.url!);
+            const editedPath = path.join(editedDir, `${stem}-openai-${suffix}.png`);
+            await saveBufferAsPng(editedPath, editedBuffer);
+            res.json({
+              ok: true,
+              editedImageUrl: projectImageUrlFromAbsolute(editedPath),
+              originalImageUrl,
+              editType,
+              sizeDecision,
+              warnings
+            });
+            return;
+          }
+          warnings.push("OpenAI edit returned no image content.");
+        }
+      } catch (error) {
+        warnings.push(`OpenAI edit failed, trying local fallback. ${String(error)}`);
+      }
+    } else {
+      warnings.push("OpenAI key missing; using local fallback when supported.");
+    }
+
+    if (!localSharpEditTypes.has(editType)) {
+      res.status(200).json({
+        ok: false,
+        unavailable: true,
+        message: `Edit type '${editType}' requires OpenAI edit support.`,
+        originalImageUrl,
+        editType,
+        sizeDecision,
+        warnings
+      });
+      return;
+    }
+
+    const sharpMod = await loadSharp();
+    if (!sharpMod) {
+      warnings.push("sharp not available for local fallback edits.");
+      res.status(200).json({
+        ok: false,
+        unavailable: true,
+        message: "Local photo edit fallback unavailable because sharp is not installed.",
+        originalImageUrl,
+        editType,
+        sizeDecision,
+        warnings
+      });
+      return;
+    }
+
+    try {
+      const sourceBuffer = await fs.readFile(sourcePath);
+      const editedBuffer = await applyLocalEditWithSharp({
+        input: sourceBuffer,
+        editType,
+        cropMode: sizeDecision.cropMode,
+        outputWidth: sizeDecision.outputWidth,
+        outputHeight: sizeDecision.outputHeight
+      });
+      const editedPath = path.join(editedDir, `${stem}-${editType}-${suffix}.png`);
+      await saveBufferAsPng(editedPath, editedBuffer);
+      res.json({
+        ok: true,
+        editedImageUrl: projectImageUrlFromAbsolute(editedPath),
+        originalImageUrl,
+        editType,
+        sizeDecision,
+        warnings
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        unavailable: true,
+        message: `Local photo edit failed: ${String(error)}`,
+        originalImageUrl,
+        editType,
+        sizeDecision,
+        warnings
+      });
+    }
+  }
+
+  app.post("/api/images/edit", async (req, res) => {
+    await handleImageEdit(req, res);
+  });
+
+  app.post("/api/ai/image-edit", async (req, res) => {
+    await handleImageEdit(req, res);
   });
 
   app.post("/api/ai/wizard", async (req, res) => {
@@ -287,6 +603,7 @@ export function createApp(): express.Express {
       status: {
         imageApi: key ? "configured" : "missing-key",
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",
+        imagePipeline: imagePipelineSourceMarker(),
         projectPath: projectFile,
         distPath: distDir
       }

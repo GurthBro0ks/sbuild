@@ -24,6 +24,9 @@ export type BlockEffect =
 
 export interface BlockStyles {
   backgroundColor?: string;
+  backgroundImage?: string;
+  backgroundSize?: "cover" | "contain" | "fill";
+  backgroundPosition?: string;
   textColor?: string;
   fontFamily?: string;
   fontSize?: number;
@@ -176,4 +179,49 @@ export interface SBuildProject {
   ai: SBuildAISettings;
   deploy: SBuildDeploySettings;
   pages: SBuildPage[];
+}
+
+export type ImageTargetBlockType =
+  | "hero"
+  | "image"
+  | "gallery"
+  | "card"
+  | "testimonial"
+  | "navLogo"
+  | "favicon"
+  | "background"
+  | "unknown";
+
+export type ImageTargetUsage =
+  | "heroBackground"
+  | "inlineImage"
+  | "galleryItem"
+  | "cardImage"
+  | "logo"
+  | "favicon"
+  | "socialOg"
+  | "custom";
+
+export type ViewportHint = "desktop" | "tablet" | "mobile";
+export type CropMode = "cover" | "contain" | "fill";
+export type OpenAIImageSize = "1024x1024" | "1024x1536" | "1536x1024";
+
+export interface ImageTargetContext {
+  blockType: ImageTargetBlockType;
+  usage: ImageTargetUsage;
+  viewportHint?: ViewportHint;
+  aspectRatioHint?: string;
+  currentBlockId?: string;
+  currentImagePath?: string;
+  cropMode?: CropMode;
+}
+
+export interface ImageSizeDecision {
+  providerSize: OpenAIImageSize;
+  desiredAspectRatio: string;
+  outputWidth: number;
+  outputHeight: number;
+  cropMode: CropMode;
+  reason: string;
+  warnings: string[];
 }

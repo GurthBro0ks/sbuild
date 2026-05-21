@@ -73,6 +73,13 @@ function blockCss(project: SBuildProject): string {
 
     const base: string[] = [];
     if (styles.backgroundColor) base.push(`background:${styles.backgroundColor};`);
+    if (styles.backgroundImage) {
+      const fit = styles.backgroundSize === "contain" ? "contain" : styles.backgroundSize === "fill" ? "100% 100%" : "cover";
+      base.push(`background-image:url('${styles.backgroundImage}');`);
+      base.push(`background-size:${fit};`);
+      base.push(`background-repeat:no-repeat;`);
+      base.push(`background-position:${styles.backgroundPosition || "center"};`);
+    }
     if (styles.textColor) base.push(`color:${styles.textColor};`);
     if (styles.fontFamily) base.push(`font-family:'${styles.fontFamily}', sans-serif;`);
     if (styles.fontSize) base.push(`font-size:${styles.fontSize}px;`);
@@ -107,14 +114,21 @@ function blockCss(project: SBuildProject): string {
 async function copyProjectImages(): Promise<void> {
   const outputImageDir = path.join(distDir, "images");
   await fs.mkdir(outputImageDir, { recursive: true });
-  try {
-    const entries = await fs.readdir(projectImagesDir, { withFileTypes: true });
+  const copyRecursive = async (srcDir: string, destDir: string): Promise<void> => {
+    const entries = await fs.readdir(srcDir, { withFileTypes: true });
+    await fs.mkdir(destDir, { recursive: true });
     for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      const src = path.join(projectImagesDir, entry.name);
-      const dest = path.join(outputImageDir, entry.name);
-      await fs.copyFile(src, dest);
+      const src = path.join(srcDir, entry.name);
+      const dest = path.join(destDir, entry.name);
+      if (entry.isDirectory()) {
+        await copyRecursive(src, dest);
+      } else {
+        await fs.copyFile(src, dest);
+      }
     }
+  };
+  try {
+    await copyRecursive(projectImagesDir, outputImageDir);
   } catch {
     // no images yet
   }

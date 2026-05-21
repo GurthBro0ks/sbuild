@@ -72,3 +72,18 @@ WARN
 
 ## Next Logical Prompt
 /goal "read the latest GOAL-RESULT.md and proof dir from the sBuild prototype run. Fix any WARN/FAIL items first, then polish the editor UX and add Playwright browser screenshots for the Black Fish Farms happy path. Keep human verification to the end."
+
+## 2026-05-21 Image Pipeline Iteration
+
+- Added deterministic target sizing via `decideImageSize(targetContext)` shared helper.
+- `/api/ai/image` now accepts `targetContext` and returns `sizeDecision` + `warnings` while preserving no-key safe responses.
+- Added uploaded photo edit routes:
+  - `POST /api/images/edit`
+  - `POST /api/ai/image-edit`
+- Local fallback edit behavior implemented for `enhance`, `black-white`, `color-pop`, `crop-fit` when OpenAI edit path is unavailable.
+- Editor AI panel now supports:
+  - Generate image for selected block with inferred target context.
+  - Debug/status output for chosen provider size, final output size, crop mode, and warnings.
+  - Upload + edit uploaded photo flow with apply-to-selected-block behavior.
+- Proof: `/tmp/proof_sbuild_image_pipeline_20260521T140601Z`
+- Publish remained dry-run only (`SBUILD_ALLOW_PUBLISH` not enabled).

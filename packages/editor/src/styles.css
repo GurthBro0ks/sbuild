@@ -252,6 +252,19 @@ textarea {
   margin-bottom: 8px;
 }
 
+.image-debug {
+  background: #f4f8ff;
+  border: 1px solid #c7d7ff;
+  border-radius: 10px;
+  padding: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.image-debug p {
+  margin: 4px 0;
+}
+
 .nav-edit-row {
   display: grid;
   grid-template-columns: 1fr 1fr auto auto auto;

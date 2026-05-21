@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Block,
   BlockType,
+  ImageSizeDecision,
+  ImageTargetContext,
   SBuildNavItem,
   SBuildPage,
   SBuildProject,
@@ -89,6 +91,10 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   const s = block.styles || {};
   const css: Record<string, string | number> = {
     background: s.backgroundColor || "#fff",
+    backgroundImage: s.backgroundImage ? `url(${s.backgroundImage})` : "",
+    backgroundSize: s.backgroundSize === "contain" ? "contain" : s.backgroundSize === "fill" ? "100% 100%" : "cover",
+    backgroundRepeat: s.backgroundImage ? "no-repeat" : "",
+    backgroundPosition: s.backgroundPosition || "center",
     color: s.textColor || "inherit",
     fontFamily: s.fontFamily ? `'${s.fontFamily}', sans-serif` : "inherit",
     fontSize: s.fontSize ? `${s.fontSize}px` : "",
@@ -165,6 +171,33 @@ function move<T>(arr: T[], from: number, to: number): T[] {
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
   return next;
+}
+
+function blockTypeForTarget(block?: Block): ImageTargetContext["blockType"] {
+  if (!block) return "unknown";
+  if (block.type === "hero") return "hero";
+  if (block.type === "image") return "image";
+  if (block.type === "gallery") return "gallery";
+  if (block.type === "cards") return "card";
+  if (block.type === "testimonial") return "testimonial";
+  return "unknown";
+}
+
+function usageForTarget(block?: Block): ImageTargetContext["usage"] {
+  if (!block) return "custom";
+  if (block.type === "hero") return "heroBackground";
+  if (block.type === "image") return "inlineImage";
+  if (block.type === "gallery") return "galleryItem";
+  if (block.type === "cards") return "cardImage";
+  return "custom";
+}
+
+function inferAspectRatioHint(block?: Block): string | undefined {
+  if (!block) return undefined;
+  if (block.type === "hero") return "16:9";
+  if (block.type === "cards") return "1:1";
+  if (block.type === "gallery") return "1:1";
+  return undefined;
 }
 
 const HeroBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
@@ -341,9 +374,17 @@ export function App() {
   const [wizardForm, setWizardForm] = useState({ name: "", businessType: "", description: "", theme: "" });
   const [lastAction, setLastAction] = useState("none");
   const [imagePrompt, setImagePrompt] = useState("");
-  const [imageSize, setImageSize] = useState("1024x1024");
+  const [providerSizeOverride, setProviderSizeOverride] = useState("");
   const [imageStatus, setImageStatus] = useState("");
   const [lastGeneratedImage, setLastGeneratedImage] = useState<string>("");
+  const [imageSizeDecision, setImageSizeDecision] = useState<ImageSizeDecision | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [selectedUploadImage, setSelectedUploadImage] = useState("");
+  const [photoEditType, setPhotoEditType] = useState("enhance");
+  const [photoEditInstruction, setPhotoEditInstruction] = useState("");
+  const [photoEditStatus, setPhotoEditStatus] = useState("");
+  const [lastEditedImage, setLastEditedImage] = useState("");
 
   const [paintPath, setPaintPath] = useState<PaintPoint[]>([]);
   const [paintPrompt, setPaintPrompt] = useState("");
@@ -358,6 +399,7 @@ export function App() {
   useEffect(() => {
     void loadProject();
     void loadFonts();
+    void loadImages();
   }, []);
 
   useEffect(() => {
@@ -386,6 +428,19 @@ export function App() {
     }
   }
 
+  async function loadImages() {
+    try {
+      const data = await fetchJson<{ ok: boolean; images: string[] }>("/api/images");
+      const next = data.images || [];
+      setUploadedImages(next);
+      if (!selectedUploadImage && next.length > 0) {
+        setSelectedUploadImage(next[0]);
+      }
+    } catch {
+      setUploadedImages([]);
+    }
+  }
+
   function patchCurrentPage(nextPage: SBuildPage) {
     if (!project || !selectedPage) return;
     const pages = project.pages.map((p) => (p.id === selectedPage.id ? nextPage : p));
@@ -399,6 +454,82 @@ export function App() {
       ...selectedPage,
       blocks: updateBlock(selectedPage.blocks, selectedBlock.id, mutator)
     });
+  }
+
+  function currentTargetContext(): ImageTargetContext {
+    return {
+      blockType: blockTypeForTarget(selectedBlock),
+      usage: usageForTarget(selectedBlock),
+      viewportHint: deviceMode === "phone" ? "mobile" : deviceMode === "tablet" ? "tablet" : "desktop",
+      aspectRatioHint: inferAspectRatioHint(selectedBlock),
+      currentBlockId: selectedBlock?.id,
+      currentImagePath: selectedBlock?.type === "image" ? (selectedBlock.data as ImageBlockData).src : undefined,
+      cropMode: selectedBlock?.type === "hero" ? "cover" : selectedBlock?.type === "image" ? "contain" : "cover"
+    };
+  }
+
+  function applyImageToSelectedBlock(nextImage: string, altText: string) {
+    if (!selectedPage || !nextImage) return;
+
+    if (selectedBlock?.type === "image") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        data: {
+          ...(b.data as ImageBlockData),
+          src: nextImage,
+          alt: altText,
+          caption: (b.data as ImageBlockData).caption || "AI image"
+        }
+      }));
+      return;
+    }
+
+    if (selectedBlock?.type === "hero") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          backgroundImage: nextImage,
+          backgroundSize: "cover",
+          backgroundPosition: "center"
+        }
+      }));
+      return;
+    }
+
+    if (selectedBlock?.type === "gallery") {
+      patchSelectedBlock((b) => {
+        const data = b.data as GalleryBlockData;
+        const existing = data.images.findIndex((img) => !img.src);
+        const images = [...data.images];
+        const next = { id: `g-${Date.now()}`, src: nextImage, alt: altText };
+        if (existing >= 0) {
+          images[existing] = next;
+        } else {
+          images.push(next);
+        }
+        return { ...b, data: { ...data, images } };
+      });
+      return;
+    }
+
+    if (selectedBlock?.type === "cards") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          backgroundImage: nextImage,
+          backgroundSize: "cover",
+          backgroundPosition: "center"
+        }
+      }));
+      return;
+    }
+
+    const imgBlock = defaultBlock("image");
+    imgBlock.data = { src: nextImage, alt: altText, caption: "Applied image" } as ImageBlockData;
+    patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, imgBlock] });
+    setSelectedBlockId(imgBlock.id);
   }
 
   async function saveProject() {
@@ -464,6 +595,31 @@ export function App() {
     }
   }
 
+  async function uploadImages(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadingImage(true);
+    setPhotoEditStatus("Uploading...");
+    try {
+      const body = new FormData();
+      Array.from(files).forEach((file) => body.append("images", file));
+      const response = await fetch("/api/images", { method: "POST", body });
+      const data = (await response.json()) as { ok: boolean; uploads?: Array<{ url: string }> };
+      if (!response.ok || !data.ok) {
+        setPhotoEditStatus("Upload failed.");
+        return;
+      }
+      const firstUrl = data.uploads?.[0]?.url;
+      await loadImages();
+      if (firstUrl) setSelectedUploadImage(firstUrl);
+      setPhotoEditStatus("Upload complete.");
+      setLastAction("upload-image");
+    } catch (error) {
+      setPhotoEditStatus(`Upload failed: ${String(error)}`);
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   async function generateImage() {
     const prompt = imagePrompt.trim();
     if (!prompt) {
@@ -471,47 +627,85 @@ export function App() {
       return;
     }
 
-    setImageStatus("Generating image...");
+    const targetContext = currentTargetContext();
+    setImageStatus("Generating image for selected block...");
     const data = await fetchJson<{
       ok: boolean;
       unavailable?: boolean;
       message?: string;
-      imageDataUrl?: string;
       imageUrl?: string;
+      originalImageUrl?: string;
+      warnings?: string[];
+      sizeDecision?: ImageSizeDecision;
+      error?: string;
     }>("/api/ai/image", {
       method: "POST",
-      body: JSON.stringify({ prompt, size: imageSize })
+      body: JSON.stringify({
+        prompt,
+        targetContext,
+        explicitSize: providerSizeOverride || undefined
+      })
     });
 
-    const nextImage = data.imageDataUrl || data.imageUrl || "";
+    if (data.sizeDecision) {
+      setImageSizeDecision(data.sizeDecision);
+    }
+
+    const nextImage = data.imageUrl || "";
+    const warningText = (data.warnings || []).join(" ");
     if (!data.ok || !nextImage) {
-      setImageStatus(data.message || "Image generation unavailable.");
+      setImageStatus(data.message || data.error || "Image generation unavailable.");
+      if (warningText) {
+        setImageStatus((current) => `${current} ${warningText}`.trim());
+      }
       return;
     }
 
     setLastGeneratedImage(nextImage);
-    setImageStatus("Image ready. Applied to canvas.");
+    setImageStatus(`Image ready for ${targetContext.blockType}.${warningText ? ` ${warningText}` : ""}`);
     setLastAction("image-generate");
+    applyImageToSelectedBlock(nextImage, prompt);
+  }
 
-    if (selectedPage) {
-      const selectedIsImage = selectedBlock?.type === "image";
-      if (selectedIsImage && selectedBlock) {
-        patchSelectedBlock((b) => ({
-          ...b,
-          data: {
-            ...(b.data as ImageBlockData),
-            src: nextImage,
-            alt: prompt,
-            caption: (b.data as ImageBlockData).caption || "AI generated image"
-          }
-        }));
-      } else {
-        const imgBlock = defaultBlock("image");
-        imgBlock.data = { src: nextImage, alt: prompt, caption: "AI generated image" } as ImageBlockData;
-        patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, imgBlock] });
-        setSelectedBlockId(imgBlock.id);
-      }
+  async function applyPhotoEdit() {
+    if (!selectedUploadImage) {
+      setPhotoEditStatus("Select an uploaded image first.");
+      return;
     }
+    const targetContext = currentTargetContext();
+    const data = await fetchJson<{
+      ok: boolean;
+      unavailable?: boolean;
+      message?: string;
+      error?: string;
+      editedImageUrl?: string;
+      originalImageUrl?: string;
+      sizeDecision?: ImageSizeDecision;
+      warnings?: string[];
+    }>("/api/images/edit", {
+      method: "POST",
+      body: JSON.stringify({
+        imagePath: selectedUploadImage,
+        instruction: photoEditInstruction,
+        editType: photoEditType,
+        targetContext
+      })
+    });
+
+    if (data.sizeDecision) {
+      setImageSizeDecision(data.sizeDecision);
+    }
+
+    if (!data.ok || !data.editedImageUrl) {
+      setPhotoEditStatus(data.message || data.error || "Photo edit unavailable.");
+      return;
+    }
+
+    setLastEditedImage(data.editedImageUrl);
+    applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${photoEditType})`);
+    await loadImages();
+    setPhotoEditStatus(`Edited photo ready. ${(data.warnings || []).join(" ")}`.trim());
+    setLastAction("photo-edit");
   }
 
   function duplicateBlock() {
@@ -871,18 +1065,77 @@ export function App() {
                 />
               </label>
               <label>
-                Size
-                <select value={imageSize} onChange={(e) => setImageSize(e.target.value)}>
+                Optional Provider Size Override
+                <select value={providerSizeOverride} onChange={(e) => setProviderSizeOverride(e.target.value)}>
+                  <option value="">Auto (recommended)</option>
                   <option value="1024x1024">1024 x 1024</option>
                   <option value="1024x1536">1024 x 1536</option>
                   <option value="1536x1024">1536 x 1024</option>
                 </select>
               </label>
-              <button onClick={() => void generateImage()}>Generate Image</button>
+              <button onClick={() => void generateImage()}>
+                Generate image for this block ({blockTypeForTarget(selectedBlock)})
+              </button>
               {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
+              {imageSizeDecision && (
+                <div className="image-debug">
+                  <p><strong>Target block:</strong> {blockTypeForTarget(selectedBlock)}</p>
+                  <p><strong>Provider size:</strong> {imageSizeDecision.providerSize}</p>
+                  <p><strong>Final output:</strong> {imageSizeDecision.outputWidth} x {imageSizeDecision.outputHeight}</p>
+                  <p><strong>Crop mode:</strong> {imageSizeDecision.cropMode}</p>
+                  {imageSizeDecision.warnings.length > 0 && (
+                    <p><strong>Warnings:</strong> {imageSizeDecision.warnings.join(" | ")}</p>
+                  )}
+                </div>
+              )}
               {lastGeneratedImage && (
                 <img src={lastGeneratedImage} alt="Last generated" className="block-image" />
               )}
+
+              <h3>Edit Uploaded Photo</h3>
+              <label>
+                Upload source photo
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => void uploadImages(e.target.files)}
+                />
+              </label>
+              <label>
+                Source uploaded image
+                <select value={selectedUploadImage} onChange={(e) => setSelectedUploadImage(e.target.value)}>
+                  {uploadedImages.length === 0 ? (
+                    <option value="">No uploaded images</option>
+                  ) : (
+                    uploadedImages.map((img) => <option key={img} value={img}>{img}</option>)
+                  )}
+                </select>
+              </label>
+              <label>
+                Edit type
+                <select value={photoEditType} onChange={(e) => setPhotoEditType(e.target.value)}>
+                  <option value="enhance">Enhance photo</option>
+                  <option value="black-white">Black &amp; white</option>
+                  <option value="color-pop">Color pop</option>
+                  <option value="cleanup">Clean up</option>
+                  <option value="crop-fit">Crop/fit to selected block</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>
+                Instruction
+                <textarea
+                  value={photoEditInstruction}
+                  onChange={(e) => setPhotoEditInstruction(e.target.value)}
+                  rows={3}
+                  placeholder="Optional instruction for edit."
+                />
+              </label>
+              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>
+                {uploadingImage ? "Uploading..." : "Apply photo edit"}
+              </button>
+              {photoEditStatus && <p><strong>Photo edit status:</strong> {photoEditStatus}</p>}
+              {lastEditedImage && <img src={lastEditedImage} alt="Last edited" className="block-image" />}
             </div>
           )}
 

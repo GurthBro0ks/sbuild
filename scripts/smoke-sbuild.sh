@@ -44,8 +44,14 @@ sleep 2
 curl -fsS "http://localhost:${PORT}/health" | tee "$PROOF_DIR/curl-health.json"
 curl -fsS "http://localhost:${PORT}/api/project" | tee "$PROOF_DIR/curl-project.json"
 curl -fsS "http://localhost:${PORT}/api/fonts" | tee "$PROOF_DIR/curl-fonts.json"
+curl -fsS -X POST "http://localhost:${PORT}/api/ai/image" -H 'content-type: application/json' \
+  -d '{"prompt":"catfish farm hero","targetContext":{"blockType":"hero","usage":"heroBackground"}}' \
+  | tee "$PROOF_DIR/curl-ai-image.json"
 curl -fsS -X POST "http://localhost:${PORT}/api/build" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-build.json"
 curl -fsS -X POST "http://localhost:${PORT}/api/publish" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-publish.json"
+
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.sizeDecision||!p.sizeDecision.providerSize){throw new Error('sizeDecision missing from /api/ai/image response')}console.log('sizeDecision check ok')" "$PROOF_DIR/curl-ai-image.json" | tee -a "$PROOF_DIR/smoke.log"
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.dryRun){throw new Error('publish was not dry-run')}console.log('publish dry-run check ok')" "$PROOF_DIR/curl-publish.json" | tee -a "$PROOF_DIR/smoke.log"
 
 if [[ -f dist/index.html && -f dist/assets/styles.css ]]; then
   log "PASS static output exists"
@@ -64,6 +70,7 @@ cat > "$PROOF_DIR/RESULT.md" <<RESULT
 - Health: ok
 - Project API: ok
 - Fonts API: ok
+- AI image API: ok (safe no-key + size decision)
 - Build API: ok
 - Publish API: dry-run expected
 - Dist check: ok

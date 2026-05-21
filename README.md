@@ -39,6 +39,9 @@ pnpm --filter @sbuild/editor dev
 
 ## Prototype Limitations
 
+- `/api/ai/image` accepts `targetContext` and auto-selects provider/output sizing via deterministic `decideImageSize()`.
+- `/api/images/edit` (and alias `/api/ai/image-edit`) supports uploaded-photo edit flows with local `sharp` fallback for `enhance`, `black-white`, `color-pop`, and `crop-fit`.
+- `/api/ai/image` and edit routes return `sizeDecision` and `warnings` for prototype verification.
 - `/api/ai/image` calls OpenAI when key is configured, otherwise returns a safe unavailable response.
 - OpenCode chat uses fallback mock behavior when CLI invocation fails.
 - Publish is dry-run by default for safety.
