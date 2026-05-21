@@ -138,8 +138,71 @@ export function createApp(): express.Express {
       return;
     }
 
-    // Intentionally minimal in prototype: key present but generation call deferred.
-    res.json({ ok: false, unavailable: true, message: "Prototype image route not wired to provider yet." });
+    const prompt = String(req.body?.prompt || "").trim();
+    if (!prompt) {
+      res.status(400).json({ ok: false, error: "prompt is required" });
+      return;
+    }
+
+    const requestedSize = String(req.body?.size || "1024x1024");
+    const size = new Set(["1024x1024", "1024x1536", "1536x1024"]).has(requestedSize)
+      ? requestedSize
+      : "1024x1024";
+
+    const model = process.env.SBUILD_IMAGE_MODEL || "gpt-image-1";
+    try {
+      const r = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`
+        },
+        body: JSON.stringify({
+          model,
+          prompt,
+          size,
+          quality: "medium"
+        })
+      });
+
+      const payload = (await r.json().catch(() => ({}))) as {
+        error?: { message?: string };
+        data?: Array<{ b64_json?: string; url?: string }>;
+      };
+
+      if (!r.ok) {
+        res.status(502).json({
+          ok: false,
+          unavailable: true,
+          message: payload.error?.message || `Image provider returned ${r.status}`
+        });
+        return;
+      }
+
+      const item = payload.data?.[0];
+      if (item?.b64_json) {
+        res.json({
+          ok: true,
+          model,
+          size,
+          imageDataUrl: `data:image/png;base64,${item.b64_json}`
+        });
+        return;
+      }
+
+      if (item?.url) {
+        res.json({ ok: true, model, size, imageUrl: item.url });
+        return;
+      }
+
+      res.status(502).json({ ok: false, unavailable: true, message: "Image provider returned no image data." });
+    } catch (error) {
+      res.status(502).json({
+        ok: false,
+        unavailable: true,
+        message: `Image generation failed: ${String(error)}`
+      });
+    }
   });
 
   app.post("/api/ai/wizard", async (req, res) => {

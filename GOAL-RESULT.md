@@ -13,26 +13,26 @@ WARN
 - Health: http://localhost:3137/health
 
 ## Proof
-- Proof dir: /tmp/proof_sbuild_goal_20260521T132015Z
+- Proof dir: /tmp/proof_sbuild_goal_20260521T135224Z
 - Key logs:
-  - /tmp/proof_sbuild_goal_20260521T132015Z/smoke.log
-  - /tmp/proof_sbuild_goal_20260521T132015Z/typecheck.log
-  - /tmp/proof_sbuild_goal_20260521T132015Z/build.log
-  - /tmp/proof_sbuild_goal_20260521T132015Z/curl-health.json
-  - /tmp/proof_sbuild_goal_20260521T132015Z/curl-project.json
-  - /tmp/proof_sbuild_goal_20260521T132015Z/curl-build.json
-  - /tmp/proof_sbuild_goal_20260521T132015Z/curl-publish.json
+  - /tmp/proof_sbuild_goal_20260521T135224Z/smoke.log
+  - /tmp/proof_sbuild_goal_20260521T135224Z/typecheck.log
+  - /tmp/proof_sbuild_goal_20260521T135224Z/build.log
+  - /tmp/proof_sbuild_goal_20260521T135224Z/curl-health.json
+  - /tmp/proof_sbuild_goal_20260521T135224Z/curl-project.json
+  - /tmp/proof_sbuild_goal_20260521T135224Z/curl-build.json
+  - /tmp/proof_sbuild_goal_20260521T135224Z/curl-publish.json
 
 ## Built Features
 - pnpm workspace monorepo with `packages/shared`, `packages/server`, `packages/editor`, `packages/cli`
 - Strong shared project/types schema with required block types/effects
 - Black Fish Farms starter template in `templates/farm/project.json` with auto-init copy to `project/project.json`
 - Express API with required routes: health/project/images/fonts/ai/build/publish/backup/restore/status
-- Deterministic AI fallbacks for chat, paint-fix, wizard, and safe image unavailable state
+- Deterministic AI fallbacks for chat, paint-fix, wizard, plus keyed OpenAI image generation route with safe unavailable fallback
 - Static generator producing `dist/index.html`, `dist/assets/styles.css`, `dist/sitemap.xml`, `dist/robots.txt`
 - React editor with top bar, left drawer, center canvas, right drawer, block renderers, save/build/publish, preview + responsive toggles
 - Paint overlay prototype that sends prompt+path to `/api/ai/paint-fix`
-- AI chat panel + quick actions + wizard modal + nav editor + properties editor
+- AI chat panel + quick actions + image generation prompt/size UI + wizard modal + nav editor + properties editor
 - Publish safe mode: dry-run target unless `SBUILD_ALLOW_PUBLISH=1`
 - Smoke script and dev script in `scripts/`
 
@@ -51,7 +51,7 @@ WARN
 - production server static editor serving (`NODE_ENV=production` + `GET /`): PASS
 
 ## Warnings / Deferred Items
-- OpenAI image generation key not configured: `/api/ai/image` returns safe unavailable response
+- OpenAI image generation key not configured in this environment: `/api/ai/image` returns safe unavailable response
 - Google Fonts API key not configured: curated fallback list used
 - OpenCode CLI integration fell back to deterministic mock response (safe fallback)
 - Real publish to `/var/www/blackfishfarms.com` not attempted because `SBUILD_ALLOW_PUBLISH` was not set

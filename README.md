@@ -39,7 +39,7 @@ pnpm --filter @sbuild/editor dev
 
 ## Prototype Limitations
 
-- `/api/ai/image` reports unavailable when key/provider wiring is absent.
+- `/api/ai/image` calls OpenAI when key is configured, otherwise returns a safe unavailable response.
 - OpenCode chat uses fallback mock behavior when CLI invocation fails.
 - Publish is dry-run by default for safety.
 - Restore flow expects an explicit backup path payload.

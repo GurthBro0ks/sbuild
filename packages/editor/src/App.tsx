@@ -340,6 +340,10 @@ export function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [wizardForm, setWizardForm] = useState({ name: "", businessType: "", description: "", theme: "" });
   const [lastAction, setLastAction] = useState("none");
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageSize, setImageSize] = useState("1024x1024");
+  const [imageStatus, setImageStatus] = useState("");
+  const [lastGeneratedImage, setLastGeneratedImage] = useState<string>("");
 
   const [paintPath, setPaintPath] = useState<PaintPoint[]>([]);
   const [paintPrompt, setPaintPrompt] = useState("");
@@ -460,6 +464,56 @@ export function App() {
     }
   }
 
+  async function generateImage() {
+    const prompt = imagePrompt.trim();
+    if (!prompt) {
+      setImageStatus("Enter an image prompt first.");
+      return;
+    }
+
+    setImageStatus("Generating image...");
+    const data = await fetchJson<{
+      ok: boolean;
+      unavailable?: boolean;
+      message?: string;
+      imageDataUrl?: string;
+      imageUrl?: string;
+    }>("/api/ai/image", {
+      method: "POST",
+      body: JSON.stringify({ prompt, size: imageSize })
+    });
+
+    const nextImage = data.imageDataUrl || data.imageUrl || "";
+    if (!data.ok || !nextImage) {
+      setImageStatus(data.message || "Image generation unavailable.");
+      return;
+    }
+
+    setLastGeneratedImage(nextImage);
+    setImageStatus("Image ready. Applied to canvas.");
+    setLastAction("image-generate");
+
+    if (selectedPage) {
+      const selectedIsImage = selectedBlock?.type === "image";
+      if (selectedIsImage && selectedBlock) {
+        patchSelectedBlock((b) => ({
+          ...b,
+          data: {
+            ...(b.data as ImageBlockData),
+            src: nextImage,
+            alt: prompt,
+            caption: (b.data as ImageBlockData).caption || "AI generated image"
+          }
+        }));
+      } else {
+        const imgBlock = defaultBlock("image");
+        imgBlock.data = { src: nextImage, alt: prompt, caption: "AI generated image" } as ImageBlockData;
+        patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, imgBlock] });
+        setSelectedBlockId(imgBlock.id);
+      }
+    }
+  }
+
   function duplicateBlock() {
     if (!selectedPage || !selectedBlock) return;
     const copy: Block = { ...selectedBlock, id: `${selectedBlock.id}-copy-${Math.random().toString(36).slice(2, 6)}` };
@@ -534,6 +588,16 @@ export function App() {
     const nav = project.site.nav.filter((_, i) => i !== index);
     setProject({ ...project, site: { ...project.site, nav } });
     setDirty(true);
+  }
+
+  function moveNav(index: number, direction: "up" | "down") {
+    if (!project) return;
+    const to = direction === "up" ? index - 1 : index + 1;
+    if (to < 0 || to >= project.site.nav.length) return;
+    const nav = move(project.site.nav, index, to);
+    setProject({ ...project, site: { ...project.site, nav } });
+    setDirty(true);
+    setLastAction(`nav-move-${direction}`);
   }
 
   function addRecentFont(name: string) {
@@ -795,6 +859,30 @@ export function App() {
               </div>
               <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" />
               <button onClick={() => void chat()}>Send</button>
+
+              <h3>Image Generator</h3>
+              <label>
+                Prompt
+                <textarea
+                  value={imagePrompt}
+                  onChange={(e) => setImagePrompt(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. aerial view of a catfish farm at golden hour"
+                />
+              </label>
+              <label>
+                Size
+                <select value={imageSize} onChange={(e) => setImageSize(e.target.value)}>
+                  <option value="1024x1024">1024 x 1024</option>
+                  <option value="1024x1536">1024 x 1536</option>
+                  <option value="1536x1024">1536 x 1024</option>
+                </select>
+              </label>
+              <button onClick={() => void generateImage()}>Generate Image</button>
+              {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
+              {lastGeneratedImage && (
+                <img src={lastGeneratedImage} alt="Last generated" className="block-image" />
+              )}
             </div>
           )}
 
@@ -811,6 +899,8 @@ export function App() {
                 <div key={item.id} className="nav-edit-row">
                   <input value={item.label} onChange={(e) => updateNav(i, { label: e.target.value })} />
                   <input value={item.href} onChange={(e) => updateNav(i, { href: e.target.value })} />
+                  <button onClick={() => moveNav(i, "up")}>↑</button>
+                  <button onClick={() => moveNav(i, "down")}>↓</button>
                   <button onClick={() => removeNav(i)}>X</button>
                 </div>
               ))}

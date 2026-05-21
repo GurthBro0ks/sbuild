@@ -254,7 +254,7 @@ textarea {
 
 .nav-edit-row {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto auto auto;
   gap: 6px;
   margin-bottom: 6px;
 }
