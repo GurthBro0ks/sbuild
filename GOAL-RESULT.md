@@ -6,7 +6,7 @@ WARN
 ## Repo
 - Path: /opt/slimy/sbuild
 - Branch: main
-- Commit: pending
+- Commit: 6c0c339
 
 ## URLs
 - Local editor/server: http://localhost:3137
