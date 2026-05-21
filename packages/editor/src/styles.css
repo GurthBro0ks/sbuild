@@ -43,6 +43,15 @@ body {
   margin-right: 10px;
 }
 
+.topbar-status {
+  margin-left: auto;
+  font-size: 12px;
+  background: #eef5ff;
+  border: 1px solid #c6d7ff;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
 button {
   border: 1px solid #b6ae9e;
   border-radius: 10px;
@@ -227,6 +236,23 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 4px;
+}
+
+.panel-status {
+  font-size: 12px;
+  color: #314163;
+  background: #f1f5fb;
+  border: 1px solid #d4ddea;
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 6px 0 10px;
+}
+
+.nested-row {
+  border: 1px dashed #d8d2c3;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
 }
 
 .chat-log {

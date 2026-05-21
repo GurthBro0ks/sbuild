@@ -87,3 +87,12 @@ WARN
   - Upload + edit uploaded photo flow with apply-to-selected-block behavior.
 - Proof: `/tmp/proof_sbuild_image_pipeline_20260521T140601Z`
 - Publish remained dry-run only (`SBUILD_ALLOW_PUBLISH` not enabled).
+
+## 2026-05-21 Prototype Shell QA Prep
+
+- Added practical Properties-panel editors for block content fields across core block types.
+- Added temporary debug/status strips in top bar, left panel, canvas, properties, AI, and status panels.
+- Improved save-state visibility and selected-block diagnostics.
+- Smoke script now verifies `/api/project` save/load roundtrip (write marker, verify, restore).
+- Smoke script now enforces publish safety check: dry-run must be true and target must not be live web root.
+- Proof: `/tmp/proof_sbuild_prototype_shell_20260521T141416Z`

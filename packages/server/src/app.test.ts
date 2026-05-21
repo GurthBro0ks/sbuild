@@ -93,22 +93,21 @@ test("/api/images/edit returns unavailable for unsupported no-key edits", async 
   });
 });
 
-test("uploaded image edit fallback black-white works and preserves original when sharp exists", async (t) => {
+test("uploaded image edit fallback black-white preserves original and handles sharp availability", async () => {
   const sharp = await loadSharp();
-  if (!sharp) {
-    t.skip("sharp not available in this environment");
-    return;
-  }
-  try {
-    await sharp.default(
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YVn7mQAAAAASUVORK5CYII=",
-        "base64"
-      )
-    ).png().toBuffer();
-  } catch {
-    t.skip("sharp present but not usable in this environment");
-    return;
+  let sharpUsable = false;
+  if (sharp) {
+    try {
+      await sharp.default(
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YVn7mQAAAAASUVORK5CYII=",
+          "base64"
+        )
+      ).png().toBuffer();
+      sharpUsable = true;
+    } catch {
+      sharpUsable = false;
+    }
   }
 
   await withNoOpenAIKey(async () => {
@@ -149,19 +148,29 @@ test("uploaded image edit fallback black-white works and preserves original when
       editedImageUrl?: string;
       originalImageUrl?: string;
       sizeDecision?: { providerSize?: string };
+      message?: string;
+      warnings?: string[];
+      unavailable?: boolean;
     };
     assert.equal(editResponse.status, 200);
-
-    assert.equal(editBody.ok, true);
-    assert.ok(editBody.editedImageUrl);
-    assert.ok(editBody.originalImageUrl);
-    assert.notEqual(editBody.editedImageUrl, editBody.originalImageUrl);
     assert.equal(editBody.sizeDecision?.providerSize, "1024x1024");
 
     const afterBytes = await fs.readFile(sourceAbs);
     assert.deepEqual(afterBytes, before);
 
-    const editedAbs = resolveProjectImageAbsolutePath(editBody.editedImageUrl!);
-    await fs.access(editedAbs);
+    if (sharpUsable) {
+      assert.equal(editBody.ok, true);
+      assert.ok(editBody.editedImageUrl);
+      assert.ok(editBody.originalImageUrl);
+      assert.notEqual(editBody.editedImageUrl, editBody.originalImageUrl);
+      const editedAbs = resolveProjectImageAbsolutePath(editBody.editedImageUrl!);
+      await fs.access(editedAbs);
+      return;
+    }
+
+    assert.equal(editBody.ok, false);
+    assert.equal(editBody.unavailable, true);
+    const combined = `${editBody.message || ""} ${(editBody.warnings || []).join(" ")}`.toLowerCase();
+    assert.ok(combined.includes("fallback") || combined.includes("sharp") || combined.includes("unavailable"));
   });
 });

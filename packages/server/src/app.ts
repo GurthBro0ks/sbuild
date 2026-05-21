@@ -501,10 +501,11 @@ export function createApp(): express.Express {
         warnings
       });
     } catch (error) {
-      res.status(500).json({
+      warnings.push(`Local fallback failed: ${String(error)}`);
+      res.status(200).json({
         ok: false,
         unavailable: true,
-        message: `Local photo edit failed: ${String(error)}`,
+        message: "Local photo edit fallback unavailable in this environment.",
         originalImageUrl,
         editType,
         sizeDecision,

@@ -200,6 +200,12 @@ function inferAspectRatioHint(block?: Block): string | undefined {
   return undefined;
 }
 
+function withSavedStatusText(status: string, dirty: boolean): string {
+  if (dirty) return "Unsaved changes";
+  if (status.toLowerCase().includes("saved")) return "Saved";
+  return "Idle";
+}
+
 const HeroBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
   const data = block.data as HeroBlockData;
   return (
@@ -454,6 +460,10 @@ export function App() {
       ...selectedPage,
       blocks: updateBlock(selectedPage.blocks, selectedBlock.id, mutator)
     });
+  }
+
+  function patchSelectedBlockData(patch: Record<string, unknown>) {
+    patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), ...patch } }));
   }
 
   function currentTargetContext(): ImageTargetContext {
@@ -866,10 +876,16 @@ export function App() {
         <button onClick={() => void saveProject()}>Save</button>
         <button onClick={() => void runBuild()}>Build</button>
         <button onClick={() => void runPublish()}>Publish</button>
+        <div className="topbar-status">
+          <strong>Status:</strong> {withSavedStatusText(status, dirty)} · {status}
+        </div>
       </header>
 
       <div className="workspace">
         <aside className="left-drawer">
+          <p className="panel-status">
+            <strong>Left panel:</strong> page {selectedPage.title} · blocks {selectedPage.blocks.length}
+          </p>
           <section>
             <h3>Pages</h3>
             {project.pages.map((page) => (
@@ -925,6 +941,9 @@ export function App() {
             <button onClick={() => moveBlock("up")}>Up</button>
             <button onClick={() => moveBlock("down")}>Down</button>
           </div>
+          <p className="panel-status">
+            <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
+          </p>
 
           <div
             className={`canvas-frame ${deviceMode}`}
@@ -987,8 +1006,147 @@ export function App() {
 
           {rightTab === "properties" && selectedBlock && (
             <div className="panel">
+              <h3>Block Fields</h3>
+              <p className="panel-status">
+                <strong>Properties debug:</strong> {selectedBlock.type} · {selectedBlock.id}
+              </p>
+              {selectedBlock.type === "hero" && (
+                <>
+                  <label>Heading <input value={(selectedBlock.data as HeroBlockData).heading || ""} onChange={(e) => patchSelectedBlockData({ heading: e.target.value })} /></label>
+                  <label>Subheading <input value={(selectedBlock.data as HeroBlockData).subheading || ""} onChange={(e) => patchSelectedBlockData({ subheading: e.target.value })} /></label>
+                  <label>CTA Label <input value={(selectedBlock.data as HeroBlockData).ctaLabel || ""} onChange={(e) => patchSelectedBlockData({ ctaLabel: e.target.value })} /></label>
+                  <label>CTA Link <input value={(selectedBlock.data as HeroBlockData).ctaHref || ""} onChange={(e) => patchSelectedBlockData({ ctaHref: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "text" && (
+                <>
+                  <label>Title <input value={(selectedBlock.data as TextBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  <label>Body <textarea rows={4} value={(selectedBlock.data as TextBlockData).body || ""} onChange={(e) => patchSelectedBlockData({ body: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "image" && (
+                <>
+                  <label>Image Path <input value={(selectedBlock.data as ImageBlockData).src || ""} onChange={(e) => patchSelectedBlockData({ src: e.target.value })} /></label>
+                  <label>Alt Text <input value={(selectedBlock.data as ImageBlockData).alt || ""} onChange={(e) => patchSelectedBlockData({ alt: e.target.value })} /></label>
+                  <label>Caption <input value={(selectedBlock.data as ImageBlockData).caption || ""} onChange={(e) => patchSelectedBlockData({ caption: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "cards" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as CardsBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as CardsBlockData).cards.map((card, i) => (
+                    <div key={card.id} className="nested-row">
+                      <label>Card {i + 1} Title <input value={card.title} onChange={(e) => {
+                        const cards = [...(selectedBlock.data as CardsBlockData).cards];
+                        cards[i] = { ...cards[i], title: e.target.value };
+                        patchSelectedBlockData({ cards });
+                      }} /></label>
+                      <label>Card {i + 1} Body <input value={card.body} onChange={(e) => {
+                        const cards = [...(selectedBlock.data as CardsBlockData).cards];
+                        cards[i] = { ...cards[i], body: e.target.value };
+                        patchSelectedBlockData({ cards });
+                      }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "hours" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as HoursBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as HoursBlockData).rows.map((row, i) => (
+                    <div key={`${row.day}-${i}`} className="nested-row">
+                      <label>Day <input value={row.day} onChange={(e) => {
+                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
+                        rows[i] = { ...rows[i], day: e.target.value };
+                        patchSelectedBlockData({ rows });
+                      }} /></label>
+                      <label>Open <input value={row.open} onChange={(e) => {
+                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
+                        rows[i] = { ...rows[i], open: e.target.value };
+                        patchSelectedBlockData({ rows });
+                      }} /></label>
+                      <label>Close <input value={row.close} onChange={(e) => {
+                        const rows = [...(selectedBlock.data as HoursBlockData).rows];
+                        rows[i] = { ...rows[i], close: e.target.value };
+                        patchSelectedBlockData({ rows });
+                      }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "gallery" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as GalleryBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as GalleryBlockData).images.map((img, i) => (
+                    <div key={img.id} className="nested-row">
+                      <label>Image {i + 1} Path <input value={img.src || ""} onChange={(e) => {
+                        const images = [...(selectedBlock.data as GalleryBlockData).images];
+                        images[i] = { ...images[i], src: e.target.value };
+                        patchSelectedBlockData({ images });
+                      }} /></label>
+                      <label>Image {i + 1} Alt <input value={img.alt || ""} onChange={(e) => {
+                        const images = [...(selectedBlock.data as GalleryBlockData).images];
+                        images[i] = { ...images[i], alt: e.target.value };
+                        patchSelectedBlockData({ images });
+                      }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "contact" && (
+                <>
+                  <label>Title <input value={(selectedBlock.data as ContactBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  <label>Phone <input value={(selectedBlock.data as ContactBlockData).phone || ""} onChange={(e) => patchSelectedBlockData({ phone: e.target.value })} /></label>
+                  <label>Email <input value={(selectedBlock.data as ContactBlockData).email || ""} onChange={(e) => patchSelectedBlockData({ email: e.target.value })} /></label>
+                  <label>Address <input value={(selectedBlock.data as ContactBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "testimonial" && (
+                <>
+                  <label>Quote <textarea rows={3} value={(selectedBlock.data as TestimonialBlockData).quote || ""} onChange={(e) => patchSelectedBlockData({ quote: e.target.value })} /></label>
+                  <label>Author <input value={(selectedBlock.data as TestimonialBlockData).author || ""} onChange={(e) => patchSelectedBlockData({ author: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "map" && (
+                <>
+                  <label>Address <input value={(selectedBlock.data as MapBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
+                  <label>Embed URL <input value={(selectedBlock.data as MapBlockData).embedUrl || ""} onChange={(e) => patchSelectedBlockData({ embedUrl: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "marquee" && (
+                <label>Marquee Text <input value={(selectedBlock.data as MarqueeBlockData).text || ""} onChange={(e) => patchSelectedBlockData({ text: e.target.value })} /></label>
+              )}
+              {selectedBlock.type === "spacer" && (
+                <label>Spacer Height <input type="number" value={(selectedBlock.data as SpacerBlockData).height || 36} onChange={(e) => patchSelectedBlockData({ height: Number(e.target.value) })} /></label>
+              )}
+              {selectedBlock.type === "divider" && (
+                <label>Divider Style
+                  <select value={(selectedBlock.data as DividerBlockData).style || "solid"} onChange={(e) => patchSelectedBlockData({ style: e.target.value as "solid" | "dashed" })}>
+                    <option value="solid">solid</option>
+                    <option value="dashed">dashed</option>
+                  </select>
+                </label>
+              )}
+              {selectedBlock.type === "html" && (
+                <label>HTML <textarea rows={6} value={(selectedBlock.data as HtmlBlockData).html || ""} onChange={(e) => patchSelectedBlockData({ html: e.target.value })} /></label>
+              )}
+
               <h3>Block Styles</h3>
               <label>Background <input type="color" value={selectedBlock.styles?.backgroundColor || "#ffffff"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: e.target.value } }))} /></label>
+              <label>Background Image URL
+                <input
+                  value={selectedBlock.styles?.backgroundImage || ""}
+                  onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: e.target.value } }))}
+                  placeholder="/project/images/example.png"
+                />
+              </label>
+              <label>Background Fit
+                <select value={selectedBlock.styles?.backgroundSize || "cover"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundSize: e.target.value as "cover" | "contain" | "fill" } }))}>
+                  <option value="cover">cover</option>
+                  <option value="contain">contain</option>
+                  <option value="fill">fill</option>
+                </select>
+              </label>
               <label>Text Color <input type="color" value={selectedBlock.styles?.textColor || "#222222"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textColor: e.target.value } }))} /></label>
               <label>Font Family
                 <input
@@ -1040,6 +1198,9 @@ export function App() {
           {rightTab === "ai" && (
             <div className="panel">
               <h3>AI Chat</h3>
+              <p className="panel-status">
+                <strong>AI panel:</strong> block {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"}
+              </p>
               <div className="quick-actions">
                 <button onClick={() => void quickRewrite("rewrite")}>Rewrite</button>
                 <button onClick={() => void quickRewrite("shorten")}>Shorten</button>
@@ -1142,8 +1303,12 @@ export function App() {
           {rightTab === "status" && (
             <div className="panel">
               <h3>Status</h3>
+              <p className="panel-status">
+                <strong>Status panel:</strong> save state {withSavedStatusText(status, dirty)}
+              </p>
               <p><strong>API:</strong> {status}</p>
               <p><strong>Selected Block:</strong> {selectedBlock?.id || "none"}</p>
+              <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
               <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
               <p><strong>Last action:</strong> {lastAction}</p>
 
