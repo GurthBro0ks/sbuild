@@ -96,3 +96,11 @@ WARN
 - Smoke script now verifies `/api/project` save/load roundtrip (write marker, verify, restore).
 - Smoke script now enforces publish safety check: dry-run must be true and target must not be live web root.
 - Proof: `/tmp/proof_sbuild_prototype_shell_20260521T141416Z`
+
+## 2026-05-21 Editor Root Route Fix
+
+- Fixed local browser root route so `http://127.0.0.1:3137/` serves the built editor UI.
+- Removed `NODE_ENV=production` dependency for editor static serving.
+- Added SPA fallback for non-API routes and explicit JSON 404 handling for unknown `/api/*` routes.
+- Added clearer `/health` status fields: `editorDistExists`, `publishAllowed`, and path metadata.
+- Added startup logging for editor dist path, index existence, port, and publish mode.

@@ -2,6 +2,8 @@ import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { AddressInfo } from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
 
@@ -24,6 +26,19 @@ before(async () => {
 after(async () => {
   if (closeServer) await closeServer();
 });
+
+async function startTempServer(editorDistPath: string): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const app = createApp({ editorDistPath });
+  const server = app.listen(0);
+  await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+  const addr = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${addr.port}`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  };
+}
 
 async function withNoOpenAIKey<T>(fn: () => Promise<T>): Promise<T> {
   const oldA = process.env.SBUILD_OPENAI_API_KEY;
@@ -62,6 +77,68 @@ test("/api/ai/image no-key safe response includes sizeDecision", async () => {
     assert.equal(body.sizeDecision?.providerSize, "1536x1024");
     assert.ok(Array.isArray(body.warnings));
   });
+});
+
+test("root route returns HTML when editor dist exists", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sbuild-editor-dist-"));
+  await fs.mkdir(path.join(tempDir, "assets"), { recursive: true });
+  await fs.writeFile(path.join(tempDir, "index.html"), "<!doctype html><html><body><div id='root'>sbuild-test-root</div></body></html>", "utf8");
+  await fs.writeFile(path.join(tempDir, "assets", "test.js"), "console.log('asset-ok')", "utf8");
+
+  const server = await startTempServer(tempDir);
+  try {
+    const rootResponse = await fetch(`${server.baseUrl}/`);
+    const rootHtml = await rootResponse.text();
+    assert.equal(rootResponse.status, 200);
+    assert.ok(rootHtml.includes("sbuild-test-root"));
+
+    const assetResponse = await fetch(`${server.baseUrl}/assets/test.js`);
+    const assetText = await assetResponse.text();
+    assert.equal(assetResponse.status, 200);
+    assert.ok(assetText.includes("asset-ok"));
+
+    const spaResponse = await fetch(`${server.baseUrl}/some/editor/path`);
+    const spaHtml = await spaResponse.text();
+    assert.equal(spaResponse.status, 200);
+    assert.ok(spaHtml.includes("sbuild-test-root"));
+  } finally {
+    await server.close();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("/api/unknown does not return editor HTML", async () => {
+  const response = await fetch(`${baseUrl}/api/this-route-does-not-exist`);
+  const body = await response.json() as { ok: boolean; error?: string };
+  assert.equal(response.status, 404);
+  assert.equal(body.ok, false);
+  assert.ok(String(body.error || "").toLowerCase().includes("api route"));
+});
+
+test("missing editor dist returns clear message and health reports false", async () => {
+  const missingPath = path.join(os.tmpdir(), `sbuild-missing-dist-${Date.now()}`);
+  const server = await startTempServer(missingPath);
+  try {
+    const rootResponse = await fetch(`${server.baseUrl}/`);
+    const rootText = await rootResponse.text();
+    assert.equal(rootResponse.status, 503);
+    assert.ok(rootText.includes("pnpm -r build"));
+
+    const healthResponse = await fetch(`${server.baseUrl}/health`);
+    const healthBody = await healthResponse.json() as { editorDistExists?: boolean };
+    assert.equal(healthResponse.status, 200);
+    assert.equal(healthBody.editorDistExists, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("/api/project remains available with editor static serving", async () => {
+  const response = await fetch(`${baseUrl}/api/project`);
+  const body = await response.json() as { ok: boolean; project?: unknown };
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.ok(Boolean(body.project));
 });
 
 test("/api/images/edit returns unavailable for unsupported no-key edits", async () => {

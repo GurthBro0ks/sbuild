@@ -145,14 +145,63 @@ function inferPromptForEdit(editType: string, instruction: string, decision: Ima
   }
 }
 
-export function createApp(): express.Express {
+function isApiPath(pathname: string): boolean {
+  return pathname === "/api" || pathname.startsWith("/api/");
+}
+
+async function sendEditorFallback(
+  res: express.Response,
+  editorIndexPath: string,
+  editorRootPath: string
+): Promise<void> {
+  try {
+    await fs.access(editorIndexPath);
+    res.type("html");
+    createReadStream(editorIndexPath).pipe(res);
+  } catch {
+    res.status(503).type("html").send(
+      [
+        "<!doctype html>",
+        "<html><body>",
+        "<h1>sBuild editor build is missing</h1>",
+        `<p>Expected: <code>${editorRootPath}</code></p>`,
+        "<p>Run <code>cd /opt/slimy/sbuild && pnpm -r build</code> then restart the server.</p>",
+        "</body></html>"
+      ].join("")
+    );
+  }
+}
+
+export function createApp(options?: { editorDistPath?: string }): express.Express {
   const app = express();
+  const resolvedEditorDistPath = options?.editorDistPath || editorDistDir;
+  const editorIndexPath = path.join(resolvedEditorDistPath, "index.html");
+  const editorAssetsPath = path.join(resolvedEditorDistPath, "assets");
   app.use(cors());
   app.use(express.json({ limit: "4mb" }));
   app.use("/project/images", express.static(projectImagesDir));
 
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true, app: "sbuild", version: "0.1.0" });
+  app.get("/health", async (_req, res) => {
+    const publishAllowed = process.env.SBUILD_ALLOW_PUBLISH === "1";
+    let editorDistExists = false;
+    try {
+      await fs.access(editorIndexPath);
+      editorDistExists = true;
+    } catch {
+      editorDistExists = false;
+    }
+    res.json({
+      ok: true,
+      app: "sbuild",
+      version: "0.1.0",
+      editorDistExists,
+      publishAllowed,
+      paths: {
+        editorDistPath: resolvedEditorDistPath,
+        editorIndexPath,
+        projectPath: projectFile
+      }
+    });
   });
 
   app.get("/api/project", async (_req, res) => {
@@ -599,6 +648,13 @@ export function createApp(): express.Express {
 
   app.get("/api/status", async (_req, res) => {
     const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    let editorDistExists = false;
+    try {
+      await fs.access(editorIndexPath);
+      editorDistExists = true;
+    } catch {
+      editorDistExists = false;
+    }
     res.json({
       ok: true,
       status: {
@@ -606,28 +662,32 @@ export function createApp(): express.Express {
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",
         imagePipeline: imagePipelineSourceMarker(),
         projectPath: projectFile,
-        distPath: distDir
+        distPath: distDir,
+        editorDistPath: resolvedEditorDistPath,
+        editorDistExists
       }
     });
   });
 
-  if (process.env.NODE_ENV === "production") {
-    app.use(express.static(editorDistDir));
-    app.get("*", async (req, res, next) => {
-      if (req.path.startsWith("/api/") || req.path.startsWith("/project/images")) {
-        next();
-        return;
-      }
-      try {
-        const indexPath = path.join(editorDistDir, "index.html");
-        await fs.access(indexPath);
-        res.type("html");
-        createReadStream(indexPath).pipe(res);
-      } catch {
-        next();
-      }
-    });
-  }
+  // Serve built editor assets for local prototype usage.
+  app.use("/assets", express.static(editorAssetsPath));
+  app.use(express.static(resolvedEditorDistPath, { index: false }));
+
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ ok: false, error: "API route not found" });
+  });
+
+  app.get("*", async (req, res) => {
+    if (isApiPath(req.path)) {
+      res.status(404).json({ ok: false, error: "API route not found" });
+      return;
+    }
+    if (req.path.startsWith("/project/images")) {
+      res.status(404).type("text/plain").send("Image asset not found");
+      return;
+    }
+    await sendEditorFallback(res, editorIndexPath, resolvedEditorDistPath);
+  });
 
   return app;
 }

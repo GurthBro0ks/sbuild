@@ -5,9 +5,19 @@ sBuild is a local-first website builder prototype with a React editor, Express A
 ## Quick Start
 
 ```bash
+cd /opt/slimy/sbuild
 pnpm install
 pnpm -r build
 PORT=3137 node packages/server/dist/index.js
+```
+
+Open: `http://127.0.0.1:3137/`
+
+Optional helper:
+
+```bash
+cd /opt/slimy/sbuild
+bash scripts/run-local-sbuild.sh
 ```
 
 Editor dev mode:
@@ -18,8 +28,9 @@ pnpm --filter @sbuild/editor dev
 
 ## URLs
 
-- Server/health: `http://localhost:3137/health`
-- Project API: `http://localhost:3137/api/project`
+- Local editor root: `http://127.0.0.1:3137/`
+- Server/health: `http://127.0.0.1:3137/health`
+- Project API: `http://127.0.0.1:3137/api/project`
 - Editor dev: `http://localhost:5177`
 
 ## Commands
