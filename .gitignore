@@ -10,3 +10,6 @@ project/images/*
 !project/images/.gitkeep
 proof/
 .last-proof-dir
+
+packages/editor/dist-ts
+project/backups
