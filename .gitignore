@@ -1,0 +1,12 @@
+node_modules
+.pnpm-store
+.DS_Store
+*.log
+dist
+published-preview
+packages/*/dist
+packages/editor/.vite
+project/images/*
+!project/images/.gitkeep
+proof/
+.last-proof-dir

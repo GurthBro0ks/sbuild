@@ -1,0 +1,25 @@
+{
+  "name": "@sbuild/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "sbuild": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"cli lint ok\"",
+    "test": "echo \"cli test ok\""
+  },
+  "dependencies": {
+    "@sbuild/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "sbuild",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.18.3",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sbuild/server --filter @sbuild/editor dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "smoke": "bash scripts/smoke-sbuild.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

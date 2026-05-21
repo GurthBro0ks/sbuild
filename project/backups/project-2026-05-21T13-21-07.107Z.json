@@ -1,0 +1,199 @@
+{
+  "version": "2",
+  "updatedAt": "2026-05-21T13:21:07.036Z",
+  "site": {
+    "siteName": "Test Farm",
+    "domain": "",
+    "title": "Test Farm | Farm",
+    "description": "Local produce",
+    "nav": [
+      {
+        "id": "nav-home",
+        "label": "Home",
+        "href": "/"
+      },
+      {
+        "id": "nav-services",
+        "label": "Services",
+        "href": "/#services"
+      },
+      {
+        "id": "nav-contact",
+        "label": "Contact",
+        "href": "/#contact"
+      }
+    ]
+  },
+  "globalStyles": {
+    "headingFont": "Poppins",
+    "bodyFont": "Lato",
+    "colors": {
+      "bg": "#f7f4ed",
+      "surface": "#ffffff",
+      "text": "#1c1f23",
+      "accent": "#2471a3",
+      "muted": "#6b7280"
+    }
+  },
+  "ai": {
+    "provider": "mock",
+    "model": "prototype"
+  },
+  "deploy": {
+    "method": "dry-run",
+    "webRoot": "/var/www/blackfishfarms.com",
+    "githubRepo": ""
+  },
+  "pages": [
+    {
+      "id": "page-home",
+      "slug": "/",
+      "title": "Home",
+      "blocks": [
+        {
+          "id": "hero-1",
+          "type": "hero",
+          "styles": {
+            "padding": 40,
+            "textAlign": "center",
+            "effects": [
+              "fade-in"
+            ],
+            "fontSize": 42
+          },
+          "data": {
+            "heading": "Black Fish Farms",
+            "subheading": "Small batch produce, flowers, and seasonal farm goods.",
+            "ctaLabel": "See This Week's Harvest",
+            "ctaHref": "#contact"
+          }
+        },
+        {
+          "id": "cards-1",
+          "type": "cards",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "title": "What We Grow",
+            "cards": [
+              {
+                "id": "card-1",
+                "title": "Seasonal Vegetables",
+                "body": "Fresh weekly baskets from spring to fall."
+              },
+              {
+                "id": "card-2",
+                "title": "Herbs & Greens",
+                "body": "Specialty greens and chef bundles."
+              },
+              {
+                "id": "card-3",
+                "title": "Farm Flowers",
+                "body": "Bouquets and stems for events."
+              }
+            ]
+          }
+        },
+        {
+          "id": "text-about",
+          "type": "text",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "title": "About",
+            "body": "We're a local farm focused on soil health, reliable quality, and friendly pickup windows."
+          }
+        },
+        {
+          "id": "hours-1",
+          "type": "hours",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "title": "Pickup Hours",
+            "rows": [
+              {
+                "day": "Monday",
+                "open": "08:00",
+                "close": "16:00"
+              },
+              {
+                "day": "Wednesday",
+                "open": "08:00",
+                "close": "18:00"
+              },
+              {
+                "day": "Saturday",
+                "open": "09:00",
+                "close": "13:00"
+              }
+            ]
+          }
+        },
+        {
+          "id": "contact-1",
+          "type": "contact",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "title": "Contact",
+            "phone": "(555) 010-0199",
+            "email": "hello@blackfishfarms.com",
+            "address": "100 Orchard Lane, Harvest Valley"
+          }
+        },
+        {
+          "id": "gallery-1",
+          "type": "gallery",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "title": "Farm Gallery",
+            "images": [
+              {
+                "id": "g-1",
+                "src": "",
+                "alt": "Rows of greens"
+              },
+              {
+                "id": "g-2",
+                "src": "",
+                "alt": "Fresh harvest crates"
+              }
+            ]
+          }
+        },
+        {
+          "id": "testimonial-1",
+          "type": "testimonial",
+          "styles": {
+            "padding": 20,
+            "effects": [
+              "glow"
+            ]
+          },
+          "data": {
+            "quote": "Best produce in the county. You can taste the difference.",
+            "author": "Neighborhood Co-op"
+          }
+        },
+        {
+          "id": "map-1",
+          "type": "map",
+          "styles": {
+            "padding": 20
+          },
+          "data": {
+            "address": "100 Orchard Lane, Harvest Valley",
+            "embedUrl": ""
+          }
+        }
+      ]
+    }
+  ]
+}
