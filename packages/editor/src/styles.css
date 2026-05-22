@@ -95,6 +95,15 @@ body {
   color: #1f2a24;
 }
 
+/* Catch-all for headings and paragraphs inside editor chrome */
+.left-drawer h1, .left-drawer h2, .left-drawer h3, .left-drawer h4, .left-drawer p,
+.right-drawer h1, .right-drawer h2, .right-drawer h3, .right-drawer h4, .right-drawer p,
+.modal h1, .modal h2, .modal h3, .modal h4, .modal p,
+.settings-modal h1, .settings-modal h2, .settings-modal h3, .settings-modal h4, .settings-modal p,
+.image-manager-panel h3, .image-manager-panel h4, .image-manager-panel p {
+  color: #1f2a24 !important;
+}
+
 /* Ensure buttons in editor chrome stay readable */
 .topbar button,
 .left-drawer button,
@@ -260,6 +269,40 @@ button.selected {
   min-width: 0;
 }
 
+.preset-description {
+  font-size: 11px;
+  color: var(--sbuild-muted);
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-style: italic;
+}
+
+/* Terminal scanline animation */
+@keyframes terminalScan {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 4px; }
+}
+
+.block-shell [data-background-style="terminal"] {
+  position: relative;
+}
+
+.block-shell [data-background-style="terminal"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(51, 255, 51, 0.03) 2px,
+    rgba(51, 255, 51, 0.03) 4px
+  );
+  pointer-events: none;
+  animation: terminalScan 0.5s linear infinite;
+  border-radius: inherit;
+}
+
 .color-swatch {
   width: 24px;
   height: 24px;
@@ -366,6 +409,31 @@ button.selected {
   height: 80px;
   object-fit: cover;
   display: block;
+}
+
+.image-card .image-fallback {
+  width: 100%;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--sbuild-surface-2) 60%, transparent);
+  gap: 4px;
+}
+
+.image-fallback-icon {
+  font-size: 20px;
+  opacity: 0.6;
+}
+
+.image-fallback-name {
+  font-size: 10px;
+  color: var(--sbuild-muted);
+  padding: 0 4px;
+  text-align: center;
+  word-break: break-all;
+  max-width: 100%;
 }
 
 .image-meta {

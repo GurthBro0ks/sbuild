@@ -18,18 +18,18 @@ import {
 } from "@sbuild/shared";
 import { execSync } from "node:child_process";
 
-function safeGitCommand(cmd: string): string | null {
+function safeGitCommand(cmd: string, cwd?: string): string | null {
   try {
-    return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+    return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], cwd }).trim();
   } catch {
     return null;
   }
 }
 
 function getBuildInfo(): SBuildBuildInfo {
-  const commit = safeGitCommand("git rev-parse --short HEAD") || "unknown";
-  const branch = safeGitCommand("git rev-parse --abbrev-ref HEAD") || "unknown";
-  const dirtyStr = safeGitCommand("git status --short") || "";
+  const commit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || "unknown";
+  const branch = safeGitCommand("git rev-parse --abbrev-ref HEAD", repoRoot) || "unknown";
+  const dirtyStr = safeGitCommand("git status --porcelain", repoRoot) || "";
   const buildDate = new Date().toISOString();
   return {
     version: SBUILD_VERSION,
@@ -51,6 +51,7 @@ import {
   projectFile,
   projectImagesDir,
   publishedPreviewDir,
+  repoRoot,
   secretsFile
 } from "./lib/paths.js";
 import {
@@ -69,7 +70,16 @@ import {
 import { loadProject, saveProject, validateProjectShape } from "./lib/projectStore.js";
 import { generateSite } from "./generator/generateSite.js";
 
-const upload = multer({ dest: projectImagesDir });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, projectImagesDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".bin";
+      const base = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      cb(null, `${base}${ext}`);
+    }
+  })
+});
 const validProviderSizes: OpenAIImageSize[] = ["1024x1024", "1024x1536", "1536x1024"];
 const localSharpEditTypes = new Set(["enhance", "black-white", "crop-fit", "color-pop"]);
 
@@ -138,17 +148,29 @@ function imageGenerationPrompt(input: {
   return extras.length ? `${input.prompt}\n\n${extras.join("\n")}` : input.prompt;
 }
 
-async function listImagesRecursive(baseDir: string, current = ""): Promise<string[]> {
+export type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
+
+async function listImagesRecursive(baseDir: string, current = ""): Promise<ImageMeta[]> {
   const absolute = path.join(baseDir, current);
   const entries = await fs.readdir(absolute, { withFileTypes: true });
-  const out: string[] = [];
+  const out: ImageMeta[] = [];
   for (const entry of entries) {
     const next = path.join(current, entry.name);
     if (entry.isDirectory()) {
       out.push(...(await listImagesRecursive(baseDir, next)));
       continue;
     }
-    out.push(`/project/images/${next.replace(/\\/g, "/")}`);
+    const filePath = path.join(absolute, entry.name);
+    const stat = await fs.stat(filePath);
+    const urlPath = `/project/images/${next.replace(/\\/g, "/")}`;
+    out.push({
+      name: entry.name,
+      url: urlPath,
+      folder: current.replace(/\\/g, "/") || "root",
+      size: stat.size,
+      modified: stat.mtime.toISOString(),
+      isEdited: current.replace(/\\/g, "/").startsWith("edited")
+    });
   }
   return out;
 }
@@ -274,17 +296,8 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     try {
       await fs.mkdir(projectImagesDir, { recursive: true });
       const images = await listImagesRecursive(projectImagesDir);
-      // Also include edited images if the directory exists
-      let editedImages: string[] = [];
-      try {
-        const editedDir = path.join(projectImagesDir, "edited");
-        await fs.access(editedDir);
-        editedImages = await listImagesRecursive(editedDir);
-      } catch {
-        // edited dir may not exist yet
-      }
-      const allImages = [...images, ...editedImages].sort();
-      res.json({ ok: true, images: allImages, count: allImages.length });
+      images.sort((a, b) => a.name.localeCompare(b.name));
+      res.json({ ok: true, images, count: images.length });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }

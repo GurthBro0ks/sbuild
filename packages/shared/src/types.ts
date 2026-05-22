@@ -62,6 +62,9 @@ export interface PartStyle {
   shadowStyle?: ShadowStylePreset;
   textEffect?: TextEffectPreset;
   buttonStyle?: ButtonStylePreset;
+  gradientType?: "linear" | "radial" | "conic";
+  gradientColors?: string[];
+  gradientDirection?: string;
 }
 
 export interface BlockPartStyles {

@@ -47,6 +47,7 @@ type PaintPoint = { x: number; y: number };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
+type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
 
 const BLOCK_TYPES: BlockType[] = [
   "hero", "text", "image", "cards", "hours", "gallery", "contact",
@@ -81,14 +82,14 @@ const themePresets = [
   { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60", pageBackground: "#ffe8db", canvasBackground: "#fff1e8", navBackground: "#fff7ef", blockBackground: "#fffaf4", blockAltBackground: "#fff2e6", cardBackground: "#fff0e1", cardAltBackground: "#fff8ef", headingColor: "#4a2c25", bodyTextColor: "#543931", mutedTextColor: "#8b6b60", accentColor: "#cc5f2f", buttonBackground: "#cc5f2f", buttonTextColor: "#fff2e7", borderColor: "#e6c2ae", shadowColor: "rgba(87,51,39,.2)", linkColor: "#c15323" }, headingFont: "Playfair Display", bodyFont: "Lato", isDark: false }
 ];
 
-const BACKGROUND_STYLE_PRESETS: Record<string, { label: string; css: Partial<Record<string, string>> }> = {
-  clean: { label: "Clean", css: {} },
-  glass: { label: "Glass", css: { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" } },
-  neon: { label: "Neon glow", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
-  soft: { label: "Soft card", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
-  bold: { label: "Bold panel", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
-  terminal: { label: "Terminal", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
-  "image-overlay": { label: "Image overlay", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
+const BACKGROUND_STYLE_PRESETS: Record<string, { label: string; description: string; css: Partial<Record<string, string>> }> = {
+  clean: { label: "Clean", description: "No effects. Flat background.", css: {} },
+  glass: { label: "Glass", description: "Frosted glass with subtle border.", css: { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" } },
+  neon: { label: "Neon glow", description: "Glowing edge and inset shadow.", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
+  soft: { label: "Soft card", description: "Rounded corners with soft shadow.", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
+  bold: { label: "Bold panel", description: "Strong shadow with accent border.", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
+  terminal: { label: "Terminal", description: "Retro terminal with scanline glow.", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
+  "image-overlay": { label: "Image overlay", description: "Dark gradient for text over images.", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
 };
 
 const BORDER_STYLE_PRESETS: Record<string, { label: string; borderWidth: number; borderColor?: string; borderStyle?: string }> = {
@@ -612,9 +613,10 @@ export function App() {
   const [imageStatus, setImageStatus] = useState("");
   const [lastGeneratedImage, setLastGeneratedImage] = useState<string>("");
   const [imageSizeDecision, setImageSizeDecision] = useState<ImageSizeDecision | null>(null);
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<ImageMeta[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [selectedUploadImage, setSelectedUploadImage] = useState("");
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
   const [photoEditType, setPhotoEditType] = useState("enhance");
   const [photoEditInstruction, setPhotoEditInstruction] = useState("");
   const [photoEditStatus, setPhotoEditStatus] = useState("");
@@ -696,42 +698,66 @@ export function App() {
   };
 
   // Gradient helpers
-  function parseGradient(grad: string | undefined): { color1: string; color2: string; direction: string; isRadial: boolean } {
-    if (!grad || !grad.includes("gradient")) {
-      return { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false };
+  function readGradientFromPart(part?: PartStyle): { colors: string[]; direction: string; type: "linear" | "radial" | "conic" } {
+    // Prefer structured fields for reliable persistence
+    if (part?.gradientType && part.gradientColors && part.gradientColors.length >= 2) {
+      return {
+        colors: part.gradientColors,
+        direction: part.gradientDirection || "135deg",
+        type: part.gradientType
+      };
     }
-    const radial = grad.includes("radial-gradient");
+    // Fallback: parse CSS string
+    const grad = part?.backgroundColor || "";
+    if (!grad.includes("gradient")) {
+      return { colors: ["#ff6b6b", "#feca57"], direction: "135deg", type: "linear" };
+    }
+    const type: "linear" | "radial" | "conic" = grad.includes("conic-gradient") ? "conic" : grad.includes("radial-gradient") ? "radial" : "linear";
     const dirMatch = grad.match(/gradient\(([^,]+),/);
     const direction = dirMatch ? dirMatch[1].trim() : "135deg";
     const colors = grad.match(/#[0-9a-fA-F]{3,8}|rgb\([^)]+\)|rgba\([^)]+\)/g) || ["#ff6b6b", "#feca57"];
-    return {
-      color1: colors[0] || "#ff6b6b",
-      color2: colors[1] || "#feca57",
-      direction,
-      isRadial: radial
-    };
+    return { colors, direction, type };
   }
 
-  function buildGradient(color1: string, color2: string, direction: string, isRadial: boolean): string {
-    if (isRadial) {
-      return `radial-gradient(${direction}, ${color1}, ${color2})`;
-    }
-    return `linear-gradient(${direction}, ${color1}, ${color2})`;
+  function buildGradientCss(colors: string[], direction: string, type: "linear" | "radial" | "conic"): string {
+    const c = colors.join(", ");
+    if (type === "radial") return `radial-gradient(${direction}, ${c})`;
+    if (type === "conic") return `conic-gradient(from ${direction}, ${c})`;
+    return `linear-gradient(${direction}, ${c})`;
   }
 
-  const GRADIENT_PRESETS: Record<string, { color1: string; color2: string; direction: string; isRadial: boolean }> = {
-    Sunset: { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false },
-    Forest: { color1: "#1dd1a1", color2: "#10ac84", direction: "135deg", isRadial: false },
-    Ocean: { color1: "#48dbfb", color2: "#0abde3", direction: "135deg", isRadial: false },
-    Neon: { color1: "#ff9ff3", color2: "#f368e0", direction: "135deg", isRadial: false },
-    "Soft light": { color1: "#feca57", color2: "#ff9ff3", direction: "135deg", isRadial: false },
-    Custom: { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false }
+  function applyGradientToPart(colors: string[], direction: string, type: "linear" | "radial" | "conic") {
+    const css = buildGradientCss(colors, direction, type);
+    updateSelectedPartStyle({
+      backgroundColor: css,
+      backgroundImage: undefined,
+      gradientType: type,
+      gradientColors: colors,
+      gradientDirection: direction
+    });
+  }
+
+  const GRADIENT_PRESETS: Record<string, { colors: string[]; direction: string; type: "linear" | "radial" | "conic" }> = {
+    Sunset: { colors: ["#ff6b6b", "#feca57"], direction: "135deg", type: "linear" },
+    Forest: { colors: ["#1dd1a1", "#10ac84"], direction: "135deg", type: "linear" },
+    Ocean: { colors: ["#48dbfb", "#0abde3"], direction: "135deg", type: "linear" },
+    Neon: { colors: ["#ff9ff3", "#f368e0", "#00d2ff"], direction: "135deg", type: "linear" },
+    Candy: { colors: ["#ff6b6b", "#feca57", "#48dbfb"], direction: "90deg", type: "linear" },
+    Fire: { colors: ["#ff4d4d", "#ff9f43", "#feca57"], direction: "180deg", type: "linear" },
+    Steel: { colors: ["#636e72", "#b2bec3", "#dfe6e9"], direction: "135deg", type: "linear" },
+    "Soft light": { colors: ["#feca57", "#ff9ff3"], direction: "135deg", type: "linear" },
+    Custom: { colors: ["#ff6b6b", "#feca57"], direction: "135deg", type: "linear" }
   };
+
   const GRADIENT_DIRECTIONS: Record<string, string> = {
     "Top → Bottom": "180deg",
+    "Bottom → Top": "0deg",
     "Left → Right": "90deg",
-    "Diagonal": "135deg",
-    "Radial": "circle"
+    "Right → Left": "270deg",
+    "Diagonal ↘": "135deg",
+    "Diagonal ↗": "45deg",
+    "Radial center": "circle",
+    "Radial corner": "circle at top left"
   };
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
@@ -885,10 +911,10 @@ export function App() {
 
   async function loadImages() {
     try {
-      const data = await fetchJson<{ ok: boolean; images: string[] }>("/api/images");
+      const data = await fetchJson<{ ok: boolean; images: ImageMeta[] }>("/api/images");
       const next = data.images || [];
       setUploadedImages(next);
-      if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0]);
+      if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0].url);
     } catch { setUploadedImages([]); }
   }
 
@@ -1056,6 +1082,23 @@ export function App() {
     if (data.ok) { setDirty(false); setStatus("Saved"); setLastAction("save"); }
   }
 
+  async function revertProject() {
+    setStatus("Reverting to last save...");
+    try {
+      const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/project");
+      if (data.ok && data.project) {
+        setProject(data.project);
+        setDirty(false);
+        setStatus("Reverted to last save");
+        setLastAction("revert");
+      } else {
+        setStatus("Revert failed: no saved project found");
+      }
+    } catch {
+      setStatus("Revert failed: could not load project");
+    }
+  }
+
   async function runBuild() {
     setStatus("Building static site...");
     const data = await fetchJson<{ ok: boolean; result?: { outputDir: string } }>("/api/build", { method: "POST", body: "{}" });
@@ -1130,17 +1173,19 @@ export function App() {
     applyImageToSelectedBlock(nextImage, prompt);
   }
 
-  async function applyPhotoEdit() {
+  async function applyPhotoEdit(overrides?: { editType?: string; instruction?: string }) {
     if (!selectedUploadImage) { setPhotoEditStatus("Select an uploaded image first."); return; }
+    const type = overrides?.editType ?? photoEditType;
+    const instruction = overrides?.instruction ?? photoEditInstruction;
     const targetContext = currentTargetContext();
     const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; error?: string; editedImageUrl?: string; originalImageUrl?: string; sizeDecision?: ImageSizeDecision; warnings?: string[] }>("/api/images/edit", {
       method: "POST",
-      body: JSON.stringify({ imagePath: selectedUploadImage, instruction: photoEditInstruction, editType: photoEditType, targetContext })
+      body: JSON.stringify({ imagePath: selectedUploadImage, instruction, editType: type, targetContext })
     });
     if (data.sizeDecision) setImageSizeDecision(data.sizeDecision);
     if (!data.ok || !data.editedImageUrl) { setPhotoEditStatus(data.message || data.error || "Photo edit unavailable."); return; }
     setLastEditedImage(data.editedImageUrl);
-    applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${photoEditType})`);
+    applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${type})`);
     await loadImages();
     setPhotoEditStatus(`Edited photo ready. ${(data.warnings || []).join(" ")}`.trim());
     setLastAction("photo-edit");
@@ -1525,9 +1570,11 @@ export function App() {
         <div className="logo">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
         <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
+        <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
         <button onClick={() => setRightTab("ai")}>AI</button>
         <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
         <button onClick={() => void saveProject()}>Save</button>
+        <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
         <button onClick={() => void runBuild()}>Build</button>
         <button onClick={() => void runPublish()}>Publish</button>
         <div className="topbar-status">
@@ -1648,6 +1695,7 @@ export function App() {
                       <div
                         key={block.id}
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
+                        data-background-style={block.styles?.backgroundStyle || ""}
                         style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
                         onClick={() => setSelectedBlockId(block.id)}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
@@ -2119,40 +2167,66 @@ export function App() {
 
                 {/* Gradient builder */}
                 {selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor?.includes("gradient") && (() => {
-                  const grad = parseGradient(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor);
+                  const part = selectedBlock.styles?.parts?.[selectedPart];
+                  const grad = readGradientFromPart(part);
+                  const hasThird = grad.colors.length >= 3;
                   return (
                     <div className="gradient-builder">
                       <div className="preset-row">
                         <span className="preset-label">Preset:</span>
-                        {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => (
-                          <button
-                            key={name}
-                            className={grad.color1 === preset.color1 && grad.color2 === preset.color2 ? "selected" : ""}
-                            onClick={() => updateSelectedPartStyle({ backgroundColor: buildGradient(preset.color1, preset.color2, preset.direction, preset.isRadial) })}
-                          >
-                            {name}
-                          </button>
-                        ))}
+                        {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => {
+                          const match = grad.colors.length === preset.colors.length && grad.colors.every((c, i) => c.toLowerCase() === preset.colors[i].toLowerCase());
+                          return (
+                            <button
+                              key={name}
+                              className={match ? "selected" : ""}
+                              onClick={() => applyGradientToPart(preset.colors, preset.direction, preset.type)}
+                            >
+                              {name}
+                            </button>
+                          );
+                        })}
                       </div>
                       <div className="preset-row">
-                        <span className="preset-label">Color 1:</span>
-                        <input type="color" value={grad.color1} onChange={(e) => updateSelectedPartStyle({ backgroundColor: buildGradient(e.target.value, grad.color2, grad.direction, grad.isRadial) })} className="color-input-inline" />
-                        <span className="preset-label" style={{ marginLeft: 8 }}>Color 2:</span>
-                        <input type="color" value={grad.color2} onChange={(e) => updateSelectedPartStyle({ backgroundColor: buildGradient(grad.color1, e.target.value, grad.direction, grad.isRadial) })} className="color-input-inline" />
+                        {grad.colors.map((c, i) => (
+                          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <span className="preset-label">Color {i + 1}:</span>
+                            <input
+                              type="color"
+                              value={c}
+                              onChange={(e) => {
+                                const next = [...grad.colors];
+                                next[i] = e.target.value;
+                                applyGradientToPart(next, grad.direction, grad.type);
+                              }}
+                              className="color-input-inline"
+                            />
+                          </span>
+                        ))}
+                        {!hasThird && (
+                          <button onClick={() => applyGradientToPart([...grad.colors, "#ffffff"], grad.direction, grad.type)}>+ Add 3rd</button>
+                        )}
+                        {hasThird && (
+                          <button onClick={() => applyGradientToPart(grad.colors.slice(0, 2), grad.direction, grad.type)}>− 2 colors</button>
+                        )}
                       </div>
                       <div className="preset-row">
                         <span className="preset-label">Direction:</span>
-                        {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => (
-                          <button
-                            key={name}
-                            className={grad.direction === val && !grad.isRadial ? "selected" : ""}
-                            onClick={() => updateSelectedPartStyle({ backgroundColor: buildGradient(grad.color1, grad.color2, val, name === "Radial") })}
-                          >
-                            {name}
-                          </button>
-                        ))}
+                        {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => {
+                          const isRadial = val.startsWith("circle");
+                          const selected = grad.direction === val && (grad.type === "radial") === isRadial;
+                          return (
+                            <button
+                              key={name}
+                              className={selected ? "selected" : ""}
+                              onClick={() => applyGradientToPart(grad.colors, val, isRadial ? "radial" : "linear")}
+                            >
+                              {name}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="gradient-preview" style={{ background: selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
+                      <div className="gradient-preview" style={{ background: part?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
                     </div>
                   );
                 })()}
@@ -2268,7 +2342,7 @@ export function App() {
                       key={key}
                       className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
                       onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
-                      title={preset.label}
+                      title={`${preset.label}: ${preset.description}`}
                     >
                       {preset.label}
                     </button>
@@ -2278,6 +2352,11 @@ export function App() {
                     onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
                   >None</button>
                 </div>
+                {(() => {
+                  const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
+                  const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
+                  return preset ? <p className="preset-description">{preset.description}</p> : null;
+                })()}
                 <div className="preset-row">
                   <span className="preset-label">Border style:</span>
                   {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
@@ -2451,9 +2530,23 @@ export function App() {
                 {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
                 <div className="image-grid">
                   {uploadedImages.map((img) => (
-                    <div key={img} className={`image-card ${selectedUploadImage === img ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img)}>
-                      <img src={img} alt={img} loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      <div className="image-meta">{img.split("/").pop()}</div>
+                    <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
+                      <img
+                        src={img.url}
+                        alt={img.name}
+                        loading="lazy"
+                        onError={(e) => {
+                          setBrokenImages((prev) => new Set(prev).add(img.url));
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                      {brokenImages.has(img.url) && (
+                        <div className="image-fallback">
+                          <div className="image-fallback-icon">🖼️</div>
+                          <div className="image-fallback-name">{img.name}</div>
+                        </div>
+                      )}
+                      <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
                     </div>
                   ))}
                 </div>
@@ -2475,8 +2568,8 @@ export function App() {
                   </div>
                   <h4>Edit Selected Image</h4>
                   <div className="button-row compact">
-                    <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit(); }}>Enhance</button>
-                    <button onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit(); }}>Black &amp; white</button>
+                    <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
+                    <button onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Black &amp; white</button>
                   </div>
                 </div>
               )}
@@ -2538,7 +2631,7 @@ export function App() {
               <label>
                 Source uploaded image
                 <select value={selectedUploadImage} onChange={(e) => setSelectedUploadImage(e.target.value)}>
-                  {uploadedImages.length === 0 ? <option value="">No uploaded images</option> : uploadedImages.map((img) => <option key={img} value={img}>{img}</option>)}
+                  {uploadedImages.length === 0 ? <option value="">No uploaded images</option> : uploadedImages.map((img) => <option key={img.url} value={img.url}>{img.name}</option>)}
                 </select>
               </label>
               <label>
@@ -2643,6 +2736,7 @@ export function App() {
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
           <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
           <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
+          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
           <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
           <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
           <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
@@ -2718,10 +2812,26 @@ export function App() {
             </div>}
             {settingsTab === "about" && <div>
               <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{SBUILD_VERSION}</span></p>
+              <p><strong>Health:</strong> {buildInfo ? "✅ Server reachable" : "❌ Server unreachable"}</p>
               <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
               <p><strong>Branch:</strong> {buildInfo?.branch || "unknown"}</p>
               <p><strong>Build date:</strong> {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</p>
               <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
+              <div className="button-row compact">
+                <button onClick={() => {
+                  const diag = {
+                    app: SBUILD_APP_NAME,
+                    version: SBUILD_VERSION,
+                    buildInfo,
+                    theme: themeApplied || "custom",
+                    dirty,
+                    blocks: project?.pages.reduce((sum, p) => sum + p.blocks.length, 0) || 0,
+                    pages: project?.pages.length || 0,
+                    userAgent: navigator.userAgent
+                  };
+                  navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).then(() => setStatus("Diagnostics copied to clipboard")).catch(() => setStatus("Copy failed"));
+                }}>Copy diagnostics</button>
+              </div>
               <hr />
               <p><strong>Changelog</strong></p>
               <p>Latest: 0.4.0-dev — Versioning, Transparent Styles, Visual Effects</p>
@@ -2765,9 +2875,23 @@ export function App() {
               {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
               <div className="image-grid">
                 {uploadedImages.map((img) => (
-                  <div key={img} className={`image-card ${selectedUploadImage === img ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img)}>
-                    <img src={img} alt={img} loading="lazy" />
-                    <div className="image-meta">{img.split("/").pop()}</div>
+                  <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      loading="lazy"
+                      onError={(e) => {
+                        setBrokenImages((prev) => new Set(prev).add(img.url));
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                    {brokenImages.has(img.url) && (
+                      <div className="image-fallback">
+                        <div className="image-fallback-icon">🖼️</div>
+                        <div className="image-fallback-name">{img.name}</div>
+                      </div>
+                    )}
+                    <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
                   </div>
                 ))}
               </div>
