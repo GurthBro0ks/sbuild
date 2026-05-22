@@ -365,8 +365,8 @@ const HeroBlock = ({ block, onText }: { block: Block; onText: (field: string, va
   const parts = block.styles?.parts;
   return (
     <section>
-      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("heading", e.currentTarget.textContent || "")}>{data.heading}</h1>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")}>{data.subheading}</p>
+      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")}>{data.heading}</h1>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")}>{data.subheading}</p>
       <button className="cta-btn" style={partStyleToCss(parts?.button, "body")}>{data.ctaLabel || "Call to Action"}</button>
     </section>
   );
@@ -377,8 +377,8 @@ const TextBlock = ({ block, onText }: { block: Block; onText: (field: string, va
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("title", e.currentTarget.textContent || "")}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("body", e.currentTarget.textContent || "")}>{data.body}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")}>{data.body}</p>
     </section>
   );
 };
@@ -649,6 +649,11 @@ export function App() {
   const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [photoFolder, setPhotoFolder] = useState("project/images");
+  const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
+  const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState("");
+  const [lastLoadedAt, setLastLoadedAt] = useState("");
+  const [projectPath, setProjectPath] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
@@ -780,6 +785,7 @@ export function App() {
     void loadProviders();
     void loadSecretsStatus();
     void loadBuildInfo();
+    void loadPhotoFolder();
   }, []);
 
   useEffect(() => {
@@ -849,21 +855,23 @@ export function App() {
     const colors = project.globalStyles.colors;
     const dark = ["Farmstand Dark", "Slimy Neon", "Midnight Orchard", "Retro Terminal"].includes(themeApplied)
       || [colors.bg, colors.surface].some((c) => /^#/.test(c) && parseInt(c.slice(1, 3), 16) < 80);
-    document.body.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
-    document.body.style.setProperty("--sbuild-canvas-bg", colors.canvasBackground || colors.bg);
-    document.body.style.setProperty("--sbuild-surface", colors.surface);
-    document.body.style.setProperty("--sbuild-surface-2", colors.blockAltBackground || (dark ? "rgba(255,255,255,0.04)" : "#fffef9"));
-    document.body.style.setProperty("--sbuild-border", colors.borderColor || (dark ? "rgba(255,255,255,0.18)" : "#d5cfbe"));
-    document.body.style.setProperty("--sbuild-text", colors.bodyTextColor || colors.text);
-    document.body.style.setProperty("--sbuild-muted", colors.mutedTextColor || colors.muted);
-    document.body.style.setProperty("--sbuild-accent", colors.accentColor || colors.accent);
-    document.body.style.setProperty("--sbuild-nav-bg", colors.navBackground || (dark ? "rgba(12,12,18,0.86)" : colors.surface));
-    document.body.style.setProperty("--sbuild-block-bg", colors.blockBackground || colors.surface);
-    document.body.style.setProperty("--sbuild-card-bg", colors.cardBackground || (dark ? "rgba(255,255,255,0.06)" : "#f7efdc"));
-    document.body.style.setProperty("--sbuild-button-bg", colors.buttonBackground || (dark ? "rgba(255,255,255,0.08)" : colors.surface));
-    document.body.style.setProperty("--sbuild-button-text", colors.buttonTextColor || colors.text);
-    document.body.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
-    document.body.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
+    const shell = document.querySelector(".sbuild-editor-shell") as HTMLElement | null;
+    const target = shell || document.documentElement;
+    target.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
+    target.style.setProperty("--sbuild-canvas-bg", colors.canvasBackground || colors.bg);
+    target.style.setProperty("--sbuild-surface", colors.surface);
+    target.style.setProperty("--sbuild-surface-2", colors.blockAltBackground || (dark ? "rgba(255,255,255,0.04)" : "#fffef9"));
+    target.style.setProperty("--sbuild-border", colors.borderColor || (dark ? "rgba(255,255,255,0.18)" : "#d5cfbe"));
+    target.style.setProperty("--sbuild-text", colors.bodyTextColor || colors.text);
+    target.style.setProperty("--sbuild-muted", colors.mutedTextColor || colors.muted);
+    target.style.setProperty("--sbuild-accent", colors.accentColor || colors.accent);
+    target.style.setProperty("--sbuild-nav-bg", colors.navBackground || (dark ? "rgba(12,12,18,0.86)" : colors.surface));
+    target.style.setProperty("--sbuild-block-bg", colors.blockBackground || colors.surface);
+    target.style.setProperty("--sbuild-card-bg", colors.cardBackground || (dark ? "rgba(255,255,255,0.06)" : "#f7efdc"));
+    target.style.setProperty("--sbuild-button-bg", colors.buttonBackground || (dark ? "rgba(255,255,255,0.08)" : colors.surface));
+    target.style.setProperty("--sbuild-button-text", colors.buttonTextColor || colors.text);
+    target.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
+    target.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
   }, [project, themeApplied]);
 
   useEffect(() => {
@@ -875,8 +883,12 @@ export function App() {
 
   async function loadProject() {
     try {
-      const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/project");
+      const data = await fetchJson<{ ok: boolean; project: SBuildProject; loadedProjectSource?: string; loadedProjectUpdatedAt?: string; lastLoadedAt?: string; projectPath?: string }>("/api/project");
       setProject(data.project);
+      setLoadedProjectSource(data.loadedProjectSource || "unknown");
+      setLoadedProjectUpdatedAt(data.loadedProjectUpdatedAt || "");
+      setLastLoadedAt(data.lastLoadedAt || new Date().toISOString());
+      setProjectPath(data.projectPath || "");
       // Restore theme from persisted project.selectedTheme
       const savedTheme = data.project.selectedTheme;
       if (savedTheme) {
@@ -896,7 +908,7 @@ export function App() {
           setThemeApplied(matched.name);
         }
       }
-      setStatus("Project loaded");
+      setStatus(`Project loaded from ${data.loadedProjectSource || "unknown"}`);
     } catch (error) {
       setStatus(`Failed to load project: ${String(error)}`);
     }
@@ -911,11 +923,33 @@ export function App() {
 
   async function loadImages() {
     try {
-      const data = await fetchJson<{ ok: boolean; images: ImageMeta[] }>("/api/images");
+      const data = await fetchJson<{ ok: boolean; images: ImageMeta[]; folder?: string }>("/api/images");
       const next = data.images || [];
       setUploadedImages(next);
+      if (data.folder) setPhotoFolder(data.folder);
       if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0].url);
     } catch { setUploadedImages([]); }
+  }
+
+  async function loadPhotoFolder() {
+    try {
+      const data = await fetchJson<{ ok: boolean; folder?: string }>("/api/images/folder");
+      if (data.folder) setPhotoFolder(data.folder);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function savePhotoFolder() {
+    try {
+      const data = await fetchJson<{ ok: boolean; message?: string }>("/api/images/folder", {
+        method: "POST",
+        body: JSON.stringify({ folder: photoFolder })
+      });
+      setStatus(data.ok ? (data.message || "Folder saved") : "Failed to save folder");
+    } catch (error) {
+      setStatus(`Failed to save folder: ${String(error)}`);
+    }
   }
 
   async function loadProviders() {
@@ -1078,8 +1112,14 @@ export function App() {
   async function saveProject() {
     if (!project) return;
     setStatus("Saving...");
-    const data = await fetchJson<{ ok: boolean }>("/api/project", { method: "PUT", body: JSON.stringify({ project }) });
-    if (data.ok) { setDirty(false); setStatus("Saved"); setLastAction("save"); }
+    const data = await fetchJson<{ ok: boolean; lastSavedAt?: string; projectPath?: string }>("/api/project", { method: "PUT", body: JSON.stringify({ project }) });
+    if (data.ok) {
+      setLastSavedAt(data.lastSavedAt || new Date().toISOString());
+      setProjectPath(data.projectPath || projectPath);
+      setDirty(false);
+      setStatus("Saved");
+      setLastAction("save");
+    }
   }
 
   async function revertProject() {
@@ -1273,7 +1313,7 @@ export function App() {
     setDirty(true);
     setLastAction(`theme-${theme.name}`);
     setThemeApplied(theme.name);
-    setStatus(`Theme applied: ${theme.name} · dark=${theme.isDark ? "true" : "false"} · canvas=${theme.colors.bg} · block=${theme.colors.surface} · text=${theme.colors.text}`);
+    setStatus(`Theme changed: ${theme.name}. Custom block styles preserved.`);
   }
 
   function openResizeLayoutForBlock(blockId: string) {
@@ -1564,7 +1604,7 @@ export function App() {
   }
 
   return (
-    <div className={`app ${previewMode ? "preview" : "edit"}`}>
+    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
@@ -1668,7 +1708,7 @@ export function App() {
 
           <div
             ref={canvasRef}
-            className={`canvas-frame ${deviceMode}`}
+            className={`canvas-frame sbuild-site-preview sbuild-rendered-page ${deviceMode}`}
             style={{ background: project.globalStyles.colors.bg, color: project.globalStyles.colors.text }}
             onPointerDown={beginPaint}
             onPointerMove={movePaint}
@@ -2522,7 +2562,11 @@ export function App() {
                 <label>Folder path
                   <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
                 </label>
-                <p className="hint">Default: project/images. Changes require Save + refresh.</p>
+                <p className="hint">Photos uploaded here. Default: project/images</p>
+                <div className="button-row compact">
+                  <button onClick={() => void savePhotoFolder()}>Save folder</button>
+                  <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+                </div>
               </div>
 
               <div className="image-manager-gallery">
@@ -2555,6 +2599,7 @@ export function App() {
               {selectedUploadImage && (
                 <div className="image-manager-actions">
                   <p className="hint">Selected: {selectedUploadImage.split("/").pop()}</p>
+                  <p className="hint">Crop/Fit target: {selectedBlock ? `${selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select a block first"}</p>
                   <div className="button-row compact">
                     <button onClick={() => applyImageFromManager(selectedUploadImage)}>Apply to selected block</button>
                     <button onClick={() => {
@@ -2565,12 +2610,20 @@ export function App() {
                       patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
                       setStatus(`Applied image to ${friendlySelectedLabel()} source`);
                     }}>Set as image source</button>
+                    <button
+                      onClick={() => void applyPhotoEdit({ editType: "crop-fit", instruction: "Crop/fit to selected block" })}
+                      disabled={!selectedBlock}
+                      title={!selectedBlock ? "Select a block first" : "Crop and fit for selected block"}
+                    >
+                      Crop/Fit
+                    </button>
                   </div>
                   <h4>Edit Selected Image</h4>
                   <div className="button-row compact">
                     <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
                     <button onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Black &amp; white</button>
                   </div>
+                  {!selectedBlock && <p className="hint">Crop/Fit is disabled: select a block first.</p>}
                 </div>
               )}
             </div>
@@ -2665,6 +2718,11 @@ export function App() {
               <p><strong>Selected Block:</strong> {selectedBlock?.id || "none"}</p>
               <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
               <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
+              <p><strong>Project source:</strong> {loadedProjectSource}</p>
+              {loadedProjectUpdatedAt && <p><strong>Loaded project mtime:</strong> {new Date(loadedProjectUpdatedAt).toLocaleString()}</p>}
+              {lastLoadedAt && <p><strong>Last loaded:</strong> {new Date(lastLoadedAt).toLocaleString()}</p>}
+              {lastSavedAt && <p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p>}
+              {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
               <p><strong>Last action:</strong> {lastAction}</p>
               {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
@@ -2817,6 +2875,8 @@ export function App() {
               <p><strong>Branch:</strong> {buildInfo?.branch || "unknown"}</p>
               <p><strong>Build date:</strong> {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</p>
               <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
+              <p><strong>Loaded project source:</strong> {loadedProjectSource}</p>
+              {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
               <div className="button-row compact">
                 <button onClick={() => {
                   const diag = {
@@ -2825,6 +2885,8 @@ export function App() {
                     buildInfo,
                     theme: themeApplied || "custom",
                     dirty,
+                    gitDirty: buildInfo?.dirty,
+                    gitDirtySummary: (buildInfo as unknown as { dirtySummary?: { modifiedTracked: number; untracked: number } })?.dirtySummary,
                     blocks: project?.pages.reduce((sum, p) => sum + p.blocks.length, 0) || 0,
                     pages: project?.pages.length || 0,
                     userAgent: navigator.userAgent
@@ -2868,6 +2930,17 @@ export function App() {
                 <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
               </label>
               {uploadingImage && <span className="hint">Uploading...</span>}
+            </div>
+            <div className="image-manager-folder">
+              <h4>Project Photo Folder</h4>
+              <p className="hint">Photos uploaded here. Default: project/images</p>
+              <label>Folder path
+                <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
+              </label>
+              <div className="button-row compact">
+                <button onClick={() => void savePhotoFolder()}>Save folder</button>
+                <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+              </div>
             </div>
             
             <div className="image-manager-gallery">

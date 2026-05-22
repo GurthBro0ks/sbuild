@@ -23,7 +23,7 @@
 
 * { box-sizing: border-box; }
 
-body {
+.sbuild-editor-shell {
   margin: 0;
   font-family: var(--sbuild-body-font, "Nunito Sans"), sans-serif;
   background: radial-gradient(circle at top, color-mix(in srgb, var(--sbuild-editor-bg) 70%, #ffffff), var(--sbuild-editor-bg) 40%, color-mix(in srgb, var(--sbuild-editor-bg) 90%, #000));
@@ -52,7 +52,7 @@ body {
 }
 
 /* Editor chrome isolation: ensure editor UI never inherits user content colors */
-.topbar,
+.sbuild-editor-shell .topbar,
 .topbar .logo,
 .topbar-status,
 .left-drawer,
@@ -76,7 +76,7 @@ body {
 }
 
 /* Override any inherited user text colors in editor labels and inputs */
-.left-drawer label,
+.sbuild-editor-shell .left-drawer label,
 .right-drawer label,
 .modal label,
 .settings-modal label,
@@ -96,12 +96,16 @@ body {
 }
 
 /* Catch-all for headings and paragraphs inside editor chrome */
-.left-drawer h1, .left-drawer h2, .left-drawer h3, .left-drawer h4, .left-drawer p,
+.sbuild-editor-shell .left-drawer h1, .sbuild-editor-shell .left-drawer h2, .sbuild-editor-shell .left-drawer h3, .sbuild-editor-shell .left-drawer h4, .sbuild-editor-shell .left-drawer p,
 .right-drawer h1, .right-drawer h2, .right-drawer h3, .right-drawer h4, .right-drawer p,
 .modal h1, .modal h2, .modal h3, .modal h4, .modal p,
 .settings-modal h1, .settings-modal h2, .settings-modal h3, .settings-modal h4, .settings-modal p,
 .image-manager-panel h3, .image-manager-panel h4, .image-manager-panel p {
   color: #1f2a24 !important;
+}
+
+.sbuild-editor-shell :where(button, input, select, textarea, label, .tab, .status, .debug, .panel):not(.sbuild-site-preview *):not(.sbuild-rendered-page *) {
+  color: #1f2a24;
 }
 
 /* Ensure buttons in editor chrome stay readable */
@@ -301,6 +305,12 @@ button.selected {
   pointer-events: none;
   animation: terminalScan 0.5s linear infinite;
   border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block-shell [data-background-style="terminal"]::after {
+    animation: none;
+  }
 }
 
 .color-swatch {

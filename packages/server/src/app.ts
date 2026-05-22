@@ -26,10 +26,36 @@ function safeGitCommand(cmd: string, cwd?: string): string | null {
   }
 }
 
-function getBuildInfo(): SBuildBuildInfo {
+type GitDirtySummary = { modifiedTracked: number; untracked: number };
+
+function computeDirtySummary(cwd: string): GitDirtySummary {
+  const status = safeGitCommand("git status --porcelain", cwd) || "";
+  const lines = status.split("\n").map((line) => line.trim()).filter(Boolean);
+  let modifiedTracked = 0;
+  let untracked = 0;
+  for (const line of lines) {
+    if (line.startsWith("??")) {
+      untracked += 1;
+      continue;
+    }
+    modifiedTracked += 1;
+  }
+  return { modifiedTracked, untracked };
+}
+
+function resolveBranch(cwd: string, commit: string): string {
+  const direct = safeGitCommand("git branch --show-current", cwd);
+  if (direct && direct !== "HEAD") return direct;
+  const fallback = safeGitCommand("git rev-parse --abbrev-ref HEAD", cwd);
+  if (fallback && fallback !== "HEAD") return fallback;
+  if (commit !== "unknown") return `detached (${commit})`;
+  return "unknown";
+}
+
+function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
   const commit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || "unknown";
-  const branch = safeGitCommand("git rev-parse --abbrev-ref HEAD", repoRoot) || "unknown";
-  const dirtyStr = safeGitCommand("git status --porcelain", repoRoot) || "";
+  const branch = resolveBranch(repoRoot, commit);
+  const dirty = computeDirtySummary(repoRoot);
   const buildDate = new Date().toISOString();
   return {
     version: SBUILD_VERSION,
@@ -37,7 +63,8 @@ function getBuildInfo(): SBuildBuildInfo {
     gitCommit: commit,
     branch,
     buildDate,
-    dirty: dirtyStr.length > 0,
+    dirty: dirty.modifiedTracked > 0 || dirty.untracked > 0,
+    dirtySummary: dirty,
     publishAllowed: process.env.SBUILD_ALLOW_PUBLISH === "1",
   };
 }
@@ -54,6 +81,24 @@ import {
   repoRoot,
   secretsFile
 } from "./lib/paths.js";
+
+const imageFolderConfigFile = path.join(path.dirname(projectFile), "image-folder.json");
+
+async function readImageFolderSetting(): Promise<string> {
+  try {
+    const raw = await fs.readFile(imageFolderConfigFile, "utf8");
+    const parsed = JSON.parse(raw) as { folder?: string };
+    const folder = String(parsed.folder || "").trim();
+    return folder || "project/images";
+  } catch {
+    return "project/images";
+  }
+}
+
+async function writeImageFolderSetting(folder: string): Promise<void> {
+  await fs.mkdir(path.dirname(imageFolderConfigFile), { recursive: true });
+  await fs.writeFile(imageFolderConfigFile, JSON.stringify({ folder }, null, 2), "utf8");
+}
 import {
   applyLocalEditWithSharp,
   ensureImageSubdir,
@@ -148,7 +193,30 @@ function imageGenerationPrompt(input: {
   return extras.length ? `${input.prompt}\n\n${extras.join("\n")}` : input.prompt;
 }
 
-export type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
+export type ImageMeta = {
+  name: string;
+  url: string;
+  folder: string;
+  extension: string;
+  contentType: string;
+  isRenderableImage: boolean;
+  size: number;
+  modified: string;
+  isEdited: boolean;
+};
+
+const renderableExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]);
+
+function inferContentType(ext: string): string {
+  const lower = ext.toLowerCase();
+  if (lower === ".png") return "image/png";
+  if (lower === ".jpg" || lower === ".jpeg") return "image/jpeg";
+  if (lower === ".webp") return "image/webp";
+  if (lower === ".gif") return "image/gif";
+  if (lower === ".svg") return "image/svg+xml";
+  if (lower === ".avif") return "image/avif";
+  return "application/octet-stream";
+}
 
 async function listImagesRecursive(baseDir: string, current = ""): Promise<ImageMeta[]> {
   const absolute = path.join(baseDir, current);
@@ -163,10 +231,14 @@ async function listImagesRecursive(baseDir: string, current = ""): Promise<Image
     const filePath = path.join(absolute, entry.name);
     const stat = await fs.stat(filePath);
     const urlPath = `/project/images/${next.replace(/\\/g, "/")}`;
+    const extension = path.extname(entry.name).toLowerCase();
     out.push({
       name: entry.name,
       url: urlPath,
       folder: current.replace(/\\/g, "/") || "root",
+      extension,
+      contentType: inferContentType(extension),
+      isRenderableImage: renderableExtensions.has(extension),
       size: stat.size,
       modified: stat.mtime.toISOString(),
       isEdited: current.replace(/\\/g, "/").startsWith("edited")
@@ -249,6 +321,8 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
       gitCommit: info.gitCommit,
       buildDate: info.buildDate,
       dirty: info.dirty,
+      dirtySummary: info.dirtySummary,
+      branch: info.branch,
       publishAllowed: info.publishAllowed,
       editorDistExists,
       paths: {
@@ -262,9 +336,30 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
   app.get("/api/project", async (_req, res) => {
     try {
       const project = await loadProject();
-      res.json({ ok: true, project });
+      const stat = await fs.stat(projectFile);
+      res.json({
+        ok: true,
+        project,
+        loadedProjectSource: "file",
+        loadedProjectUpdatedAt: stat.mtime.toISOString(),
+        projectPath: projectFile,
+        lastLoadedAt: new Date().toISOString()
+      });
     } catch (error) {
-      res.status(500).json({ ok: false, error: String(error) });
+      try {
+        const templateRaw = await fs.readFile(path.join(repoRoot, "templates", "farm", "project.json"), "utf8");
+        const fallback = JSON.parse(templateRaw) as SBuildProject;
+        res.status(200).json({
+          ok: true,
+          project: fallback,
+          loadedProjectSource: "fallback",
+          projectPath: projectFile,
+          lastLoadedAt: new Date().toISOString(),
+          error: String(error)
+        });
+      } catch (fallbackError) {
+        res.status(500).json({ ok: false, loadedProjectSource: "error", error: `${String(error)} | ${String(fallbackError)}` });
+      }
     }
   });
 
@@ -276,7 +371,8 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
         return;
       }
       await saveProject(project);
-      res.json({ ok: true });
+      const stat = await fs.stat(projectFile);
+      res.json({ ok: true, lastSavedAt: stat.mtime.toISOString(), projectPath: projectFile });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }
@@ -295,12 +391,18 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
   app.get("/api/images", async (_req, res) => {
     try {
       await fs.mkdir(projectImagesDir, { recursive: true });
+      const configuredFolder = await readImageFolderSetting();
       const images = await listImagesRecursive(projectImagesDir);
       images.sort((a, b) => a.name.localeCompare(b.name));
-      res.json({ ok: true, images, count: images.length });
+      res.json({ ok: true, images, count: images.length, folder: configuredFolder });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }
+  });
+
+  app.get("/api/images/folder", async (_req, res) => {
+    const folder = await readImageFolderSetting();
+    res.json({ ok: true, folder, defaultFolder: "project/images" });
   });
 
   app.post("/api/images/folder", async (req, res) => {
@@ -318,7 +420,8 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
       res.status(400).json({ ok: false, error: "Invalid folder path. Use a relative project subfolder." });
       return;
     }
-    res.json({ ok: true, folder: requested, message: "Folder setting saved. Restart server to apply." });
+    await writeImageFolderSetting(requested);
+    res.json({ ok: true, folder: requested, message: "Folder setting saved." });
   });
 
   app.get("/api/fonts", async (_req, res) => {
