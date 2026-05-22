@@ -36,7 +36,7 @@ import {
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
-type RightTab = "properties" | "style" | "ai" | "status";
+type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug";
 type ChatItem = { role: "user" | "assistant"; text: string };
@@ -547,6 +547,7 @@ export function App() {
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [photoFolder, setPhotoFolder] = useState("project/images");
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
@@ -582,7 +583,7 @@ export function App() {
 
   // Preset mappings
   const SIZE_PRESETS = { Small: 14, Normal: 18, Large: 24, XL: 32 };
-  const WEIGHT_PRESETS = { Normal: 400, Medium: 500, Bold: 700, "Extra Bold": 800 };
+  const WEIGHT_PRESETS = { Normal: 400, Medium: 600, Bold: 700, "Extra Bold": 800 };
   const PADDING_PRESETS = { None: 0, Tight: 8, Normal: 16, Spacious: 32, Huge: 64 };
   const MARGIN_PRESETS = { None: 0, Tight: 4, Normal: 8, Spacious: 24 };
   const BORDER_PRESETS = { None: 0, Thin: 1, Medium: 2, Thick: 4 };
@@ -594,13 +595,38 @@ export function App() {
     Strong: "0 8px 32px rgba(0,0,0,.18)",
     Glow: "0 0 20px rgba(70,130,255,.3)"
   };
-  const GRADIENT_PRESETS: Record<string, string> = {
-    Sunset: "linear-gradient(135deg, #ff6b6b, #feca57)",
-    Forest: "linear-gradient(135deg, #1dd1a1, #10ac84)",
-    Ocean: "linear-gradient(135deg, #48dbfb, #0abde3)",
-    Neon: "linear-gradient(135deg, #ff9ff3, #f368e0)",
-    "Soft light": "linear-gradient(135deg, #feca57, #ff9ff3)",
-    Custom: ""
+
+  // Gradient helpers
+  function parseGradient(grad: string | undefined): { color1: string; color2: string; direction: string; isRadial: boolean } {
+    if (!grad || !grad.includes("gradient")) {
+      return { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false };
+    }
+    const radial = grad.includes("radial-gradient");
+    const dirMatch = grad.match(/gradient\(([^,]+),/);
+    const direction = dirMatch ? dirMatch[1].trim() : "135deg";
+    const colors = grad.match(/#[0-9a-fA-F]{3,8}|rgb\([^)]+\)|rgba\([^)]+\)/g) || ["#ff6b6b", "#feca57"];
+    return {
+      color1: colors[0] || "#ff6b6b",
+      color2: colors[1] || "#feca57",
+      direction,
+      isRadial: radial
+    };
+  }
+
+  function buildGradient(color1: string, color2: string, direction: string, isRadial: boolean): string {
+    if (isRadial) {
+      return `radial-gradient(${direction}, ${color1}, ${color2})`;
+    }
+    return `linear-gradient(${direction}, ${color1}, ${color2})`;
+  }
+
+  const GRADIENT_PRESETS: Record<string, { color1: string; color2: string; direction: string; isRadial: boolean }> = {
+    Sunset: { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false },
+    Forest: { color1: "#1dd1a1", color2: "#10ac84", direction: "135deg", isRadial: false },
+    Ocean: { color1: "#48dbfb", color2: "#0abde3", direction: "135deg", isRadial: false },
+    Neon: { color1: "#ff9ff3", color2: "#f368e0", direction: "135deg", isRadial: false },
+    "Soft light": { color1: "#feca57", color2: "#ff9ff3", direction: "135deg", isRadial: false },
+    Custom: { color1: "#ff6b6b", color2: "#feca57", direction: "135deg", isRadial: false }
   };
   const GRADIENT_DIRECTIONS: Record<string, string> = {
     "Top → Bottom": "180deg",
@@ -1571,6 +1597,7 @@ export function App() {
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
             <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
             <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
+            <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
           </div>
@@ -1904,11 +1931,15 @@ export function App() {
                       key={name}
                       className={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight === val ? "selected" : ""}
                       onClick={() => updateSelectedPartStyle({ fontWeight: val })}
+                      title={`${name} (${val})`}
                     >
-                      {name}
+                      {name} <small>({val})</small>
                     </button>
                   ))}
                 </div>
+                {selectedBlock.styles?.parts?.[selectedPart]?.fontWeight !== undefined && (
+                  <p className="hint">Applied weight: {selectedBlock.styles.parts[selectedPart].fontWeight}. Not all fonts show every weight distinctly.</p>
+                )}
                 <div className="preset-row">
                   <span className="preset-label">Color:</span>
                   <button className="color-swatch" style={{ background: project.globalStyles.colors.headingColor || project.globalStyles.colors.text }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.headingColor || project.globalStyles.colors.text })} title="Theme heading" />
@@ -1948,38 +1979,44 @@ export function App() {
                 )}
 
                 {/* Gradient builder */}
-                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor?.includes("gradient") && (
-                  <div className="gradient-builder">
-                    <div className="preset-row">
-                      <span className="preset-label">Preset:</span>
-                      {Object.entries(GRADIENT_PRESETS).map(([name, val]) => (
-                        <button
-                          key={name}
-                          className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor === val ? "selected" : ""}
-                          onClick={() => updateSelectedPartStyle({ backgroundColor: val })}
-                        >
-                          {name}
-                        </button>
-                      ))}
+                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor?.includes("gradient") && (() => {
+                  const grad = parseGradient(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor);
+                  return (
+                    <div className="gradient-builder">
+                      <div className="preset-row">
+                        <span className="preset-label">Preset:</span>
+                        {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => (
+                          <button
+                            key={name}
+                            className={grad.color1 === preset.color1 && grad.color2 === preset.color2 ? "selected" : ""}
+                            onClick={() => updateSelectedPartStyle({ backgroundColor: buildGradient(preset.color1, preset.color2, preset.direction, preset.isRadial) })}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="preset-row">
+                        <span className="preset-label">Color 1:</span>
+                        <input type="color" value={grad.color1} onChange={(e) => updateSelectedPartStyle({ backgroundColor: buildGradient(e.target.value, grad.color2, grad.direction, grad.isRadial) })} className="color-input-inline" />
+                        <span className="preset-label" style={{ marginLeft: 8 }}>Color 2:</span>
+                        <input type="color" value={grad.color2} onChange={(e) => updateSelectedPartStyle({ backgroundColor: buildGradient(grad.color1, e.target.value, grad.direction, grad.isRadial) })} className="color-input-inline" />
+                      </div>
+                      <div className="preset-row">
+                        <span className="preset-label">Direction:</span>
+                        {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => (
+                          <button
+                            key={name}
+                            className={grad.direction === val && !grad.isRadial ? "selected" : ""}
+                            onClick={() => updateSelectedPartStyle({ backgroundColor: buildGradient(grad.color1, grad.color2, val, name === "Radial") })}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="gradient-preview" style={{ background: selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
                     </div>
-                    <div className="preset-row">
-                      <span className="preset-label">Direction:</span>
-                      {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => (
-                        <button
-                          key={name}
-                          onClick={() => {
-                            const current = selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "";
-                            const newGradient = current.replace(/linear-gradient\([^,]+/, `linear-gradient(${val}`);
-                            updateSelectedPartStyle({ backgroundColor: newGradient });
-                          }}
-                        >
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="gradient-preview" style={{ background: selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Image background controls */}
                 {selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage && (
@@ -2136,6 +2173,64 @@ export function App() {
                 <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy style</button>
                 <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style</button>
               </div>
+            </div>
+          )}
+
+          {rightTab === "images" && (
+            <div className="panel image-manager-panel">
+              <h3>Image Manager</h3>
+              <p className="panel-status">Upload, manage, and apply images</p>
+
+              <div className="image-manager-upload">
+                <label>Upload image
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
+                </label>
+                {uploadingImage && <span className="hint">Uploading...</span>}
+                {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
+              </div>
+
+              <div className="image-manager-folder">
+                <h4>Project Photo Folder</h4>
+                <label>Folder path
+                  <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
+                </label>
+                <p className="hint">Default: project/images. Changes require Save + refresh.</p>
+              </div>
+
+              <div className="image-manager-gallery">
+                <h4>Project Images ({uploadedImages.length})</h4>
+                {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
+                <div className="image-grid">
+                  {uploadedImages.map((img) => (
+                    <div key={img} className={`image-card ${selectedUploadImage === img ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img)}>
+                      <img src={img} alt={img} loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      <div className="image-meta">{img.split("/").pop()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {selectedUploadImage && (
+                <div className="image-manager-actions">
+                  <p className="hint">Selected: {selectedUploadImage.split("/").pop()}</p>
+                  <div className="button-row compact">
+                    <button onClick={() => applyImageFromManager(selectedUploadImage)}>Apply to selected block</button>
+                    <button onClick={() => {
+                      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: selectedUploadImage, backgroundSize: "cover", backgroundPosition: "center" } }));
+                      setStatus(`Applied image to ${friendlySelectedLabel()} background`);
+                    }}>Set as block background</button>
+                    <button onClick={() => {
+                      patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
+                      setStatus(`Applied image to ${friendlySelectedLabel()} source`);
+                    }}>Set as image source</button>
+                  </div>
+                  <h4>Edit Selected Image</h4>
+                  <div className="button-row compact">
+                    <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit(); }}>Enhance</button>
+                    <button onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit(); }}>Black &amp; white</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

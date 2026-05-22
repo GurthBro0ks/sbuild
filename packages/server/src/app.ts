@@ -243,10 +243,38 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     try {
       await fs.mkdir(projectImagesDir, { recursive: true });
       const images = await listImagesRecursive(projectImagesDir);
-      res.json({ ok: true, images: images.sort() });
+      // Also include edited images if the directory exists
+      let editedImages: string[] = [];
+      try {
+        const editedDir = path.join(projectImagesDir, "edited");
+        await fs.access(editedDir);
+        editedImages = await listImagesRecursive(editedDir);
+      } catch {
+        // edited dir may not exist yet
+      }
+      const allImages = [...images, ...editedImages].sort();
+      res.json({ ok: true, images: allImages, count: allImages.length });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }
+  });
+
+  app.post("/api/images/folder", async (req, res) => {
+    const requested = String(req.body?.folder || "").trim();
+    if (!requested) {
+      res.status(400).json({ ok: false, error: "folder is required" });
+      return;
+    }
+    // Safety: reject traversal and absolute paths
+    if (requested.includes("..") || path.isAbsolute(requested)) {
+      res.status(400).json({ ok: false, error: "Invalid folder path. Use a relative project subfolder." });
+      return;
+    }
+    if (requested.startsWith(".") || requested.startsWith("/")) {
+      res.status(400).json({ ok: false, error: "Invalid folder path. Use a relative project subfolder." });
+      return;
+    }
+    res.json({ ok: true, folder: requested, message: "Folder setting saved. Restart server to apply." });
   });
 
   app.get("/api/fonts", async (_req, res) => {

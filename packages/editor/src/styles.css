@@ -47,6 +47,86 @@ body {
   position: sticky;
   top: 0;
   z-index: 50;
+  /* Editor chrome isolation: explicit colors, not inherited from user content */
+  color: #1f2a24;
+}
+
+/* Editor chrome isolation: ensure editor UI never inherits user content colors */
+.topbar,
+.topbar .logo,
+.topbar-status,
+.left-drawer,
+.right-drawer,
+.panel-status,
+.block-meta,
+.block-id-debug,
+.style-debug,
+.style-selected-badge,
+.context-menu,
+.modal,
+.settings-modal,
+.image-manager-panel,
+.nav-edit-row,
+.provider-card,
+.hint,
+.resize-badge,
+.grab-handle,
+.context-btn {
+  color: #1f2a24 !important;
+}
+
+/* Override any inherited user text colors in editor labels and inputs */
+.left-drawer label,
+.right-drawer label,
+.modal label,
+.settings-modal label,
+.left-drawer input,
+.right-drawer input,
+.modal input,
+.settings-modal input,
+.left-drawer select,
+.right-drawer select,
+.modal select,
+.settings-modal select,
+.left-drawer textarea,
+.right-drawer textarea,
+.modal textarea,
+.settings-modal textarea {
+  color: #1f2a24;
+}
+
+/* Ensure buttons in editor chrome stay readable */
+.topbar button,
+.left-drawer button,
+.right-drawer button,
+.modal button,
+.context-menu button {
+  color: #1f2a24;
+}
+
+/* Selected/active buttons keep their highlight colors */
+button.active,
+button.selected {
+  color: #fff !important;
+}
+
+/* Canvas frame is where user content styles apply */
+.canvas-frame {
+  /* User content colors apply here via inline styles/CSS variables */
+  color: inherit;
+}
+
+/* Block content inside canvas can inherit user styles */
+.block-shell h1,
+.block-shell h2,
+.block-shell h3,
+.block-shell p,
+.block-shell li,
+.block-shell span,
+.block-shell cite,
+.block-shell blockquote,
+.block-shell .cta-btn {
+  color: inherit;
 }
 
 .topbar .logo {
