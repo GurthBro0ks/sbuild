@@ -14,13 +14,18 @@
   --sbuild-text: #1f2a24;
   --sbuild-muted: #6f7f73;
   --sbuild-accent: #2f6b3f;
+  --sbuild-nav-bg: #fffef9;
+  --sbuild-block-bg: #fffef9;
+  --sbuild-card-bg: #f7efdc;
+  --sbuild-button-bg: #fffef9;
+  --sbuild-button-text: #1f2a24;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: "Nunito Sans", sans-serif;
+  font-family: var(--sbuild-body-font, "Nunito Sans"), sans-serif;
   background: radial-gradient(circle at top, color-mix(in srgb, var(--sbuild-editor-bg) 70%, #ffffff), var(--sbuild-editor-bg) 40%, color-mix(in srgb, var(--sbuild-editor-bg) 90%, #000));
   color: var(--sbuild-text);
 }
@@ -63,8 +68,8 @@ body {
 button {
   border: 1px solid var(--sbuild-border);
   border-radius: 10px;
-  background: var(--sbuild-surface);
-  color: var(--sbuild-text);
+  background: var(--sbuild-button-bg);
+  color: var(--sbuild-button-text);
   font-weight: 700;
   padding: 7px 10px;
   cursor: pointer;
@@ -125,6 +130,12 @@ button.selected {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 6px;
+}
+
+.theme-preview-strip {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
 }
 
 .theme-swatch {
@@ -196,7 +207,7 @@ button.selected {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: color-mix(in srgb, var(--sbuild-surface) 90%, transparent);
+  background: var(--sbuild-nav-bg);
   border: 1px solid var(--sbuild-border);
   border-radius: 10px;
   padding: 10px;
@@ -215,6 +226,21 @@ button.selected {
   border: 1px solid transparent;
   transition: transform .2s ease, box-shadow .2s ease;
   position: relative;
+}
+
+.block-shell h1,
+.block-shell h2,
+.block-shell h3,
+.block-shell h4 {
+  font-family: var(--sbuild-heading-font, "Nunito Sans"), sans-serif;
+}
+
+.block-shell p,
+.block-shell li,
+.block-shell span,
+.block-shell cite,
+.block-shell blockquote {
+  font-family: var(--sbuild-body-font, "Nunito Sans"), sans-serif;
 }
 
 .block-shell:hover { transform: translateY(-1px); }
@@ -273,7 +299,7 @@ button.selected {
 
 .cards-grid article,
 .gallery-grid figure {
-  background: var(--sbuild-surface-2);
+  background: var(--sbuild-card-bg);
   color: var(--sbuild-text);
   border: 1px solid var(--sbuild-border);
   border-radius: 10px;
@@ -409,6 +435,12 @@ textarea {
   margin-bottom: 6px;
 }
 
+.row-shell.multi {
+  border: 1px dashed var(--sbuild-border);
+  border-radius: 10px;
+  padding: 6px;
+}
+
 .row-grid {
   display: flex;
   gap: 8px;
@@ -513,6 +545,8 @@ textarea {
   display: grid;
   gap: 2px;
   min-width: 180px;
+  max-height: min(70vh, 420px);
+  overflow: auto;
 }
 
 .context-menu button {

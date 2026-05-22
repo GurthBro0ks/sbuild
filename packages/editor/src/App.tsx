@@ -27,8 +27,8 @@ import {
   clampMinHeight,
   clampWidthPercent,
   groupBlocksIntoRows,
-  joinWithNext,
-  joinWithPrevious,
+  joinAdjacentBlocks,
+  leaveRowForBlock,
   snapMinHeight,
   snapWidthPercent
 } from "@sbuild/shared";
@@ -76,6 +76,14 @@ const themePresets = [
   { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60" }, headingFont: "Playfair Display", isDark: false }
 ];
 
+const OLD_LIGHT_BACKGROUNDS = new Set(["#fff", "#ffffff", "#fffef9", "#fafafa", "#f6f3e9"]);
+const OLD_DARK_TEXT = new Set(["#222", "#222222", "#1f2a24", "#1a1a1a"]);
+
+function shortRowId(rowId?: string): string {
+  if (!rowId) return "Single";
+  return `Row ${rowId.replace("row-", "").slice(0, 4).toUpperCase()}`;
+}
+
 function apiBase(): string { return ""; }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -87,13 +95,15 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   const s = block.styles || {};
   const layout = s.layout || {};
   const css: Record<string, string | number> = {
-    background: s.backgroundColor || "var(--sbuild-surface)",
+    background: s.backgroundColor || "var(--sbuild-block-bg)",
     backgroundImage: s.backgroundImage ? `url(${s.backgroundImage})` : "",
     backgroundSize: s.backgroundSize === "contain" ? "contain" : s.backgroundSize === "fill" ? "100% 100%" : "cover",
     backgroundRepeat: s.backgroundImage ? "no-repeat" : "",
     backgroundPosition: s.backgroundPosition || "center",
     color: s.textColor || "var(--sbuild-text)",
-    fontFamily: s.fontFamily ? `'${s.fontFamily}', sans-serif` : "inherit",
+    fontFamily: s.fontFamily
+      ? `'${s.fontFamily}', sans-serif`
+      : (block.type === "hero" || block.type === "text" || block.type === "cards" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)"),
     fontSize: s.fontSize ? `${s.fontSize}px` : "",
     fontWeight: s.fontWeight || "",
     textAlign: s.textAlign || "left",
@@ -458,6 +468,7 @@ export function App() {
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
+  const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
@@ -476,6 +487,18 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sbuild_left_collapsed", leftCollapsed ? "1" : "0");
   }, [leftCollapsed]);
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("wheel", closeMenu, { passive: true });
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("wheel", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, []);
 
   useEffect(() => {
     const onToggle = (e: KeyboardEvent) => {
@@ -536,6 +559,13 @@ export function App() {
     document.body.style.setProperty("--sbuild-text", colors.text);
     document.body.style.setProperty("--sbuild-muted", colors.muted);
     document.body.style.setProperty("--sbuild-accent", colors.accent);
+    document.body.style.setProperty("--sbuild-nav-bg", dark ? "rgba(12,12,18,0.86)" : colors.surface);
+    document.body.style.setProperty("--sbuild-block-bg", dark ? colors.surface : colors.surface);
+    document.body.style.setProperty("--sbuild-card-bg", dark ? "rgba(255,255,255,0.06)" : "#f7efdc");
+    document.body.style.setProperty("--sbuild-button-bg", dark ? "rgba(255,255,255,0.08)" : colors.surface);
+    document.body.style.setProperty("--sbuild-button-text", colors.text);
+    document.body.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
+    document.body.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
   }, [project, themeApplied]);
 
   useEffect(() => {
@@ -549,6 +579,11 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/project");
       setProject(data.project);
+      const matched = themePresets.find((t) => t.colors.bg === data.project.globalStyles.colors.bg && t.colors.surface === data.project.globalStyles.colors.surface);
+      if (matched) {
+        setSelectedThemeName(matched.name);
+        setThemeApplied(matched.name);
+      }
       setStatus("Project loaded");
     } catch (error) {
       setStatus(`Failed to load project: ${String(error)}`);
@@ -780,17 +815,21 @@ export function App() {
   function applyTheme(index: number) {
     if (!project) return;
     const theme = themePresets[index];
+    setSelectedThemeName(theme.name);
     const nextPages = project.pages.map((page) => ({
       ...page,
       blocks: page.blocks.map((block) => {
-        const hasExplicitBg = Boolean(block.styles?.backgroundColor);
-        const hasExplicitText = Boolean(block.styles?.textColor);
+        const bg = String(block.styles?.backgroundColor || "").toLowerCase();
+        const txt = String(block.styles?.textColor || "").toLowerCase();
+        const hasExplicitBg = Boolean(bg && !OLD_LIGHT_BACKGROUNDS.has(bg));
+        const hasExplicitText = Boolean(txt && !OLD_DARK_TEXT.has(txt));
         return {
           ...block,
           styles: {
             ...(block.styles || {}),
             backgroundColor: hasExplicitBg ? block.styles?.backgroundColor : theme.colors.surface,
-            textColor: hasExplicitText ? block.styles?.textColor : theme.colors.text
+            textColor: hasExplicitText ? block.styles?.textColor : theme.colors.text,
+            fontFamily: block.styles?.fontFamily || (block.type === "hero" || block.type === "text" || block.type === "cards" ? theme.headingFont : project.globalStyles.bodyFont)
           }
         };
       })
@@ -800,6 +839,7 @@ export function App() {
       globalStyles: {
         ...project.globalStyles,
         headingFont: theme.headingFont || project.globalStyles.headingFont,
+        bodyFont: theme.headingFont === "Playfair Display" ? "Lato" : project.globalStyles.bodyFont,
         colors: { ...project.globalStyles.colors, ...theme.colors }
       },
       pages: nextPages
@@ -856,9 +896,9 @@ export function App() {
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
     const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
-    const rowId = joinWithPrevious(selectedPage.blocks, idx);
-    if (!rowId) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId } } })) });
+    const joined = joinAdjacentBlocks(selectedPage.blocks, idx, "previous");
+    if (joined === selectedPage.blocks) return;
+    patchCurrentPage({ ...selectedPage, blocks: joined });
     setStatus("Joined row with previous block");
   }
 
@@ -867,9 +907,9 @@ export function App() {
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
     const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
-    const rowId = joinWithNext(selectedPage.blocks, idx);
-    if (!rowId) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId } } })) });
+    const joined = joinAdjacentBlocks(selectedPage.blocks, idx, "next");
+    if (joined === selectedPage.blocks) return;
+    patchCurrentPage({ ...selectedPage, blocks: joined });
     setStatus("Joined row with next block");
   }
 
@@ -877,7 +917,8 @@ export function App() {
     if (!selectedPage) return;
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId: undefined } } })) });
+    const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
+    patchCurrentPage({ ...selectedPage, blocks: leaveRowForBlock(selectedPage.blocks, idx) });
     setStatus("Removed block from row");
   }
 
@@ -885,7 +926,7 @@ export function App() {
     if (!project || !selectedPage) return;
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: project.globalStyles.colors.surface, textColor: project.globalStyles.colors.text } })) });
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: project.globalStyles.colors.surface, textColor: project.globalStyles.colors.text, fontFamily: undefined } })) });
     setStatus("Block colors reset to theme");
   }
 
@@ -899,12 +940,13 @@ export function App() {
           ...b,
           styles: {
             ...(b.styles || {}),
-            backgroundColor: b.styles?.backgroundColor && !["#fff", "#ffffff", "#fffef9", "#fafafa"].includes(String(b.styles.backgroundColor).toLowerCase())
+            backgroundColor: b.styles?.backgroundColor && !OLD_LIGHT_BACKGROUNDS.has(String(b.styles.backgroundColor).toLowerCase())
               ? b.styles?.backgroundColor
               : project.globalStyles.colors.surface,
-            textColor: b.styles?.textColor && !["#222", "#222222", "#1f2a24"].includes(String(b.styles.textColor).toLowerCase())
+            textColor: b.styles?.textColor && !OLD_DARK_TEXT.has(String(b.styles.textColor).toLowerCase())
               ? b.styles?.textColor
-              : project.globalStyles.colors.text
+              : project.globalStyles.colors.text,
+            fontFamily: b.styles?.fontFamily || (b.type === "hero" || b.type === "text" || b.type === "cards" ? project.globalStyles.headingFont : project.globalStyles.bodyFont)
           }
         }))
       }))
@@ -1023,7 +1065,11 @@ export function App() {
     let x = 0, y = 0;
     if ("clientX" in e) { x = e.clientX; y = e.clientY; }
     else if ("touches" in e && e.touches.length > 0) { x = e.touches[0].clientX; y = e.touches[0].clientY; }
-    setContextMenu({ visible: true, x, y, blockId });
+    const menuWidth = 240;
+    const menuHeight = 380;
+    const clampedX = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, x));
+    const clampedY = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, y));
+    setContextMenu({ visible: true, x: clampedX, y: clampedY, blockId });
   }
 
   function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
@@ -1128,17 +1174,36 @@ export function App() {
             </div>
           </section>
           <section>
-            <h3>Theme Presets</h3>
-            <div className="theme-grid">
-              {themePresets.map((t, i) => (
-                <button key={t.name} onClick={() => applyTheme(i)} className="theme-swatch" title={t.name}>
-                  <span className="swatch-color" style={{ background: t.colors.bg, borderColor: t.colors.accent }} />
-                  <span className="swatch-name">{t.name}</span>
-                  {t.isDark && <span className="swatch-badge">D</span>}
-                </button>
-              ))}
+            <h3>Theme</h3>
+            <label>
+              Theme
+              <select value={selectedThemeName} onChange={(e) => {
+                const next = e.target.value;
+                setSelectedThemeName(next);
+                const idx = themePresets.findIndex((t) => t.name === next);
+                if (idx >= 0) applyTheme(idx);
+              }}>
+                {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
+              </select>
+            </label>
+            <div className="theme-preview-strip">
+              {(() => {
+                const t = themePresets.find((theme) => theme.name === selectedThemeName) || themePresets[0];
+                return (
+                  <>
+                    <span title="background" className="swatch-color" style={{ background: t.colors.bg }} />
+                    <span title="surface" className="swatch-color" style={{ background: t.colors.surface }} />
+                    <span title="accent" className="swatch-color" style={{ background: t.colors.accent }} />
+                    <span title="text" className="swatch-color" style={{ background: t.colors.text }} />
+                  </>
+                );
+              })()}
             </div>
-            {themeApplied && <p className="panel-status">Theme applied: {themeApplied}</p>}
+            <div className="button-row compact">
+              <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+              <button onClick={() => resetBlockColorsToTheme()}>Reset selected block colors</button>
+            </div>
+            {themeApplied && <p className="panel-status">Theme: {themeApplied} · dark={themePresets.find((t) => t.name === themeApplied)?.isDark ? "true" : "false"}</p>}
           </section>
           <section>
             <h3>Fonts</h3>
@@ -1190,8 +1255,8 @@ export function App() {
             </nav>
 
             {rowGroups.map((row) => (
-              <div key={row.rowId} className={`row-shell ${deviceMode === "phone" ? "stack" : ""}`}>
-                {row.blocks.length > 1 && <div className="row-label">{row.rowId} · {row.blocks.length} columns</div>}
+              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${deviceMode === "phone" ? "stack" : ""}`}>
+                <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
                 <div className="row-grid">
                   {row.blocks.map((block) => {
                     const index = selectedPage.blocks.findIndex((b) => b.id === block.id);
@@ -1216,7 +1281,7 @@ export function App() {
                           <div className="block-meta">
                             <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
                             {block.type} · {block.id.slice(0, 12)}
-                            <span className="resize-badge">{width}% · {minH}px · {block.styles?.layout?.aspectRatio || "free"}</span>
+                            <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
                             <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
                           </div>
                         )}
@@ -1429,11 +1494,12 @@ export function App() {
                 {ASPECT_RATIOS.map((ratio) => <button key={ratio} className={(selectedBlock.styles?.layout?.aspectRatio || "free") === ratio ? "selected" : ""} onClick={() => applyQuickAspect(ratio)}>{ratio === "free" ? "Free" : ratio === "1:1" ? "Square" : ratio}</button>)}
               </div>
               <h4>Row</h4>
+              <p className="panel-status">Current row: {selectedBlock.styles?.layout?.rowId ? shortRowId(selectedBlock.styles.layout.rowId) : "Single"}. Select a block, click Join next block, then set both to 50%.</p>
               <div className="button-row compact">
-                <button onClick={() => removeFromRow()}>Single</button>
-                <button onClick={() => placeWithPrevious()}>Join Previous</button>
-                <button onClick={() => placeWithNext()}>Join Next</button>
-                <button onClick={() => startNewRow()}>New Row</button>
+                <button onClick={() => placeWithPrevious()}>Join previous block</button>
+                <button onClick={() => placeWithNext()}>Join next block</button>
+                <button onClick={() => startNewRow()}>Start new row</button>
+                <button onClick={() => removeFromRow()}>Leave row</button>
               </div>
               <label>Column Width
                 <select value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: "custom", widthPercent: Number(e.target.value) } } }))}>

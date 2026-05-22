@@ -74,6 +74,7 @@ curl -fsS -X POST "http://localhost:${PORT}/api/ai/image" -H 'content-type: appl
   -d '{"prompt":"catfish farm hero","targetContext":{"blockType":"hero","usage":"heroBackground"}}' \
   | tee "$PROOF_DIR/curl-ai-image.json"
 curl -fsS "http://localhost:${PORT}/api/ai/providers/status" | tee "$PROOF_DIR/curl-ai-providers-status.json"
+curl -fsS "http://localhost:${PORT}/api/ai/opencode/auth-status" | tee "$PROOF_DIR/curl-opencode-auth-status.json"
 curl -fsS "http://localhost:${PORT}/api/secrets/status" | tee "$PROOF_DIR/curl-secrets-status.json"
 curl -fsS -X POST "http://localhost:${PORT}/api/build" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-build.json"
 curl -fsS -X POST "http://localhost:${PORT}/api/publish" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-publish.json"
@@ -81,6 +82,7 @@ curl -iS "http://localhost:${PORT}/api/unknown-route" > "$PROOF_DIR/curl-api-unk
 
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.sizeDecision||!p.sizeDecision.providerSize){throw new Error('sizeDecision missing from /api/ai/image response')}console.log('sizeDecision check ok')" "$PROOF_DIR/curl-ai-image.json" | tee -a "$PROOF_DIR/smoke.log"
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!Array.isArray(p.providers)){throw new Error('providers missing from /api/ai/providers/status response')}console.log('providers status check ok')" "$PROOF_DIR/curl-ai-providers-status.json" | tee -a "$PROOF_DIR/smoke.log"
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.ok||typeof p.status!=='string'){throw new Error('opencode auth status payload invalid')}console.log('opencode auth status check ok')" "$PROOF_DIR/curl-opencode-auth-status.json" | tee -a "$PROOF_DIR/smoke.log"
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.dryRun){throw new Error('publish was not dry-run')}if(String(p.target||'').startsWith('/var/www/')){throw new Error('publish target points to live web root')}console.log('publish dry-run check ok')" "$PROOF_DIR/curl-publish.json" | tee -a "$PROOF_DIR/smoke.log"
 node -e "const fs=require('fs');const text=fs.readFileSync(process.argv[1],'utf8');if(!text.includes('404')||text.toLowerCase().includes('<!doctype html>')){throw new Error('/api/unknown returned non-api fallback')}console.log('api unknown route check ok')" "$PROOF_DIR/curl-api-unknown-i.txt" | tee -a "$PROOF_DIR/smoke.log"
 
@@ -105,6 +107,7 @@ cat > "$PROOF_DIR/RESULT.md" <<RESULT
 - Fonts API: ok
 - AI image API: ok (safe no-key + size decision)
 - AI providers status: ok
+- OpenCode auth status: ok
 - Secrets status: ok
 - Build API: ok
 - Publish API: dry-run expected

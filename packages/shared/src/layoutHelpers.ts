@@ -44,3 +44,47 @@ export function joinWithNext(blocks: Block[], index: number): string | undefined
   if (index < 0 || index >= blocks.length - 1) return undefined;
   return blocks[index + 1].styles?.layout?.rowId || `row-${blocks[index + 1].id}`;
 }
+
+export function joinAdjacentBlocks(blocks: Block[], index: number, direction: "previous" | "next"): Block[] {
+  const peerIndex = direction === "previous" ? index - 1 : index + 1;
+  if (index < 0 || index >= blocks.length || peerIndex < 0 || peerIndex >= blocks.length) return blocks;
+  const source = blocks[index];
+  const peer = blocks[peerIndex];
+  const rowId = source.styles?.layout?.rowId || peer.styles?.layout?.rowId || `row-${source.id}`;
+
+  return blocks.map((block, i) => {
+    if (i !== index && i !== peerIndex) return block;
+    const widthPercent = block.styles?.layout?.widthPercent;
+    return {
+      ...block,
+      styles: {
+        ...(block.styles || {}),
+        layout: {
+          ...(block.styles?.layout || {}),
+          rowId,
+          widthMode: widthPercent ? "custom" : "medium",
+          widthPercent: widthPercent || 50
+        }
+      }
+    };
+  });
+}
+
+export function leaveRowForBlock(blocks: Block[], index: number): Block[] {
+  if (index < 0 || index >= blocks.length) return blocks;
+  return blocks.map((block, i) => {
+    if (i !== index) return block;
+    return {
+      ...block,
+      styles: {
+        ...(block.styles || {}),
+        layout: {
+          ...(block.styles?.layout || {}),
+          rowId: undefined,
+          widthMode: "full",
+          widthPercent: 100
+        }
+      }
+    };
+  });
+}
