@@ -23,6 +23,8 @@ export type BlockEffect =
   | "hover-grow";
 
 export interface BlockLayout {
+  rowId?: string;
+  columnSpan?: number;
   widthMode?: "full" | "wide" | "medium" | "narrow" | "custom";
   widthPercent?: number;
   maxWidthPx?: number;

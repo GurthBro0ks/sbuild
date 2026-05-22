@@ -61,10 +61,10 @@ body {
 }
 
 button {
-  border: 1px solid #b6ae9e;
+  border: 1px solid var(--sbuild-border);
   border-radius: 10px;
-  background: #fff;
-  color: #223;
+  background: var(--sbuild-surface);
+  color: var(--sbuild-text);
   font-weight: 700;
   padding: 7px 10px;
   cursor: pointer;
@@ -97,6 +97,7 @@ button.selected {
   padding: 10px;
   overflow: auto;
   max-height: calc(100vh - 90px);
+  overflow-x: hidden;
 }
 
 .left-drawer.collapsed {
@@ -201,6 +202,13 @@ button.selected {
   padding: 10px;
 }
 
+.canvas-nav span,
+.block-meta,
+.panel-status,
+.hint {
+  color: var(--sbuild-muted);
+}
+
 .nav-items { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .block-shell {
@@ -263,6 +271,15 @@ button.selected {
   gap: 10px;
 }
 
+.cards-grid article,
+.gallery-grid figure {
+  background: var(--sbuild-surface-2);
+  color: var(--sbuild-text);
+  border: 1px solid var(--sbuild-border);
+  border-radius: 10px;
+  padding: 8px;
+}
+
 .cta-btn {
   background: #2f6b3f;
   color: white;
@@ -313,9 +330,11 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid #cbc5b5;
+  border: 1px solid var(--sbuild-border);
   border-radius: 8px;
   padding: 7px;
+  background: var(--sbuild-surface);
+  color: var(--sbuild-text);
 }
 
 .effect-list {
@@ -375,6 +394,60 @@ textarea {
   gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 8px;
+}
+
+.button-row.compact button {
+  padding: 5px 7px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.row-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.row-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.row-shell.stack .row-grid {
+  flex-direction: column;
+}
+
+.row-label {
+  font-size: 11px;
+  color: var(--sbuild-muted);
+  border: 1px dashed var(--sbuild-border);
+  border-radius: 8px;
+  padding: 2px 6px;
+}
+
+.resize-handle {
+  position: absolute;
+  border: 1px solid var(--sbuild-border);
+  background: var(--sbuild-surface);
+  border-radius: 6px;
+}
+
+.resize-handle.right {
+  right: -6px;
+  top: 45%;
+  width: 10px;
+  height: 40px;
+  cursor: ew-resize;
+}
+
+.resize-handle.bottom {
+  bottom: -6px;
+  left: 45%;
+  width: 40px;
+  height: 10px;
+  cursor: ns-resize;
 }
 
 .image-debug {
@@ -512,5 +585,9 @@ textarea {
   .left-drawer,
   .right-drawer {
     max-height: none;
+  }
+
+  .row-grid {
+    flex-wrap: wrap;
   }
 }

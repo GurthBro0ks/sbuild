@@ -23,7 +23,14 @@ import {
   HtmlBlockData,
   BlockEffect,
   SBuildProviderStatus,
-  SBuildSecretConfig
+  SBuildSecretConfig,
+  clampMinHeight,
+  clampWidthPercent,
+  groupBlocksIntoRows,
+  joinWithNext,
+  joinWithPrevious,
+  snapMinHeight,
+  snapWidthPercent
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
@@ -34,6 +41,7 @@ type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string } | null;
+type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
 
 const BLOCK_TYPES: BlockType[] = [
   "hero", "text", "image", "cards", "hours", "gallery", "contact",
@@ -44,9 +52,18 @@ const EFFECTS: BlockEffect[] = ["glow", "marquee", "fade-in", "gradient-text", "
 
 const DIVIDER_STYLES: DividerStyle[] = ["solid", "dashed", "dotted", "double", "gradient", "glow", "zigzag", "wave", "spacer-line"];
 
-const ASPECT_RATIOS = ["auto", "1:1", "4:3", "16:9", "3:2", "9:16"];
-const QUICK_WIDTHS = ["full", "wide", "medium", "narrow"] as const;
+const ASPECT_RATIOS = ["free", "1:1", "4:3", "16:9", "3:2", "9:16"];
+const QUICK_WIDTHS = ["full", "wide", "half", "third", "narrow", "custom"] as const;
 const QUICK_HEIGHTS = ["auto", "short", "medium", "tall"] as const;
+
+const WIDTH_PRESETS: Record<(typeof QUICK_WIDTHS)[number], number> = {
+  full: 100,
+  wide: 75,
+  half: 50,
+  third: 33,
+  narrow: 25,
+  custom: 60
+};
 
 const themePresets = [
   { name: "Harvest Light", colors: { bg: "#f6f3e9", surface: "#fffef9", text: "#1f2a24", accent: "#2f6b3f", muted: "#6f7f73" }, headingFont: "Nunito Sans", isDark: false },
@@ -70,12 +87,12 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   const s = block.styles || {};
   const layout = s.layout || {};
   const css: Record<string, string | number> = {
-    background: s.backgroundColor || "#fff",
+    background: s.backgroundColor || "var(--sbuild-surface)",
     backgroundImage: s.backgroundImage ? `url(${s.backgroundImage})` : "",
     backgroundSize: s.backgroundSize === "contain" ? "contain" : s.backgroundSize === "fill" ? "100% 100%" : "cover",
     backgroundRepeat: s.backgroundImage ? "no-repeat" : "",
     backgroundPosition: s.backgroundPosition || "center",
-    color: s.textColor || "inherit",
+    color: s.textColor || "var(--sbuild-text)",
     fontFamily: s.fontFamily ? `'${s.fontFamily}', sans-serif` : "inherit",
     fontSize: s.fontSize ? `${s.fontSize}px` : "",
     fontWeight: s.fontWeight || "",
@@ -84,7 +101,7 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
     margin: `${s.margin ?? 8}px 0`,
     borderRadius: `${s.borderRadius ?? 12}px`,
     boxShadow: s.shadow || "",
-    width: layout.widthMode === "full" ? "100%" : layout.widthMode === "wide" ? "85%" : layout.widthMode === "medium" ? "70%" : layout.widthMode === "narrow" ? "50%" : layout.widthPercent ? `${layout.widthPercent}%` : "100%",
+    width: layout.widthPercent ? `${layout.widthPercent}%` : layout.widthMode === "full" ? "100%" : layout.widthMode === "wide" ? "75%" : layout.widthMode === "medium" ? "50%" : layout.widthMode === "narrow" ? "25%" : "100%",
     maxWidth: layout.maxWidthPx ? `${layout.maxWidthPx}px` : "",
     minHeight: layout.minHeightPx ? `${layout.minHeightPx}px` : "",
     height: layout.heightMode === "fixed" && layout.heightPx ? `${layout.heightPx}px` : "",
@@ -92,7 +109,7 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
     marginLeft: layout.alignSelf === "center" ? "auto" : layout.alignSelf === "right" ? "auto" : "",
     marginRight: layout.alignSelf === "center" ? "auto" : layout.alignSelf === "left" ? "auto" : ""
   };
-  if (layout.aspectRatio && layout.aspectRatio !== "auto") {
+  if (layout.aspectRatio && layout.aspectRatio !== "free") {
     css.aspectRatio = layout.aspectRatio.replace(":", "/");
   }
   if ((s.effects || []).includes("glow")) css.textShadow = "0 0 12px rgba(70, 130, 255, .5)";
@@ -439,11 +456,14 @@ export function App() {
   const [layoutHighlight, setLayoutHighlight] = useState(false);
   const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
+  const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
+  const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
+  const rowGroups = useMemo(() => groupBlocksIntoRows(selectedPage?.blocks || []), [selectedPage?.blocks]);
 
   useEffect(() => {
     void loadProject();
@@ -471,6 +491,37 @@ export function App() {
     window.addEventListener("keydown", onToggle);
     return () => window.removeEventListener("keydown", onToggle);
   }, []);
+
+  useEffect(() => {
+    if (!resizeDrag) return;
+    const onMove = (e: PointerEvent) => {
+      if (!selectedPage || !selectedBlock || selectedBlock.id !== resizeDrag.blockId) return;
+      const dx = e.clientX - resizeDrag.startX;
+      const dy = e.clientY - resizeDrag.startY;
+      const nextWidth = snapWidthPercent(clampWidthPercent(resizeDrag.startWidth + Math.round(dx / 4)));
+      const nextMinHeight = snapMinHeight(clampMinHeight(resizeDrag.startMinHeight + Math.round(dy)));
+      patchSelectedBlock((b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          layout: {
+            ...(b.styles?.layout || {}),
+            widthMode: "custom",
+            widthPercent: resizeDrag.handle === "right" ? nextWidth : (b.styles?.layout?.widthPercent || resizeDrag.startWidth),
+            minHeightPx: resizeDrag.handle === "bottom" ? nextMinHeight : (b.styles?.layout?.minHeightPx || resizeDrag.startMinHeight)
+          }
+        }
+      }));
+      setResizeStatus(`Width ${nextWidth}% · Min height ${nextMinHeight}px`);
+    };
+    const onUp = () => setResizeDrag(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [resizeDrag, selectedPage, selectedBlock]);
 
   useEffect(() => {
     if (!project) return;
@@ -729,18 +780,34 @@ export function App() {
   function applyTheme(index: number) {
     if (!project) return;
     const theme = themePresets[index];
+    const nextPages = project.pages.map((page) => ({
+      ...page,
+      blocks: page.blocks.map((block) => {
+        const hasExplicitBg = Boolean(block.styles?.backgroundColor);
+        const hasExplicitText = Boolean(block.styles?.textColor);
+        return {
+          ...block,
+          styles: {
+            ...(block.styles || {}),
+            backgroundColor: hasExplicitBg ? block.styles?.backgroundColor : theme.colors.surface,
+            textColor: hasExplicitText ? block.styles?.textColor : theme.colors.text
+          }
+        };
+      })
+    }));
     setProject({
       ...project,
       globalStyles: {
         ...project.globalStyles,
         headingFont: theme.headingFont || project.globalStyles.headingFont,
         colors: { ...project.globalStyles.colors, ...theme.colors }
-      }
+      },
+      pages: nextPages
     });
     setDirty(true);
     setLastAction(`theme-${theme.name}`);
     setThemeApplied(theme.name);
-    setStatus(`Theme applied: ${theme.name} · dark=${theme.isDark ? "true" : "false"} · canvas=${theme.colors.bg}`);
+    setStatus(`Theme applied: ${theme.name} · dark=${theme.isDark ? "true" : "false"} · canvas=${theme.colors.bg} · block=${theme.colors.surface} · text=${theme.colors.text}`);
   }
 
   function openResizeLayoutForBlock(blockId: string) {
@@ -760,19 +827,90 @@ export function App() {
   }
 
   function applyQuickWidth(mode: (typeof QUICK_WIDTHS)[number]) {
-    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: mode, widthPercent: mode === "full" ? 100 : mode === "wide" ? 85 : mode === "medium" ? 70 : 50 } } }));
-    setResizeStatus(`Width set to ${mode}`);
+    const widthPercent = WIDTH_PRESETS[mode];
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: mode === "half" ? "medium" : mode === "third" ? "narrow" : mode, widthPercent } } }));
+    setResizeStatus(`Width ${widthPercent}%`);
   }
 
   function applyQuickHeight(mode: (typeof QUICK_HEIGHTS)[number]) {
-    const minHeightPx = mode === "auto" ? undefined : mode === "short" ? 140 : mode === "medium" ? 260 : 420;
+    const minHeightPx = mode === "auto" ? undefined : mode === "short" ? 140 : mode === "medium" ? 240 : 380;
     patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), minHeightPx, heightMode: "auto" } } }));
-    setResizeStatus(`Height set to ${mode}`);
+    setResizeStatus(mode === "auto" ? "Height auto" : `Min height ${minHeightPx}px`);
   }
 
   function applyQuickAspect(aspect: string) {
-    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: aspect } } }));
-    setResizeStatus(`Aspect set to ${aspect}`);
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: aspect === "free" ? "free" : aspect } } }));
+    setResizeStatus(`Ratio ${aspect}`);
+  }
+
+  function startNewRow(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId: `row-${Date.now()}` } } })) });
+    setStatus("Started new row");
+  }
+
+  function placeWithPrevious(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
+    const rowId = joinWithPrevious(selectedPage.blocks, idx);
+    if (!rowId) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId } } })) });
+    setStatus("Joined row with previous block");
+  }
+
+  function placeWithNext(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
+    const rowId = joinWithNext(selectedPage.blocks, idx);
+    if (!rowId) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId } } })) });
+    setStatus("Joined row with next block");
+  }
+
+  function removeFromRow(blockId?: string) {
+    if (!selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), rowId: undefined } } })) });
+    setStatus("Removed block from row");
+  }
+
+  function resetBlockColorsToTheme(blockId?: string) {
+    if (!project || !selectedPage) return;
+    const targetId = blockId || selectedBlock?.id;
+    if (!targetId) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: project.globalStyles.colors.surface, textColor: project.globalStyles.colors.text } })) });
+    setStatus("Block colors reset to theme");
+  }
+
+  function applyThemeToAllBlocks() {
+    if (!project) return;
+    setProject({
+      ...project,
+      pages: project.pages.map((page) => ({
+        ...page,
+        blocks: page.blocks.map((b) => ({
+          ...b,
+          styles: {
+            ...(b.styles || {}),
+            backgroundColor: b.styles?.backgroundColor && !["#fff", "#ffffff", "#fffef9", "#fafafa"].includes(String(b.styles.backgroundColor).toLowerCase())
+              ? b.styles?.backgroundColor
+              : project.globalStyles.colors.surface,
+            textColor: b.styles?.textColor && !["#222", "#222222", "#1f2a24"].includes(String(b.styles.textColor).toLowerCase())
+              ? b.styles?.textColor
+              : project.globalStyles.colors.text
+          }
+        }))
+      }))
+    });
+    setDirty(true);
+    setStatus("Applied theme to all blocks");
   }
 
   function addBlock(type: BlockType) {
@@ -938,6 +1076,16 @@ export function App() {
     }
   }
 
+  async function checkOpenCodeAuth() {
+    try {
+      const data = await fetchJson<{ ok: boolean; status: string; message: string; commands: string[]; output?: string }>("/api/ai/opencode/auth-status");
+      setOpencodeAuth({ status: data.status, message: data.message, commands: data.commands || [], output: data.output });
+      setStatus(`Provider status checked: OpenCode (${data.status})`);
+    } catch (error) {
+      setOpencodeAuth({ status: "unknown", message: `Check failed: ${String(error)}`, commands: ["opencode auth status", "opencode auth login"] });
+    }
+  }
+
   if (!project || !selectedPage) {
     return <div className="loading">Loading sBuild...</div>;
   }
@@ -1041,32 +1189,50 @@ export function App() {
               </div>
             </nav>
 
-            {selectedPage.blocks.map((block, index) => (
-              <div
-                key={block.id}
-                className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
-                style={blockStyleToCss(block)}
-                onClick={() => setSelectedBlockId(block.id)}
-                onContextMenu={(e) => openContextMenu(e, block.id)}
-                onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
-                onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
-                onPointerMove={(e) => handleBlockPointerMove(e, block.id, index)}
-                draggable
-                onDragStart={() => handleDragStart(block.id, index)}
-                onDragEnter={() => handleDragEnter(index)}
-                onDragEnd={handleDragEnd}
-              >
-                {!previewMode && (
-                <div className="block-meta">
-                    <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
-                    {block.type} · {block.id.slice(0, 12)}
-                    <span className="resize-badge">{block.styles?.layout?.widthMode || "full"} · {block.styles?.layout?.heightMode || "auto"} · {block.styles?.layout?.aspectRatio || "auto"}</span>
-                    <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
-                  </div>
-                )}
-                {renderTypedBlock(block, (field, value) => {
-                  patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
-                })}
+            {rowGroups.map((row) => (
+              <div key={row.rowId} className={`row-shell ${deviceMode === "phone" ? "stack" : ""}`}>
+                {row.blocks.length > 1 && <div className="row-label">{row.rowId} · {row.blocks.length} columns</div>}
+                <div className="row-grid">
+                  {row.blocks.map((block) => {
+                    const index = selectedPage.blocks.findIndex((b) => b.id === block.id);
+                    const width = block.styles?.layout?.widthPercent || 100;
+                    const minH = block.styles?.layout?.minHeightPx || 120;
+                    return (
+                      <div
+                        key={block.id}
+                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
+                        style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
+                        onClick={() => setSelectedBlockId(block.id)}
+                        onContextMenu={(e) => openContextMenu(e, block.id)}
+                        onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
+                        onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
+                        onPointerMove={(e) => handleBlockPointerMove(e, block.id, index)}
+                        draggable
+                        onDragStart={() => handleDragStart(block.id, index)}
+                        onDragEnter={() => handleDragEnter(index)}
+                        onDragEnd={handleDragEnd}
+                      >
+                        {!previewMode && (
+                          <div className="block-meta">
+                            <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
+                            {block.type} · {block.id.slice(0, 12)}
+                            <span className="resize-badge">{width}% · {minH}px · {block.styles?.layout?.aspectRatio || "free"}</span>
+                            <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
+                          </div>
+                        )}
+                        {renderTypedBlock(block, (field, value) => {
+                          patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
+                        })}
+                        {selectedBlock?.id === block.id && !previewMode && (
+                          <>
+                            <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
+                            <button className="resize-handle bottom" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "bottom", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ))}
 
@@ -1253,21 +1419,38 @@ export function App() {
               <div ref={layoutSectionRef} tabIndex={-1} className={`layout-section ${layoutHighlight ? "layout-highlight" : ""}`}>
               <h3>Layout</h3>
               <p className="panel-status">Quick Resize</p>
-              <div className="button-row">
-                {QUICK_WIDTHS.map((mode) => <button key={mode} onClick={() => applyQuickWidth(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              <div className="button-row compact">
+                {QUICK_WIDTHS.map((mode) => <button key={mode} className={(selectedBlock.styles?.layout?.widthPercent || 100) === WIDTH_PRESETS[mode] ? "selected" : ""} onClick={() => applyQuickWidth(mode)}>{mode === "half" ? "Half" : mode === "third" ? "Third" : mode[0].toUpperCase() + mode.slice(1)}</button>)}
               </div>
-              <div className="button-row">
-                {QUICK_HEIGHTS.map((mode) => <button key={mode} onClick={() => applyQuickHeight(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              <div className="button-row compact">
+                {QUICK_HEIGHTS.map((mode) => <button key={mode} className={(mode === "auto" && !selectedBlock.styles?.layout?.minHeightPx) || (mode === "short" && selectedBlock.styles?.layout?.minHeightPx === 140) || (mode === "medium" && selectedBlock.styles?.layout?.minHeightPx === 240) || (mode === "tall" && selectedBlock.styles?.layout?.minHeightPx === 380) ? "selected" : ""} onClick={() => applyQuickHeight(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
               </div>
-              <div className="button-row">
-                {ASPECT_RATIOS.map((ratio) => <button key={ratio} onClick={() => applyQuickAspect(ratio)}>{ratio}</button>)}
+              <div className="button-row compact">
+                {ASPECT_RATIOS.map((ratio) => <button key={ratio} className={(selectedBlock.styles?.layout?.aspectRatio || "free") === ratio ? "selected" : ""} onClick={() => applyQuickAspect(ratio)}>{ratio === "free" ? "Free" : ratio === "1:1" ? "Square" : ratio}</button>)}
               </div>
+              <h4>Row</h4>
+              <div className="button-row compact">
+                <button onClick={() => removeFromRow()}>Single</button>
+                <button onClick={() => placeWithPrevious()}>Join Previous</button>
+                <button onClick={() => placeWithNext()}>Join Next</button>
+                <button onClick={() => startNewRow()}>New Row</button>
+              </div>
+              <label>Column Width
+                <select value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: "custom", widthPercent: Number(e.target.value) } } }))}>
+                  <option value={25}>25%</option>
+                  <option value={33}>33%</option>
+                  <option value={50}>50%</option>
+                  <option value={66}>66%</option>
+                  <option value={75}>75%</option>
+                  <option value={100}>100%</option>
+                </select>
+              </label>
               <label>Width Mode
                 <select value={selectedBlock.styles?.layout?.widthMode || "full"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["widthMode"] } } }))}>
                   <option value="full">full</option>
-                  <option value="wide">wide (85%)</option>
-                  <option value="medium">medium (70%)</option>
-                  <option value="narrow">narrow (50%)</option>
+                  <option value="wide">wide (75%)</option>
+                  <option value="medium">half (50%)</option>
+                  <option value="narrow">narrow (25%)</option>
                   <option value="custom">custom %</option>
                 </select>
               </label>
@@ -1287,7 +1470,7 @@ export function App() {
                 <label>Height (px) <input type="number" value={selectedBlock.styles?.layout?.heightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightPx: e.target.value ? Number(e.target.value) : undefined } } }))} /></label>
               )}
               <label>Aspect Ratio
-                <select value={selectedBlock.styles?.layout?.aspectRatio || "auto"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: e.target.value } } }))}>
+                <select value={selectedBlock.styles?.layout?.aspectRatio || "free"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: e.target.value } } }))}>
                   {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </label>
@@ -1477,6 +1660,12 @@ export function App() {
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
           <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
           <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
+          <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
+          <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
+          <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
+          <button onClick={() => { removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row</button>
+          <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
+          <button onClick={() => { applyThemeToAllBlocks(); setContextMenu(null); }}>Apply theme to all blocks</button>
           <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
           <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
           <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
@@ -1506,9 +1695,21 @@ export function App() {
             </div>
             {settingsTab === "general" && <p className="panel-status">Use tabs to configure providers, keys, and deploy safety.</p>}
             {settingsTab === "providers" && <div>
-              <p className="hint">Subscription providers are handled through OpenCode CLI auth/session where possible. No fake OAuth is used.</p>
+              <p className="hint"><strong>A) Subscription providers through OpenCode</strong></p>
+              <p className="hint">These providers are authenticated through OpenCode on this NUC. sBuild does not store your subscription login.</p>
               {providerStatus.map((p) => <div key={`settings-${p.name}`} className={`provider-card provider-${p.status}`}><strong>{p.name}</strong><span className="provider-badge">{p.status}</span><p>{p.message}</p></div>)}
-              <button onClick={() => { void loadProviders(); setStatus("Provider status checked"); setProviderCheckMessage("Provider status checked via /api/ai/providers/status"); }}>Check Provider Status</button>
+              <div className="button-row">
+                <button onClick={() => { void loadProviders(); setStatus("Provider status checked"); setProviderCheckMessage("Provider status checked via /api/ai/providers/status"); }}>Check Provider Status</button>
+                <button onClick={() => void checkOpenCodeAuth()}>Check OpenCode auth</button>
+              </div>
+              {opencodeAuth && (
+                <div className="panel-status">
+                  OpenCode auth: {opencodeAuth.status} · {opencodeAuth.message}
+                  {opencodeAuth.commands.length > 0 && <div>Commands: {opencodeAuth.commands.join(" | ")}</div>}
+                </div>
+              )}
+              <p className="hint"><strong>B) API-key providers</strong> use local secret fields in Image/API Keys.</p>
+              <p className="hint"><strong>C) Image/API keys</strong> are masked and never stored in project.json.</p>
               {providerCheckMessage && <p className="panel-status">{providerCheckMessage}</p>}
             </div>}
             {settingsTab === "keys" && <div>

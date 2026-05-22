@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import multer from "multer";
 import {
@@ -615,6 +616,30 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     return { detected: false, message: "OpenCode CLI not detected. Set OPENCODE_CLI_PATH or ensure 'opencode' is in PATH." };
   }
 
+  function checkOpenCodeAuth(): { status: "connected" | "not_configured" | "unknown"; message: string; commands: string[]; output?: string } {
+    const baseCommands = ["opencode auth status", "opencode auth login"];
+    const detected = detectOpenCode();
+    if (!detected.detected) {
+      return { status: "not_configured", message: "OpenCode CLI not detected. Run OpenCode login/auth in terminal, then click Check again.", commands: baseCommands };
+    }
+    const help = spawnSync("opencode", ["auth", "--help"], { encoding: "utf-8", timeout: 4000 });
+    const status = spawnSync("opencode", ["auth", "status"], { encoding: "utf-8", timeout: 4000 });
+    const helpText = `${help.stdout || ""}\n${help.stderr || ""}`;
+    const providerCommands = ["openai", "kimi", "zai"]
+      .filter((name) => helpText.toLowerCase().includes(name))
+      .map((name) => `opencode auth login ${name}`);
+    const output = `${status.stdout || ""} ${status.stderr || ""}`.trim();
+    if (status.status === 0) {
+      return { status: "connected", message: "OpenCode auth status command succeeded.", commands: [...baseCommands, ...providerCommands], output };
+    }
+    return {
+      status: "unknown",
+      message: "OpenCode auth status unavailable. Run OpenCode login/auth in terminal, then click Check again.",
+      commands: [...baseCommands, ...providerCommands],
+      output
+    };
+  }
+
   async function getImageApiKeyStatus(): Promise<{ genKey: string; genSource: string; analyzeKey: string; analyzeSource: string }> {
     const envGen = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_IMAGE_API_KEY || "";
     const envAnalyze = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_ANALYZE_API_KEY || "";
@@ -686,6 +711,11 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
       return;
     }
     res.json({ ok: false, status: "unknown", message: `Unknown provider: ${provider}` });
+  });
+
+  app.get("/api/ai/opencode/auth-status", async (_req, res) => {
+    const auth = checkOpenCodeAuth();
+    res.json({ ok: true, ...auth });
   });
 
   app.get("/api/secrets/status", async (_req, res) => {

@@ -160,6 +160,16 @@ test("/api/secrets/image-keys updates /api/secrets/status source safely", async 
   assert.ok((body.imageGen?.maskedKey || "").length >= 4);
 });
 
+test("/api/ai/opencode/auth-status returns safe status payload", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/opencode/auth-status`);
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: boolean; status?: string; message?: string; commands?: string[] };
+  assert.equal(body.ok, true);
+  assert.ok(typeof body.status === "string");
+  assert.ok(typeof body.message === "string");
+  assert.ok(Array.isArray(body.commands));
+});
+
 test("/api/images/edit returns unavailable for unsupported no-key edits", async () => {
   await withNoOpenAIKey(async () => {
     const uploadForm = new FormData();
