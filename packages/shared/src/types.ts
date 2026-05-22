@@ -283,6 +283,7 @@ export interface SBuildProject {
   ai: SBuildAISettings;
   deploy: SBuildDeploySettings;
   pages: SBuildPage[];
+  selectedTheme?: string;
 }
 
 export type ImageTargetBlockType =

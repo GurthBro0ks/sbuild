@@ -544,8 +544,70 @@ export function App() {
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
   const [copiedBlockStyle, setCopiedBlockStyle] = useState<Block["styles"] | null>(null);
+  const [imageManagerOpen, setImageManagerOpen] = useState(false);
+  const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
+
+  // Friendly block type labels
+  const blockTypeLabels: Record<BlockType, string> = {
+    hero: "Hero section",
+    text: "Text section",
+    image: "Image section",
+    cards: "Cards section",
+    hours: "Hours section",
+    gallery: "Gallery section",
+    contact: "Contact section",
+    testimonial: "Testimonial section",
+    map: "Map section",
+    marquee: "Marquee section",
+    spacer: "Spacer",
+    divider: "Divider",
+    html: "HTML block"
+  };
+
+  // Friendly part labels
+  const partLabels: Record<keyof BlockPartStyles, string> = {
+    container: "Whole block",
+    heading: "Heading",
+    body: "Body text",
+    button: "Button/CTA",
+    card: "Cards/items",
+    cardHeading: "Card heading",
+    cardBody: "Card body",
+    nav: "Navigation",
+    image: "Image/background"
+  };
+
+  // Preset mappings
+  const SIZE_PRESETS = { Small: 14, Normal: 18, Large: 24, XL: 32 };
+  const WEIGHT_PRESETS = { Normal: 400, Medium: 500, Bold: 700, "Extra Bold": 800 };
+  const PADDING_PRESETS = { None: 0, Tight: 8, Normal: 16, Spacious: 32, Huge: 64 };
+  const MARGIN_PRESETS = { None: 0, Tight: 4, Normal: 8, Spacious: 24 };
+  const BORDER_PRESETS = { None: 0, Thin: 1, Medium: 2, Thick: 4 };
+  const RADIUS_PRESETS = { Square: 0, Soft: 6, Rounded: 12, Pill: 999 };
+  const SHADOW_PRESETS: Record<string, string> = {
+    None: "",
+    Soft: "0 2px 8px rgba(0,0,0,.08)",
+    Medium: "0 4px 16px rgba(0,0,0,.12)",
+    Strong: "0 8px 32px rgba(0,0,0,.18)",
+    Glow: "0 0 20px rgba(70,130,255,.3)"
+  };
+  const GRADIENT_PRESETS: Record<string, string> = {
+    Sunset: "linear-gradient(135deg, #ff6b6b, #feca57)",
+    Forest: "linear-gradient(135deg, #1dd1a1, #10ac84)",
+    Ocean: "linear-gradient(135deg, #48dbfb, #0abde3)",
+    Neon: "linear-gradient(135deg, #ff9ff3, #f368e0)",
+    "Soft light": "linear-gradient(135deg, #feca57, #ff9ff3)",
+    Custom: ""
+  };
+  const GRADIENT_DIRECTIONS: Record<string, string> = {
+    "Top → Bottom": "180deg",
+    "Left → Right": "90deg",
+    "Diagonal": "135deg",
+    "Radial": "circle"
+  };
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
@@ -654,10 +716,24 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/project");
       setProject(data.project);
-      const matched = themePresets.find((t) => t.colors.bg === data.project.globalStyles.colors.bg && t.colors.surface === data.project.globalStyles.colors.surface);
-      if (matched) {
-        setSelectedThemeName(matched.name);
-        setThemeApplied(matched.name);
+      // Restore theme from persisted project.selectedTheme
+      const savedTheme = data.project.selectedTheme;
+      if (savedTheme) {
+        const matched = themePresets.find((t) => t.name === savedTheme);
+        if (matched) {
+          setSelectedThemeName(matched.name);
+          setThemeApplied(matched.name);
+        } else {
+          setSelectedThemeName(savedTheme);
+          setThemeApplied(savedTheme);
+        }
+      } else {
+        // Fallback: match by color (legacy behavior)
+        const matched = themePresets.find((t) => t.colors.bg === data.project.globalStyles.colors.bg && t.colors.surface === data.project.globalStyles.colors.surface);
+        if (matched) {
+          setSelectedThemeName(matched.name);
+          setThemeApplied(matched.name);
+        }
       }
       setStatus("Project loaded");
     } catch (error) {
@@ -747,6 +823,52 @@ export function App() {
   function resetWholeBlockToTheme() {
     patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: undefined, textColor: undefined, fontFamily: undefined, parts: {} } }));
     setStatus("Reset whole block to theme");
+  }
+
+  function friendlySelectedLabel(): string {
+    if (!selectedBlock) return "No block selected";
+    const blockLabel = blockTypeLabels[selectedBlock.type] || selectedBlock.type;
+    const partLabel = partLabels[selectedPart];
+    return partLabel ? `${blockLabel} → ${partLabel}` : blockLabel;
+  }
+
+  function openImageManager(target: "block-bg" | "part-bg" | "hero" | "image-block") {
+    setImageManagerTarget(target);
+    setImageManagerOpen(true);
+  }
+
+  function applyImageFromManager(url: string) {
+    if (!selectedBlock || !selectedPage) return;
+    if (imageManagerTarget === "part-bg") {
+      updateSelectedPartStyle({ backgroundImage: url, backgroundFit: "cover" });
+    } else if (imageManagerTarget === "block-bg") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          backgroundImage: url,
+          backgroundSize: "cover",
+          backgroundPosition: "center"
+        }
+      }));
+    } else if (imageManagerTarget === "hero") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          backgroundImage: url,
+          backgroundSize: "cover",
+          backgroundPosition: "center"
+        }
+      }));
+    } else if (imageManagerTarget === "image-block") {
+      patchSelectedBlock((b) => ({
+        ...b,
+        data: { ...(b.data as Record<string, unknown>), src: url, alt: "Selected image" }
+      }));
+    }
+    setImageManagerOpen(false);
+    setStatus(`Applied image to ${friendlySelectedLabel()}`);
   }
 
   function currentTargetContext(): ImageTargetContext {
@@ -959,6 +1081,7 @@ export function App() {
     }));
     setProject({
       ...project,
+      selectedTheme: theme.name,
       globalStyles: {
         ...project.globalStyles,
         headingFont: theme.headingFont || project.globalStyles.headingFont,
@@ -1404,7 +1527,8 @@ export function App() {
                         {!previewMode && (
                           <div className="block-meta">
                             <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
-                            {block.type} · {block.id.slice(0, 12)}
+                            <span className="block-friendly-label">{blockTypeLabels[block.type] || block.type}</span>
+                            <span className="block-id-debug">{block.id.slice(0, 12)}</span>
                             <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
                             <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
                           </div>
@@ -1443,12 +1567,12 @@ export function App() {
         </main>
 
         <aside className="right-drawer">
-          <div className="tabs">
-            <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""}>Properties</button>
-            <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""}>Style</button>
-            <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""}>Resize</button>
-            <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""}>AI Chat</button>
-            <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""}>Debug</button>
+          <div className="tabs compact-tabs">
+            <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
+            <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
+            <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
+            <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
+            <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
           </div>
 
           {rightTab === "properties" && selectedBlock && (
@@ -1692,81 +1816,325 @@ export function App() {
           )}
 
           {rightTab === "style" && selectedBlock && (
-            <div className="panel">
-              <h3>Style</h3>
-              <p className="panel-status"><strong>Design:</strong> global + selected block parts</p>
-
-              <h4>Global Style</h4>
-              <label>Theme
-                <select value={selectedThemeName} onChange={(e) => {
-                  const next = e.target.value;
-                  setSelectedThemeName(next);
-                  const idx = themePresets.findIndex((t) => t.name === next);
-                  if (idx >= 0) applyTheme(idx);
-                }}>
-                  {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
-                </select>
-              </label>
-              <div className="button-row compact">
-                <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+            <div className="panel style-panel">
+              {/* Selected block summary — sticky */}
+              <div className="style-selected-summary">
+                <div className="style-selected-badge">
+                  Editing: {friendlySelectedLabel()}
+                </div>
+                <div className="style-debug">
+                  Block: {selectedBlock.type} · {selectedBlock.id} · Part: {String(selectedPart)}
+                </div>
               </div>
-              <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
-              <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
-              <label>Block Background <input type="color" value={project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("blockBackground", e.target.value)} /></label>
-              <label>Card Background <input type="color" value={project.globalStyles.colors.cardBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("cardBackground", e.target.value)} /></label>
-              <label>Heading Color <input type="color" value={project.globalStyles.colors.headingColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("headingColor", e.target.value)} /></label>
-              <label>Body Text Color <input type="color" value={project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("bodyTextColor", e.target.value)} /></label>
-              <label>Accent Color <input type="color" value={project.globalStyles.colors.accentColor || project.globalStyles.colors.accent} onChange={(e) => updateGlobalColor("accentColor", e.target.value)} /></label>
-              <label>Heading Font
-                <select value={project.globalStyles.headingFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: e.target.value } }); setDirty(true); }}>
-                  {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
-                </select>
-              </label>
-              <label>Body Font
-                <select value={project.globalStyles.bodyFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, bodyFont: e.target.value } }); setDirty(true); }}>
-                  {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
-                </select>
-              </label>
 
-              <h4>Selected Block Style</h4>
-              <label>Part
-                <select value={selectedPart} onChange={(e) => setSelectedPart(e.target.value as keyof BlockPartStyles)}>
-                  <option value="container">Container</option>
-                  <option value="heading">Heading</option>
-                  <option value="body">Body text</option>
-                  <option value="button">Button/CTA</option>
-                  <option value="card">Cards/items</option>
-                  <option value="cardHeading">Card heading</option>
-                  <option value="cardBody">Card body</option>
-                  <option value="nav">Nav</option>
-                  <option value="image">Image/background</option>
-                </select>
-              </label>
-              <label>Background color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor as string) || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} /></label>
-              <label>Text color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.textColor as string) || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} /></label>
-              <label>Font family <input value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""} onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })} placeholder="Use theme font when empty" /></label>
-              <label>Font size <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontSize || ""} onChange={(e) => updateSelectedPartStyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Font weight <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || ""} onChange={(e) => updateSelectedPartStyle({ fontWeight: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Padding <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.padding || ""} onChange={(e) => updateSelectedPartStyle({ padding: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Margin <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.margin || ""} onChange={(e) => updateSelectedPartStyle({ margin: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Border color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.borderColor as string) || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} /></label>
-              <label>Border width <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth || ""} onChange={(e) => updateSelectedPartStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Border radius <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius || ""} onChange={(e) => updateSelectedPartStyle({ borderRadius: e.target.value ? Number(e.target.value) : undefined })} /></label>
-              <label>Shadow <input value={selectedBlock.styles?.parts?.[selectedPart]?.shadow || ""} onChange={(e) => updateSelectedPartStyle({ shadow: e.target.value || undefined })} placeholder="0 8px 24px rgba(0,0,0,.2)" /></label>
-              <label>Background image URL <input value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage || ""} onChange={(e) => updateSelectedPartStyle({ backgroundImage: e.target.value || undefined })} placeholder="/project/images/example.png" /></label>
-              <label>Background fit
-                <select value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundFit || "cover"} onChange={(e) => updateSelectedPartStyle({ backgroundFit: e.target.value as PartStyle["backgroundFit"] })}>
-                  <option value="cover">cover</option>
-                  <option value="contain">contain</option>
-                  <option value="fill">fill</option>
-                  <option value="repeat">repeat</option>
-                </select>
-              </label>
+              {/* Quick part selector */}
+              <div className="style-section">
+                <h4>Edit Part</h4>
+                <div className="button-row compact part-selector">
+                  {(["container", "heading", "body", "button", "card", "cardHeading", "cardBody", "image"] as Array<keyof BlockPartStyles>).map((part) => (
+                    <button
+                      key={part}
+                      className={selectedPart === part ? "selected" : ""}
+                      onClick={() => setSelectedPart(part)}
+                      title={partLabels[part]}
+                    >
+                      {partLabels[part]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick toolbar */}
+              <div className="style-section">
+                <h4>Quick</h4>
+                <div className="button-row compact">
+                  <button onClick={() => updateSelectedPartStyle({ fontWeight: (selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? 400 : 700 })}>
+                    {(selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? "Unbold" : "Bold"}
+                  </button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "left" })}>Left</button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "center" })}>Center</button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "right" })}>Right</button>
+                  <button onClick={() => {
+                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
+                    updateSelectedPartStyle({ fontSize: Math.max(10, current - 2) });
+                  }}>Smaller</button>
+                  <button onClick={() => {
+                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
+                    updateSelectedPartStyle({ fontSize: current + 2 });
+                  }}>Bigger</button>
+                  <button onClick={() => resetSelectedPartToTheme()}>Reset part</button>
+                </div>
+              </div>
+
+              {/* Text section */}
+              <div className="style-section">
+                <h4>Text</h4>
+                <label>Font
+                  <select
+                    value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""}
+                    onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })}
+                  >
+                    <option value="">Use theme font</option>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+                <div className="preset-row">
+                  <span className="preset-label">Size:</span>
+                  {Object.entries(SIZE_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ fontSize: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize !== undefined &&
+                      !Object.values(SIZE_PRESETS).includes(selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 0) ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ fontSize: 18 })}
+                  >
+                    Custom
+                  </button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Weight:</span>
+                  {Object.entries(WEIGHT_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ fontWeight: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Color:</span>
+                  <button className="color-swatch" style={{ background: project.globalStyles.colors.headingColor || project.globalStyles.colors.text }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.headingColor || project.globalStyles.colors.text })} title="Theme heading" />
+                  <button className="color-swatch" style={{ background: project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text })} title="Theme text" />
+                  <button className="color-swatch" style={{ background: project.globalStyles.colors.accentColor || project.globalStyles.colors.accent }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.accentColor || project.globalStyles.colors.accent })} title="Accent" />
+                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.textColor || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} className="color-input-inline" />
+                </div>
+              </div>
+
+              {/* Background section */}
+              <div className="style-section">
+                <h4>Background</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Type:</span>
+                  <button onClick={() => {
+                    updateSelectedPartStyle({ backgroundColor: undefined, backgroundImage: undefined });
+                  }}>Theme</button>
+                  <button onClick={() => {
+                    updateSelectedPartStyle({ backgroundColor: "#ffffff", backgroundImage: undefined });
+                  }}>Solid</button>
+                  <button onClick={() => {
+                    updateSelectedPartStyle({ backgroundColor: "linear-gradient(135deg, #ff6b6b, #feca57)", backgroundImage: undefined });
+                  }}>Gradient</button>
+                  <button onClick={() => openImageManager("part-bg")}>Image</button>
+                  <button onClick={() => {
+                    updateSelectedPartStyle({ backgroundColor: "transparent", backgroundImage: undefined });
+                  }}>Transparent</button>
+                </div>
+
+                {/* Solid color picker (shown when solid is active or no gradient/image) */}
+                {(!selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage &&
+                  (!selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor ||
+                   !selectedBlock.styles.parts[selectedPart].backgroundColor?.includes("gradient"))) && (
+                  <label>Color
+                    <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
+                  </label>
+                )}
+
+                {/* Gradient builder */}
+                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor?.includes("gradient") && (
+                  <div className="gradient-builder">
+                    <div className="preset-row">
+                      <span className="preset-label">Preset:</span>
+                      {Object.entries(GRADIENT_PRESETS).map(([name, val]) => (
+                        <button
+                          key={name}
+                          className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor === val ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: val })}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="preset-row">
+                      <span className="preset-label">Direction:</span>
+                      {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => (
+                        <button
+                          key={name}
+                          onClick={() => {
+                            const current = selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "";
+                            const newGradient = current.replace(/linear-gradient\([^,]+/, `linear-gradient(${val}`);
+                            updateSelectedPartStyle({ backgroundColor: newGradient });
+                          }}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="gradient-preview" style={{ background: selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
+                  </div>
+                )}
+
+                {/* Image background controls */}
+                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage && (
+                  <div>
+                    <p className="hint">Image: {selectedBlock.styles.parts[selectedPart].backgroundImage?.slice(0, 60)}...</p>
+                    <div className="button-row compact">
+                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "cover" })}>Cover</button>
+                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "contain" })}>Contain</button>
+                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "fill" })}>Stretch</button>
+                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "repeat" })}>Tile</button>
+                    </div>
+                    <label>Overlay opacity
+                      <input type="range" min={0} max={100} value={Math.round((selectedBlock.styles?.parts?.[selectedPart]?.opacity || 1) * 100)} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) / 100 })} />
+                    </label>
+                    <button onClick={() => openImageManager("part-bg")}>Change image</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Box/spacing section */}
+              <div className="style-section">
+                <h4>Box & Spacing</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Padding:</span>
+                  {Object.entries(PADDING_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.padding === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ padding: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Margin:</span>
+                  {Object.entries(MARGIN_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.margin === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ margin: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Border:</span>
+                  {Object.entries(BORDER_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderWidth: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Radius:</span>
+                  {Object.entries(RADIUS_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderRadius: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Shadow:</span>
+                  {Object.entries(SHADOW_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadow === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ shadow: val || undefined })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advanced accordion */}
+              <div className="style-section">
+                <button className="accordion-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
+                  Advanced {advancedOpen ? "▲" : "▼"}
+                </button>
+                {advancedOpen && (
+                  <div className="advanced-fields">
+                    <label>Background color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor as string) || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} /></label>
+                    <label>Text color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.textColor as string) || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} /></label>
+                    <label>Font family <input value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""} onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })} placeholder="Use theme font when empty" /></label>
+                    <label>Font size <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontSize || ""} onChange={(e) => updateSelectedPartStyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Font weight <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || ""} onChange={(e) => updateSelectedPartStyle({ fontWeight: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Padding <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.padding ?? ""} onChange={(e) => updateSelectedPartStyle({ padding: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Margin <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.margin ?? ""} onChange={(e) => updateSelectedPartStyle({ margin: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Border color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.borderColor as string) || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} /></label>
+                    <label>Border width <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth ?? ""} onChange={(e) => updateSelectedPartStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Border radius <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius ?? ""} onChange={(e) => updateSelectedPartStyle({ borderRadius: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Shadow <input value={selectedBlock.styles?.parts?.[selectedPart]?.shadow || ""} onChange={(e) => updateSelectedPartStyle({ shadow: e.target.value || undefined })} placeholder="0 8px 24px rgba(0,0,0,.2)" /></label>
+                    <label>Background image URL <input value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage || ""} onChange={(e) => updateSelectedPartStyle({ backgroundImage: e.target.value || undefined })} placeholder="/project/images/example.png" /></label>
+                    <label>Background fit
+                      <select value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundFit || "cover"} onChange={(e) => updateSelectedPartStyle({ backgroundFit: e.target.value as PartStyle["backgroundFit"] })}>
+                        <option value="cover">cover</option>
+                        <option value="contain">contain</option>
+                        <option value="fill">fill</option>
+                        <option value="repeat">repeat</option>
+                      </select>
+                    </label>
+                    <label>Opacity <input type="number" min={0} max={1} step={0.1} value={selectedBlock.styles?.parts?.[selectedPart]?.opacity ?? 1} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) })} /></label>
+                  </div>
+                )}
+              </div>
+
+              {/* Global style section (clearly separated) */}
+              <div className="style-section global-style-section">
+                <h4>Global Site Style</h4>
+                <label>Theme
+                  <select value={selectedThemeName} onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedThemeName(next);
+                    const idx = themePresets.findIndex((t) => t.name === next);
+                    if (idx >= 0) applyTheme(idx);
+                  }}>
+                    {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
+                  </select>
+                </label>
+                <div className="button-row compact">
+                  <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+                  <button onClick={() => resetWholeBlockToTheme()}>Reset selected block to theme</button>
+                </div>
+                <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
+                <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
+                <label>Block Background <input type="color" value={project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("blockBackground", e.target.value)} /></label>
+                <label>Card Background <input type="color" value={project.globalStyles.colors.cardBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("cardBackground", e.target.value)} /></label>
+                <label>Heading Color <input type="color" value={project.globalStyles.colors.headingColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("headingColor", e.target.value)} /></label>
+                <label>Body Text Color <input type="color" value={project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("bodyTextColor", e.target.value)} /></label>
+                <label>Accent Color <input type="color" value={project.globalStyles.colors.accentColor || project.globalStyles.colors.accent} onChange={(e) => updateGlobalColor("accentColor", e.target.value)} /></label>
+                <label>Heading Font
+                  <select value={project.globalStyles.headingFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: e.target.value } }); setDirty(true); }}>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+                <label>Body Font
+                  <select value={project.globalStyles.bodyFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, bodyFont: e.target.value } }); setDirty(true); }}>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+              </div>
+
               <div className="button-row compact">
-                <button onClick={() => resetSelectedPartToTheme()}>Reset selected part to theme</button>
-                <button onClick={() => resetWholeBlockToTheme()}>Reset whole block to theme</button>
-                <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy selected block style</button>
-                <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style to selected block</button>
+                <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy style</button>
+                <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style</button>
               </div>
             </div>
           )}
@@ -2018,6 +2386,39 @@ export function App() {
             <div className="button-row">
               <button onClick={() => void runWizard()}>Apply</button>
               <button onClick={() => setShowWizard(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Manager Modal */}
+      {imageManagerOpen && (
+        <div className="modal-backdrop" onClick={() => setImageManagerOpen(false)}>
+          <div className="modal image-manager-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Image Manager</h3>
+            <div className="image-manager-upload">
+              <label>Upload image
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
+              </label>
+              {uploadingImage && <span className="hint">Uploading...</span>}
+            </div>
+            
+            <div className="image-manager-gallery">
+              <h4>Project Images</h4>
+              {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
+              <div className="image-grid">
+                {uploadedImages.map((img) => (
+                  <div key={img} className={`image-card ${selectedUploadImage === img ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img)}>
+                    <img src={img} alt={img} loading="lazy" />
+                    <div className="image-meta">{img.split("/").pop()}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="image-manager-actions">
+              <button onClick={() => { if (selectedUploadImage) applyImageFromManager(selectedUploadImage); }} disabled={!selectedUploadImage}>Use selected image</button>
+              <button onClick={() => setImageManagerOpen(false)}>Cancel</button>
             </div>
           </div>
         </div>

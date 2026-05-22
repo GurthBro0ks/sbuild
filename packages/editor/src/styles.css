@@ -105,6 +105,196 @@ button.selected {
   overflow-x: hidden;
 }
 
+.style-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.style-selected-summary {
+  position: sticky;
+  top: 0;
+  background: var(--sbuild-surface);
+  z-index: 5;
+  padding: 8px 0;
+  border-bottom: 2px solid var(--sbuild-accent);
+  margin-bottom: 6px;
+}
+
+.style-selected-badge {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--sbuild-accent);
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--sbuild-accent) 10%, transparent);
+  border-radius: 8px;
+}
+
+.style-debug {
+  font-size: 11px;
+  color: var(--sbuild-muted);
+  margin-top: 4px;
+}
+
+.style-section {
+  border-bottom: 1px dashed var(--sbuild-border);
+  padding-bottom: 10px;
+}
+
+.style-section h4 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--sbuild-muted);
+}
+
+.part-selector {
+  flex-wrap: wrap;
+}
+
+.part-selector button {
+  font-size: 11px;
+  padding: 5px 8px;
+  min-width: 0;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.preset-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sbuild-text);
+  min-width: 60px;
+}
+
+.preset-row button {
+  font-size: 11px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--sbuild-border);
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+}
+
+.color-input-inline {
+  width: 40px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--sbuild-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gradient-builder {
+  padding: 8px;
+  background: color-mix(in srgb, var(--sbuild-surface-2) 50%, transparent);
+  border-radius: 8px;
+  margin: 6px 0;
+}
+
+.gradient-preview {
+  border: 1px solid var(--sbuild-border);
+}
+
+.global-style-section {
+  background: color-mix(in srgb, var(--sbuild-surface-2) 30%, transparent);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--sbuild-border);
+}
+
+.accordion-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px dashed var(--sbuild-border);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.advanced-fields {
+  padding: 8px;
+  background: color-mix(in srgb, var(--sbuild-surface-2) 20%, transparent);
+  border-radius: 0 0 8px 8px;
+}
+
+/* Image Manager */
+.image-manager-modal {
+  max-height: 85vh;
+  overflow: auto;
+}
+
+.image-manager-upload {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--sbuild-surface-2) 30%, transparent);
+  border-radius: 8px;
+}
+
+.image-manager-gallery {
+  margin-bottom: 12px;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.image-card {
+  border: 2px solid var(--sbuild-border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.image-card.selected {
+  border-color: var(--sbuild-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sbuild-accent) 30%, transparent);
+}
+
+.image-card img {
+  width: 100%;
+  height: 80px;
+  object-fit: cover;
+  display: block;
+}
+
+.image-meta {
+  font-size: 10px;
+  padding: 4px;
+  color: var(--sbuild-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--sbuild-surface);
+}
+
+.image-manager-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 10px;
+  border-top: 1px solid var(--sbuild-border);
+}
+
 .left-drawer.collapsed {
   width: 0;
   min-width: 0;
@@ -258,6 +448,47 @@ button.selected {
   gap: 8px;
 }
 
+.block-friendly-label {
+  font-weight: 700;
+  color: var(--sbuild-text);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.block-id-debug {
+  font-size: 10px;
+  color: var(--sbuild-muted);
+  opacity: 0.7;
+}
+
+/* Selected part highlighting */
+.block-shell.selected-block .block-friendly-label {
+  color: var(--sbuild-accent);
+}
+
+.block-shell.selected-block {
+  border-color: #2b6dff;
+  box-shadow: 0 0 0 2px rgba(43,109,255,.2);
+}
+
+/* Part-level highlight hints */
+.block-shell.selected-block h1,
+.block-shell.selected-block h2 {
+  outline: 1px dashed rgba(43,109,255,0.3);
+  outline-offset: 2px;
+}
+
+.block-shell.selected-block .cta-btn {
+  outline: 1px dashed rgba(43,109,255,0.3);
+  outline-offset: 2px;
+}
+
+.block-shell.selected-block .cards-grid article,
+.block-shell.selected-block .gallery-grid figure {
+  outline: 1px dashed rgba(43,109,255,0.15);
+  outline-offset: 1px;
+}
+
 .grab-handle {
   cursor: grab;
   font-size: 14px;
@@ -344,6 +575,20 @@ button.selected {
   display: flex;
   gap: 6px;
   margin-bottom: 10px;
+}
+
+.compact-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  gap: 4px;
+}
+
+.compact-tabs button {
+  font-size: 12px;
+  padding: 5px 8px;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 label {
