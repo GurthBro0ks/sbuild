@@ -615,10 +615,10 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     return { detected: false, message: "OpenCode CLI not detected. Set OPENCODE_CLI_PATH or ensure 'opencode' is in PATH." };
   }
 
-  function getImageApiKeyStatus(): { genKey: string; genSource: string; analyzeKey: string; analyzeSource: string } {
+  async function getImageApiKeyStatus(): Promise<{ genKey: string; genSource: string; analyzeKey: string; analyzeSource: string }> {
     const envGen = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_IMAGE_API_KEY || "";
     const envAnalyze = process.env.OPENAI_API_KEY || process.env.SBUILD_OPENAI_ANALYZE_API_KEY || "";
-    const secrets = {} as Record<string, unknown>;
+    const secrets = await loadSecrets();
     const localGen = String((secrets as Record<string, unknown>).imageGenApiKey || "");
     const localAnalyze = String((secrets as Record<string, unknown>).imageAnalyzeApiKey || "");
 
@@ -632,7 +632,7 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
 
   app.get("/api/ai/providers/status", async (_req, res) => {
     const openCode = detectOpenCode();
-    const keyStatus = getImageApiKeyStatus();
+    const keyStatus = await getImageApiKeyStatus();
     const providers = [
       {
         name: "OpenCode CLI",
@@ -672,7 +672,7 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
   app.post("/api/ai/providers/test", async (req, res) => {
     const provider = String(req.body?.provider || "");
     if (provider === "image-gen") {
-      const keyStatus = getImageApiKeyStatus();
+      const keyStatus = await getImageApiKeyStatus();
       if (keyStatus.genSource === "missing") {
         res.json({ ok: false, status: "not_configured", message: "No image generation API key found." });
         return;
@@ -689,7 +689,7 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
   });
 
   app.get("/api/secrets/status", async (_req, res) => {
-    const keyStatus = getImageApiKeyStatus();
+    const keyStatus = await getImageApiKeyStatus();
     res.json({
       ok: true,
       imageGen: {

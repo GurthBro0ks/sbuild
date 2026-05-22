@@ -141,6 +141,25 @@ test("/api/project remains available with editor static serving", async () => {
   assert.ok(Boolean(body.project));
 });
 
+test("/api/secrets/image-keys updates /api/secrets/status source safely", async () => {
+  const key = `sk-local-${Date.now()}-demo`;
+  const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ imageGenApiKey: key })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const statusResponse = await fetch(`${baseUrl}/api/secrets/status`);
+  assert.equal(statusResponse.status, 200);
+  const body = await statusResponse.json() as {
+    imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
+  };
+  assert.equal(body.imageGen?.configured, true);
+  assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
+  assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+});
+
 test("/api/images/edit returns unavailable for unsupported no-key edits", async () => {
   await withNoOpenAIKey(async () => {
     const uploadForm = new FormData();

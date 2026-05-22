@@ -28,6 +28,8 @@ import {
 
 type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "ai" | "status";
+type PropertiesTab = "fields" | "resize";
+type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug";
 type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
@@ -43,6 +45,8 @@ const EFFECTS: BlockEffect[] = ["glow", "marquee", "fade-in", "gradient-text", "
 const DIVIDER_STYLES: DividerStyle[] = ["solid", "dashed", "dotted", "double", "gradient", "glow", "zigzag", "wave", "spacer-line"];
 
 const ASPECT_RATIOS = ["auto", "1:1", "4:3", "16:9", "3:2", "9:16"];
+const QUICK_WIDTHS = ["full", "wide", "medium", "narrow"] as const;
+const QUICK_HEIGHTS = ["auto", "short", "medium", "tall"] as const;
 
 const themePresets = [
   { name: "Harvest Light", colors: { bg: "#f6f3e9", surface: "#fffef9", text: "#1f2a24", accent: "#2f6b3f", muted: "#6f7f73" }, headingFont: "Nunito Sans", isDark: false },
@@ -428,7 +432,15 @@ export function App() {
   const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
   const [secretStatusMsg, setSecretStatusMsg] = useState("");
   const [resizeStatus, setResizeStatus] = useState("");
+  const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>("fields");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
+  const [layoutHighlight, setLayoutHighlight] = useState(false);
+  const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
+  const [providerCheckMessage, setProviderCheckMessage] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
+  const layoutSectionRef = useRef<HTMLDivElement>(null);
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
@@ -438,7 +450,42 @@ export function App() {
     void loadFonts();
     void loadImages();
     void loadProviders();
+    void loadSecretsStatus();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("sbuild_left_collapsed", leftCollapsed ? "1" : "0");
+  }, [leftCollapsed]);
+
+  useEffect(() => {
+    const onToggle = (e: KeyboardEvent) => {
+      if ((e.ctrlKey && e.key.toLowerCase() === "b") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "b")) {
+        e.preventDefault();
+        setLeftCollapsed((prev) => {
+          const next = !prev;
+          setStatus(next ? "Left panel collapsed" : "Left panel opened");
+          return next;
+        });
+      }
+    };
+    window.addEventListener("keydown", onToggle);
+    return () => window.removeEventListener("keydown", onToggle);
+  }, []);
+
+  useEffect(() => {
+    if (!project) return;
+    const colors = project.globalStyles.colors;
+    const dark = ["Farmstand Dark", "Slimy Neon", "Midnight Orchard", "Retro Terminal"].includes(themeApplied)
+      || [colors.bg, colors.surface].some((c) => /^#/.test(c) && parseInt(c.slice(1, 3), 16) < 80);
+    document.body.style.setProperty("--sbuild-editor-bg", dark ? colors.bg : "#f3ecdc");
+    document.body.style.setProperty("--sbuild-canvas-bg", colors.bg);
+    document.body.style.setProperty("--sbuild-surface", colors.surface);
+    document.body.style.setProperty("--sbuild-surface-2", dark ? "rgba(255,255,255,0.04)" : "#fffef9");
+    document.body.style.setProperty("--sbuild-border", dark ? "rgba(255,255,255,0.18)" : "#d5cfbe");
+    document.body.style.setProperty("--sbuild-text", colors.text);
+    document.body.style.setProperty("--sbuild-muted", colors.muted);
+    document.body.style.setProperty("--sbuild-accent", colors.accent);
+  }, [project, themeApplied]);
 
   useEffect(() => {
     if (!project || selectedPageId) return;
@@ -478,6 +525,15 @@ export function App() {
       const data = await fetchJson<{ ok: boolean; providers: SBuildProviderStatus[] }>("/api/ai/providers/status");
       setProviderStatus(data.providers || []);
     } catch { setProviderStatus([]); }
+  }
+
+  async function loadSecretsStatus() {
+    try {
+      const data = await fetchJson<{ ok: boolean; imageGen: { source: "env" | "local" | "missing" }; imageAnalyze: { source: "env" | "local" | "missing" } }>("/api/secrets/status");
+      setSecretStatus({ imageGenKeySource: data.imageGen.source, imageAnalyzeKeySource: data.imageAnalyze.source });
+    } catch {
+      setSecretStatus(null);
+    }
   }
 
   function patchCurrentPage(nextPage: SBuildPage) {
@@ -684,6 +740,39 @@ export function App() {
     setDirty(true);
     setLastAction(`theme-${theme.name}`);
     setThemeApplied(theme.name);
+    setStatus(`Theme applied: ${theme.name} · dark=${theme.isDark ? "true" : "false"} · canvas=${theme.colors.bg}`);
+  }
+
+  function openResizeLayoutForBlock(blockId: string) {
+    const block = selectedPage?.blocks.find((b) => b.id === blockId);
+    if (!block) return;
+    setSelectedBlockId(blockId);
+    setRightTab("properties");
+    setPropertiesTab("resize");
+    setLayoutHighlight(true);
+    setResizeStatus(`Resize/Layout controls open for ${block.type} ${block.id}`);
+    setStatus(`Resize/Layout controls open for ${block.type} ${block.id}`);
+    setTimeout(() => {
+      layoutSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      layoutSectionRef.current?.focus();
+    }, 60);
+    setTimeout(() => setLayoutHighlight(false), 2600);
+  }
+
+  function applyQuickWidth(mode: (typeof QUICK_WIDTHS)[number]) {
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: mode, widthPercent: mode === "full" ? 100 : mode === "wide" ? 85 : mode === "medium" ? 70 : 50 } } }));
+    setResizeStatus(`Width set to ${mode}`);
+  }
+
+  function applyQuickHeight(mode: (typeof QUICK_HEIGHTS)[number]) {
+    const minHeightPx = mode === "auto" ? undefined : mode === "short" ? 140 : mode === "medium" ? 260 : 420;
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), minHeightPx, heightMode: "auto" } } }));
+    setResizeStatus(`Height set to ${mode}`);
+  }
+
+  function applyQuickAspect(aspect: string) {
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: aspect } } }));
+    setResizeStatus(`Aspect set to ${aspect}`);
   }
 
   function addBlock(type: BlockType) {
@@ -828,8 +917,10 @@ export function App() {
         body: JSON.stringify({ imageGenApiKey: secretInputs.imageGenApiKey, imageAnalyzeApiKey: secretInputs.imageAnalyzeApiKey })
       });
       setSecretStatusMsg("Keys saved locally.");
+      setStatus("Secret key saved");
       setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
       await loadProviders();
+      await loadSecretsStatus();
     } catch (error) {
       setSecretStatusMsg(`Failed: ${String(error)}`);
     }
@@ -840,6 +931,8 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; status: string; message: string }>("/api/ai/providers/test", { method: "POST", body: JSON.stringify({ provider }) });
       setSecretStatusMsg(`${provider}: ${data.status} — ${data.message}`);
+      setProviderCheckMessage(`Provider status checked: ${provider} (${data.status})`);
+      setStatus(`Provider status checked: ${provider} (${data.status})`);
     } catch (error) {
       setSecretStatusMsg(`Test failed: ${String(error)}`);
     }
@@ -852,12 +945,12 @@ export function App() {
   return (
     <div className={`app ${previewMode ? "preview" : "edit"}`}>
       <header className="topbar">
-        <button>☰</button>
+        <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo">sBuild v2</div>
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
         <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
         <button onClick={() => setRightTab("ai")}>AI</button>
-        <button onClick={() => setRightTab("status")}>Settings</button>
+        <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
         <button onClick={() => void saveProject()}>Save</button>
         <button onClick={() => void runBuild()}>Build</button>
         <button onClick={() => void runPublish()}>Publish</button>
@@ -866,8 +959,8 @@ export function App() {
         </div>
       </header>
 
-      <div className="workspace">
-        <aside className="left-drawer">
+      <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
+        <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
           <p className="panel-status">
             <strong>Left panel:</strong> page {selectedPage.title} · blocks {selectedPage.blocks.length}
             {drag && ` · dragging ${drag.blockId.slice(0, 12)}`}
@@ -928,6 +1021,7 @@ export function App() {
             {drag && ` · dragging ${drag.blockId.slice(0, 12)} ${drag.startIndex}→${drag.currentIndex}`}
             {resizeStatus && ` · ${resizeStatus}`}
             {themeApplied && ` · theme: ${themeApplied}`}
+            {!leftCollapsed ? " · left panel open" : " · left panel collapsed"}
           </p>
 
           <div
@@ -963,9 +1057,10 @@ export function App() {
                 onDragEnd={handleDragEnd}
               >
                 {!previewMode && (
-                  <div className="block-meta">
+                <div className="block-meta">
                     <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
                     {block.type} · {block.id.slice(0, 12)}
+                    <span className="resize-badge">{block.styles?.layout?.widthMode || "full"} · {block.styles?.layout?.heightMode || "auto"} · {block.styles?.layout?.aspectRatio || "auto"}</span>
                     <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
                   </div>
                 )}
@@ -995,6 +1090,7 @@ export function App() {
         <aside className="right-drawer">
           <div className="tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""}>Properties</button>
+            <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""}>Resize</button>
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""}>AI Chat</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""}>Debug</button>
           </div>
@@ -1002,10 +1098,15 @@ export function App() {
           {rightTab === "properties" && selectedBlock && (
             <div className="panel">
               <h3>Block Fields</h3>
+              <div className="button-row">
+                <button className={propertiesTab === "fields" ? "selected" : ""} onClick={() => setPropertiesTab("fields")}>Fields</button>
+                <button className={propertiesTab === "resize" ? "selected" : ""} onClick={() => setPropertiesTab("resize")}>Resize</button>
+              </div>
               <p className="panel-status">
                 <strong>Properties debug:</strong> {selectedBlock.type} · {selectedBlock.id}
               </p>
 
+              {propertiesTab === "fields" && <>
               {/* Block-specific fields */}
               {selectedBlock.type === "hero" && (
                 <>
@@ -1147,7 +1248,20 @@ export function App() {
                 <input value={selectedBlock.styles?.shadow || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), shadow: e.target.value } }))} placeholder="0 4px 12px rgba(0,0,0,.15)" />
               </label>
 
+              </>}
+
+              <div ref={layoutSectionRef} tabIndex={-1} className={`layout-section ${layoutHighlight ? "layout-highlight" : ""}`}>
               <h3>Layout</h3>
+              <p className="panel-status">Quick Resize</p>
+              <div className="button-row">
+                {QUICK_WIDTHS.map((mode) => <button key={mode} onClick={() => applyQuickWidth(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              </div>
+              <div className="button-row">
+                {QUICK_HEIGHTS.map((mode) => <button key={mode} onClick={() => applyQuickHeight(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              </div>
+              <div className="button-row">
+                {ASPECT_RATIOS.map((ratio) => <button key={ratio} onClick={() => applyQuickAspect(ratio)}>{ratio}</button>)}
+              </div>
               <label>Width Mode
                 <select value={selectedBlock.styles?.layout?.widthMode || "full"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["widthMode"] } } }))}>
                   <option value="full">full</option>
@@ -1186,6 +1300,7 @@ export function App() {
                 </select>
               </label>
               {resizeStatus && <p className="panel-status">{resizeStatus}</p>}
+              </div>
 
               <h4>Effects</h4>
               <div className="effect-list">
@@ -1361,7 +1476,7 @@ export function App() {
       {contextMenu?.visible && (
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
           <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Resize/Layout</button>
+          <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
           <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
           <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
           <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
@@ -1375,6 +1490,48 @@ export function App() {
             setContextMenu(null);
           }}>Copy Block JSON</button>
           <button onClick={() => setContextMenu(null)}>Close</button>
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="modal-backdrop">
+          <div className="modal settings-modal">
+            <h3>Settings</h3>
+            <div className="tabs">
+              <button className={settingsTab === "general" ? "selected" : ""} onClick={() => setSettingsTab("general")}>General</button>
+              <button className={settingsTab === "providers" ? "selected" : ""} onClick={() => setSettingsTab("providers")}>AI Providers</button>
+              <button className={settingsTab === "keys" ? "selected" : ""} onClick={() => setSettingsTab("keys")}>Image/API Keys</button>
+              <button className={settingsTab === "deploy" ? "selected" : ""} onClick={() => setSettingsTab("deploy")}>Deploy Safety</button>
+              <button className={settingsTab === "debug" ? "selected" : ""} onClick={() => setSettingsTab("debug")}>Debug</button>
+            </div>
+            {settingsTab === "general" && <p className="panel-status">Use tabs to configure providers, keys, and deploy safety.</p>}
+            {settingsTab === "providers" && <div>
+              <p className="hint">Subscription providers are handled through OpenCode CLI auth/session where possible. No fake OAuth is used.</p>
+              {providerStatus.map((p) => <div key={`settings-${p.name}`} className={`provider-card provider-${p.status}`}><strong>{p.name}</strong><span className="provider-badge">{p.status}</span><p>{p.message}</p></div>)}
+              <button onClick={() => { void loadProviders(); setStatus("Provider status checked"); setProviderCheckMessage("Provider status checked via /api/ai/providers/status"); }}>Check Provider Status</button>
+              {providerCheckMessage && <p className="panel-status">{providerCheckMessage}</p>}
+            </div>}
+            {settingsTab === "keys" && <div>
+              <p className="hint">Keys are saved in local ignored secret config, never project.json.</p>
+              <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." /></label>
+              <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." /></label>
+              <div className="button-row"><button onClick={() => void saveSecrets()}>Save Keys</button><button onClick={() => void testProvider("image-gen")}>Test Keys</button></div>
+              <p className="panel-status">Image gen source: {secretStatus?.imageGenKeySource || "missing"} · Image analyze source: {secretStatus?.imageAnalyzeKeySource || "missing"}</p>
+              {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
+            </div>}
+            {settingsTab === "deploy" && <div>
+              <p className="panel-status"><strong>Live publish disabled</strong></p>
+              <p>SBUILD_ALLOW_PUBLISH: {"false"}</p>
+              <p>Publish target: dry-run preview</p>
+            </div>}
+            {settingsTab === "debug" && <div>
+              <p><strong>Version:</strong> 0.1.0</p>
+              <p><strong>Selected block:</strong> {selectedBlock?.id || "none"} ({selectedBlock?.type || "none"})</p>
+              <p><strong>Theme:</strong> {themeApplied || "custom"}</p>
+              <p><strong>Last API status:</strong> {status}</p>
+            </div>}
+            <div className="button-row"><button onClick={() => setSettingsOpen(false)}>Close</button></div>
+          </div>
         </div>
       )}
 
