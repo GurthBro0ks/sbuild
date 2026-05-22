@@ -85,6 +85,9 @@ node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.ok||typeof p.status!=='string'){throw new Error('opencode auth status payload invalid')}console.log('opencode auth status check ok')" "$PROOF_DIR/curl-opencode-auth-status.json" | tee -a "$PROOF_DIR/smoke.log"
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.dryRun){throw new Error('publish was not dry-run')}if(String(p.target||'').startsWith('/var/www/')){throw new Error('publish target points to live web root')}console.log('publish dry-run check ok')" "$PROOF_DIR/curl-publish.json" | tee -a "$PROOF_DIR/smoke.log"
 node -e "const fs=require('fs');const text=fs.readFileSync(process.argv[1],'utf8');if(!text.includes('404')||text.toLowerCase().includes('<!doctype html>')){throw new Error('/api/unknown returned non-api fallback')}console.log('api unknown route check ok')" "$PROOF_DIR/curl-api-unknown-i.txt" | tee -a "$PROOF_DIR/smoke.log"
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.version||typeof p.version!=='string'){throw new Error('version missing from /health')}if(!p.gitCommit||typeof p.gitCommit!=='string'){throw new Error('gitCommit missing from /health')}console.log('health version check ok')" "$PROOF_DIR/curl-health.json" | tee -a "$PROOF_DIR/smoke.log"
+if [[ ! -f CHANGELOG.md ]]; then log "FAIL CHANGELOG.md missing"; exit 1; fi
+log "PASS CHANGELOG.md exists"
 
 if [[ -f dist/index.html && -f dist/assets/styles.css ]]; then
   log "PASS static output exists"
@@ -101,6 +104,8 @@ cat > "$PROOF_DIR/RESULT.md" <<RESULT
 
 - Proof dir: $PROOF_DIR
 - Health: ok
+- Health version/gitCommit: ok
+- CHANGELOG.md: exists
 - Project API: ok
 - Project save/load roundtrip: ok
 - Root route serves editor index: ok

@@ -11,8 +11,36 @@ import {
   ImageTargetContext,
   OpenAIImageSize,
   SBuildProject,
-  decideImageSize
+  decideImageSize,
+  SBUILD_VERSION,
+  SBUILD_APP_NAME,
+  SBuildBuildInfo,
 } from "@sbuild/shared";
+import { execSync } from "node:child_process";
+
+function safeGitCommand(cmd: string): string | null {
+  try {
+    return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function getBuildInfo(): SBuildBuildInfo {
+  const commit = safeGitCommand("git rev-parse --short HEAD") || "unknown";
+  const branch = safeGitCommand("git rev-parse --abbrev-ref HEAD") || "unknown";
+  const dirtyStr = safeGitCommand("git status --short") || "";
+  const buildDate = new Date().toISOString();
+  return {
+    version: SBUILD_VERSION,
+    appName: SBUILD_APP_NAME,
+    gitCommit: commit,
+    branch,
+    buildDate,
+    dirty: dirtyStr.length > 0,
+    publishAllowed: process.env.SBUILD_ALLOW_PUBLISH === "1",
+  };
+}
 import { applyDeterministicPaintFix, chatWithFallback, wizardFallback } from "./lib/ai.js";
 import {
   backupsDir,
@@ -184,7 +212,7 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
   app.use("/project/images", express.static(projectImagesDir));
 
   app.get("/health", async (_req, res) => {
-    const publishAllowed = process.env.SBUILD_ALLOW_PUBLISH === "1";
+    const info = getBuildInfo();
     let editorDistExists = false;
     try {
       await fs.access(editorIndexPath);
@@ -194,10 +222,13 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     }
     res.json({
       ok: true,
-      app: "sbuild",
-      version: "0.1.0",
+      appName: info.appName,
+      version: info.version,
+      gitCommit: info.gitCommit,
+      buildDate: info.buildDate,
+      dirty: info.dirty,
+      publishAllowed: info.publishAllowed,
       editorDistExists,
-      publishAllowed,
       paths: {
         editorDistPath: resolvedEditorDistPath,
         editorIndexPath,

@@ -26,6 +26,9 @@ import {
   PartStyle,
   SBuildProviderStatus,
   SBuildSecretConfig,
+  SBuildBuildInfo,
+  SBUILD_VERSION,
+  SBUILD_APP_NAME,
   clampMinHeight,
   clampWidthPercent,
   groupBlocksIntoRows,
@@ -38,7 +41,7 @@ import {
 type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
-type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug";
+type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about";
 type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
@@ -77,6 +80,50 @@ const themePresets = [
   { name: "Ocean", colors: { bg: "#eef6fb", surface: "#ffffff", text: "#1b2f3b", accent: "#1a7ba8", muted: "#5f7380", pageBackground: "#e5eff5", canvasBackground: "#eef6fb", navBackground: "#f7fbff", blockBackground: "#ffffff", blockAltBackground: "#f3f9fd", cardBackground: "#f4f9fc", cardAltBackground: "#ffffff", headingColor: "#163242", bodyTextColor: "#224051", mutedTextColor: "#6c818f", accentColor: "#1a7ba8", buttonBackground: "#1a7ba8", buttonTextColor: "#eaf8ff", borderColor: "#cddce6", shadowColor: "rgba(22,50,66,.16)", linkColor: "#1a7ba8" }, headingFont: "Lato", bodyFont: "Nunito Sans", isDark: false },
   { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60", pageBackground: "#ffe8db", canvasBackground: "#fff1e8", navBackground: "#fff7ef", blockBackground: "#fffaf4", blockAltBackground: "#fff2e6", cardBackground: "#fff0e1", cardAltBackground: "#fff8ef", headingColor: "#4a2c25", bodyTextColor: "#543931", mutedTextColor: "#8b6b60", accentColor: "#cc5f2f", buttonBackground: "#cc5f2f", buttonTextColor: "#fff2e7", borderColor: "#e6c2ae", shadowColor: "rgba(87,51,39,.2)", linkColor: "#c15323" }, headingFont: "Playfair Display", bodyFont: "Lato", isDark: false }
 ];
+
+const BACKGROUND_STYLE_PRESETS: Record<string, { label: string; css: Partial<Record<string, string>> }> = {
+  clean: { label: "Clean", css: {} },
+  glass: { label: "Glass", css: { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" } },
+  neon: { label: "Neon glow", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
+  soft: { label: "Soft card", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
+  bold: { label: "Bold panel", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
+  terminal: { label: "Terminal", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
+  "image-overlay": { label: "Image overlay", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
+};
+
+const BORDER_STYLE_PRESETS: Record<string, { label: string; borderWidth: number; borderColor?: string; borderStyle?: string }> = {
+  none: { label: "None", borderWidth: 0 },
+  thin: { label: "Thin", borderWidth: 1 },
+  accent: { label: "Accent", borderWidth: 2, borderColor: "var(--sbuild-accent)" },
+  double: { label: "Double", borderWidth: 3, borderStyle: "double" },
+  dashed: { label: "Dashed", borderWidth: 2, borderStyle: "dashed" },
+  "glow-edge": { label: "Glow edge", borderWidth: 1, borderColor: "rgba(0,255,170,0.5)" },
+};
+
+const SHADOW_STYLE_PRESETS: Record<string, { label: string; shadow: string }> = {
+  none: { label: "None", shadow: "" },
+  soft: { label: "Soft", shadow: "0 4px 16px rgba(0,0,0,0.06)" },
+  lifted: { label: "Lifted", shadow: "0 12px 24px rgba(0,0,0,0.12)" },
+  strong: { label: "Strong", shadow: "0 16px 48px rgba(0,0,0,0.22)" },
+  neon: { label: "Neon", shadow: "0 0 24px rgba(0,255,170,0.35), 0 0 8px rgba(0,255,170,0.2)" },
+  inner: { label: "Inner", shadow: "inset 0 2px 12px rgba(0,0,0,0.08)" },
+};
+
+const TEXT_EFFECT_PRESETS: Record<string, { label: string; css: Partial<Record<string, string>> }> = {
+  none: { label: "None", css: {} },
+  "subtle-glow": { label: "Subtle glow", css: { textShadow: "0 0 8px rgba(255,255,255,0.35)" } },
+  "strong-glow": { label: "Strong glow", css: { textShadow: "0 0 16px rgba(0,255,170,0.6)" } },
+  outline: { label: "Outline", css: { WebkitTextStroke: "1px currentColor", color: "transparent" } },
+  shadow: { label: "Shadow", css: { textShadow: "2px 2px 4px rgba(0,0,0,0.35)" } },
+};
+
+const BUTTON_STYLE_PRESETS: Record<string, { label: string; css: Partial<Record<string, string>> }> = {
+  solid: { label: "Solid", css: { background: "var(--sbuild-accent)", color: "#ffffff", border: "none" } },
+  outline: { label: "Outline", css: { background: "transparent", color: "var(--sbuild-accent)", border: "2px solid var(--sbuild-accent)" } },
+  ghost: { label: "Ghost", css: { background: "transparent", color: "var(--sbuild-accent)", border: "1px solid rgba(0,0,0,0.1)" } },
+  pill: { label: "Pill", css: { background: "var(--sbuild-accent)", color: "#ffffff", border: "none", borderRadius: "999px" } },
+  glow: { label: "Glow", css: { background: "var(--sbuild-accent)", color: "#ffffff", border: "none", boxShadow: "0 0 16px rgba(0,255,170,0.45)" } },
+};
 
 const OLD_LIGHT_BACKGROUNDS = new Set(["#fff", "#ffffff", "#fffef9", "#fafafa", "#f6f3e9"]);
 const OLD_DARK_TEXT = new Set(["#222", "#222222", "#1f2a24", "#1a1a1a"]);
@@ -173,21 +220,49 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   if ((s.effects || []).includes("pulse")) css.animation = "pulse 2.2s infinite";
   if ((s.effects || []).includes("hover-grow")) css.transition = "transform .2s ease";
   if ((s.effects || []).includes("parallax")) css.backgroundAttachment = "fixed";
+
+  // Apply preset styles
+  const bgPreset = BACKGROUND_STYLE_PRESETS[s.backgroundStyle || ""];
+  if (bgPreset) Object.assign(css, bgPreset.css);
+  const borderPreset = BORDER_STYLE_PRESETS[s.borderStyle || ""];
+  if (borderPreset) {
+    if (borderPreset.borderWidth > 0) {
+      css.border = `${borderPreset.borderWidth}px ${borderPreset.borderStyle || "solid"} ${borderPreset.borderColor || "var(--sbuild-border)"}`;
+    } else {
+      css.border = "none";
+    }
+  }
+  const shadowPreset = SHADOW_STYLE_PRESETS[s.shadowStyle || ""];
+  if (shadowPreset) css.boxShadow = shadowPreset.shadow;
+  const textPreset = TEXT_EFFECT_PRESETS[s.textEffect || ""];
+  if (textPreset) Object.assign(css, textPreset.css);
+  const btnPreset = BUTTON_STYLE_PRESETS[s.buttonStyle || ""];
+  if (btnPreset) Object.assign(css, btnPreset.css);
+
   return css;
+}
+
+function resolveColorMode(value?: string): { mode: "theme" | "transparent" | "color"; raw?: string } {
+  const v = (value || "").trim().toLowerCase();
+  if (!v || v === "inherit") return { mode: "theme" };
+  if (v === "transparent") return { mode: "transparent" };
+  return { mode: "color", raw: value };
 }
 
 function partStyleToCss(part?: PartStyle, fallbackFont?: "heading" | "body"): Record<string, string | number> {
   if (!part) return fallbackFont ? { fontFamily: fallbackFont === "heading" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)" } : {};
-  return {
-    background: part.backgroundColor || "",
-    color: part.textColor || "",
+  const bg = resolveColorMode(part.backgroundColor);
+  const color = resolveColorMode(part.textColor);
+  const border = resolveColorMode(part.borderColor);
+  const css: Record<string, string | number> = {
+    background: bg.mode === "transparent" ? "transparent" : bg.mode === "theme" ? "" : (part.backgroundColor || ""),
+    color: color.mode === "transparent" ? "transparent" : color.mode === "theme" ? "" : (part.textColor || ""),
     fontFamily: part.fontFamily ? `'${part.fontFamily}', sans-serif` : fallbackFont ? (fallbackFont === "heading" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)") : "",
     fontSize: part.fontSize ? `${part.fontSize}px` : "",
     fontWeight: part.fontWeight || "",
     textAlign: part.textAlign || "",
     padding: part.padding !== undefined ? `${part.padding}px` : "",
     margin: part.margin !== undefined ? `${part.margin}px 0` : "",
-    border: part.borderWidth ? `${part.borderWidth}px solid ${part.borderColor || "var(--sbuild-border)"}` : "",
     borderRadius: part.borderRadius !== undefined ? `${part.borderRadius}px` : "",
     boxShadow: part.shadow || "",
     opacity: part.opacity ?? 1,
@@ -195,6 +270,29 @@ function partStyleToCss(part?: PartStyle, fallbackFont?: "heading" | "body"): Re
     backgroundSize: part.backgroundFit === "contain" ? "contain" : part.backgroundFit === "fill" ? "100% 100%" : part.backgroundFit === "repeat" ? "auto" : "cover",
     backgroundRepeat: part.backgroundFit === "repeat" ? "repeat" : "no-repeat"
   };
+  if (part.borderWidth) {
+    css.border = `${part.borderWidth}px ${part.borderStyle || "solid"} ${border.mode === "transparent" ? "transparent" : border.mode === "theme" ? "var(--sbuild-border)" : (part.borderColor || "var(--sbuild-border)")}`;
+  }
+
+  // Apply preset styles
+  const bgPreset = BACKGROUND_STYLE_PRESETS[part.backgroundStyle || ""];
+  if (bgPreset) Object.assign(css, bgPreset.css);
+  const borderPreset = BORDER_STYLE_PRESETS[part.borderStyle || ""];
+  if (borderPreset) {
+    if (borderPreset.borderWidth > 0) {
+      css.border = `${borderPreset.borderWidth}px ${borderPreset.borderStyle || "solid"} ${borderPreset.borderColor || "var(--sbuild-border)"}`;
+    } else {
+      css.border = "none";
+    }
+  }
+  const shadowPreset = SHADOW_STYLE_PRESETS[part.shadowStyle || ""];
+  if (shadowPreset) css.boxShadow = shadowPreset.shadow;
+  const textPreset = TEXT_EFFECT_PRESETS[part.textEffect || ""];
+  if (textPreset) Object.assign(css, textPreset.css);
+  const btnPreset = BUTTON_STYLE_PRESETS[part.buttonStyle || ""];
+  if (btnPreset) Object.assign(css, btnPreset.css);
+
+  return css;
 }
 
 function defaultBlock(type: BlockType): Block {
@@ -540,6 +638,7 @@ export function App() {
   const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<SBuildBuildInfo | null>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
@@ -639,12 +738,22 @@ export function App() {
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
   const rowGroups = useMemo(() => groupBlocksIntoRows(selectedPage?.blocks || []), [selectedPage?.blocks]);
 
+  async function loadBuildInfo() {
+    try {
+      const data = await fetchJson<SBuildBuildInfo>("/health");
+      setBuildInfo(data);
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     void loadProject();
     void loadFonts();
     void loadImages();
     void loadProviders();
     void loadSecretsStatus();
+    void loadBuildInfo();
   }, []);
 
   useEffect(() => {
@@ -1413,7 +1522,7 @@ export function App() {
     <div className={`app ${previewMode ? "preview" : "edit"}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-        <div className="logo">sBuild v2</div>
+        <div className="logo">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
         <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
         <button onClick={() => setRightTab("ai")}>AI</button>
@@ -1942,9 +2051,21 @@ export function App() {
                 )}
                 <div className="preset-row">
                   <span className="preset-label">Color:</span>
-                  <button className="color-swatch" style={{ background: project.globalStyles.colors.headingColor || project.globalStyles.colors.text }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.headingColor || project.globalStyles.colors.text })} title="Theme heading" />
-                  <button className="color-swatch" style={{ background: project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text })} title="Theme text" />
-                  <button className="color-swatch" style={{ background: project.globalStyles.colors.accentColor || project.globalStyles.colors.accent }} onClick={() => updateSelectedPartStyle({ textColor: project.globalStyles.colors.accentColor || project.globalStyles.colors.accent })} title="Accent" />
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textColor ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textColor: undefined })}
+                    title="Use theme color"
+                  >Theme</button>
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textColor: "transparent" })}
+                    title="Transparent text"
+                  >
+                    <span className="checkerboard-swatch" />
+                  </button>
+                  {selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" && (
+                    <span className="hint" style={{ color: "#c44" }}>Transparent text may disappear.</span>
+                  )}
                   <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.textColor || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} className="color-input-inline" />
                 </div>
               </div>
@@ -1969,11 +2090,29 @@ export function App() {
                   }}>Transparent</button>
                 </div>
 
+                {/* Color mode selector for background */}
+                <div className="preset-row">
+                  <span className="preset-label">Color:</span>
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ backgroundColor: undefined })}
+                    title="Use theme background"
+                  >Theme</button>
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor === "transparent" ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ backgroundColor: "transparent" })}
+                    title="Transparent background"
+                  >
+                    <span className="checkerboard-swatch" />
+                  </button>
+                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} className="color-input-inline" />
+                </div>
+
                 {/* Solid color picker (shown when solid is active or no gradient/image) */}
                 {(!selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage &&
                   (!selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor ||
                    !selectedBlock.styles.parts[selectedPart].backgroundColor?.includes("gradient"))) && (
-                  <label>Color
+                  <label>Custom Color
                     <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
                   </label>
                 )}
@@ -2099,6 +2238,116 @@ export function App() {
                     </button>
                   ))}
                 </div>
+
+                {/* Border color mode */}
+                <div className="preset-row">
+                  <span className="preset-label">Border color:</span>
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderColor ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderColor: undefined })}
+                    title="Use theme border"
+                  >Theme</button>
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.borderColor === "transparent" ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderColor: "transparent" })}
+                    title="Transparent border"
+                  >
+                    <span className="checkerboard-swatch" />
+                  </button>
+                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.borderColor || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} className="color-input-inline" />
+                </div>
+              </div>
+
+              {/* Visual effect presets */}
+              <div className="style-section">
+                <h4>Visual Effects</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Background style:</span>
+                  {Object.entries(BACKGROUND_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
+                  >None</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Border style:</span>
+                  {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Shadow style:</span>
+                  {Object.entries(SHADOW_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ shadowStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ shadowStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Text effect:</span>
+                  {Object.entries(TEXT_EFFECT_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.textEffect === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ textEffect: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textEffect ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textEffect: undefined })}
+                  >None</button>
+                </div>
+                {selectedPart === "button" && (
+                  <div className="preset-row">
+                    <span className="preset-label">Button style:</span>
+                    {Object.entries(BUTTON_STYLE_PRESETS).map(([key, preset]) => (
+                      <button
+                        key={key}
+                        className={selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle === key ? "selected" : ""}
+                        onClick={() => updateSelectedPartStyle({ buttonStyle: key as any })}
+                        title={preset.label}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      className={!selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ buttonStyle: undefined })}
+                    >Default</button>
+                  </div>
+                )}
               </div>
 
               {/* Advanced accordion */}
@@ -2426,6 +2675,7 @@ export function App() {
               <button className={settingsTab === "keys" ? "selected" : ""} onClick={() => setSettingsTab("keys")}>Image/API Keys</button>
               <button className={settingsTab === "deploy" ? "selected" : ""} onClick={() => setSettingsTab("deploy")}>Deploy Safety</button>
               <button className={settingsTab === "debug" ? "selected" : ""} onClick={() => setSettingsTab("debug")}>Debug</button>
+              <button className={settingsTab === "about" ? "selected" : ""} onClick={() => setSettingsTab("about")}>About</button>
             </div>
             {settingsTab === "general" && <p className="panel-status">Use tabs to configure providers, keys, and deploy safety.</p>}
             {settingsTab === "providers" && <div>
@@ -2460,10 +2710,22 @@ export function App() {
               <p>Publish target: dry-run preview</p>
             </div>}
             {settingsTab === "debug" && <div>
-              <p><strong>Version:</strong> 0.1.0</p>
+              <p><strong>Version:</strong> {SBUILD_APP_NAME} {SBUILD_VERSION}</p>
+              <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
               <p><strong>Selected block:</strong> {selectedBlock?.id || "none"} ({selectedBlock?.type || "none"})</p>
               <p><strong>Theme:</strong> {themeApplied || "custom"}</p>
               <p><strong>Last API status:</strong> {status}</p>
+            </div>}
+            {settingsTab === "about" && <div>
+              <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{SBUILD_VERSION}</span></p>
+              <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
+              <p><strong>Branch:</strong> {buildInfo?.branch || "unknown"}</p>
+              <p><strong>Build date:</strong> {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</p>
+              <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
+              <hr />
+              <p><strong>Changelog</strong></p>
+              <p>Latest: 0.4.0-dev — Versioning, Transparent Styles, Visual Effects</p>
+              <p style={{ fontSize: 12, opacity: 0.7 }}>See CHANGELOG.md in project root for full history.</p>
             </div>}
             <div className="button-row"><button onClick={() => setSettingsOpen(false)}>Close</button></div>
           </div>

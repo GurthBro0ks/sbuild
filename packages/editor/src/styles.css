@@ -270,6 +270,17 @@ button.selected {
   min-width: 0;
 }
 
+.checkerboard-swatch {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid var(--sbuild-border);
+  background:
+    conic-gradient(#ccc 25%, #fff 0 50%, #ccc 0 75%, #fff 0) 0 0 / 8px 8px;
+  cursor: pointer;
+}
+
 .color-input-inline {
   width: 40px;
   height: 28px;

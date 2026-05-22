@@ -35,6 +35,12 @@ export interface BlockLayout {
   alignSelf?: "left" | "center" | "right" | "stretch";
 }
 
+export type BackgroundStylePreset = "clean" | "glass" | "neon" | "soft" | "bold" | "terminal" | "image-overlay";
+export type BorderStylePreset = "none" | "thin" | "accent" | "double" | "dashed" | "glow-edge";
+export type ShadowStylePreset = "none" | "soft" | "lifted" | "strong" | "neon" | "inner";
+export type TextEffectPreset = "none" | "subtle-glow" | "strong-glow" | "outline" | "shadow";
+export type ButtonStylePreset = "solid" | "outline" | "ghost" | "pill" | "glow";
+
 export interface PartStyle {
   backgroundColor?: string;
   textColor?: string;
@@ -51,6 +57,11 @@ export interface PartStyle {
   opacity?: number;
   backgroundImage?: string;
   backgroundFit?: "cover" | "contain" | "fill" | "repeat";
+  backgroundStyle?: BackgroundStylePreset;
+  borderStyle?: BorderStylePreset;
+  shadowStyle?: ShadowStylePreset;
+  textEffect?: TextEffectPreset;
+  buttonStyle?: ButtonStylePreset;
 }
 
 export interface BlockPartStyles {
@@ -82,6 +93,11 @@ export interface BlockStyles {
   effects?: BlockEffect[];
   layout?: BlockLayout;
   parts?: BlockPartStyles;
+  backgroundStyle?: BackgroundStylePreset;
+  borderStyle?: BorderStylePreset;
+  shadowStyle?: ShadowStylePreset;
+  textEffect?: TextEffectPreset;
+  buttonStyle?: ButtonStylePreset;
 }
 
 export interface SBuildNavItem {
