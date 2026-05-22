@@ -35,6 +35,36 @@ export interface BlockLayout {
   alignSelf?: "left" | "center" | "right" | "stretch";
 }
 
+export interface PartStyle {
+  backgroundColor?: string;
+  textColor?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  textAlign?: "left" | "center" | "right";
+  padding?: number;
+  margin?: number;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  shadow?: string;
+  opacity?: number;
+  backgroundImage?: string;
+  backgroundFit?: "cover" | "contain" | "fill" | "repeat";
+}
+
+export interface BlockPartStyles {
+  container?: PartStyle;
+  heading?: PartStyle;
+  body?: PartStyle;
+  button?: PartStyle;
+  card?: PartStyle;
+  cardHeading?: PartStyle;
+  cardBody?: PartStyle;
+  nav?: PartStyle;
+  image?: PartStyle;
+}
+
 export interface BlockStyles {
   backgroundColor?: string;
   backgroundImage?: string;
@@ -51,6 +81,7 @@ export interface BlockStyles {
   shadow?: string;
   effects?: BlockEffect[];
   layout?: BlockLayout;
+  parts?: BlockPartStyles;
 }
 
 export interface SBuildNavItem {
@@ -173,6 +204,22 @@ export interface SBuildGlobalStyles {
     text: string;
     accent: string;
     muted: string;
+    pageBackground?: string;
+    canvasBackground?: string;
+    navBackground?: string;
+    blockBackground?: string;
+    blockAltBackground?: string;
+    cardBackground?: string;
+    cardAltBackground?: string;
+    headingColor?: string;
+    bodyTextColor?: string;
+    mutedTextColor?: string;
+    accentColor?: string;
+    buttonBackground?: string;
+    buttonTextColor?: string;
+    borderColor?: string;
+    shadowColor?: string;
+    linkColor?: string;
   };
 }
 

@@ -22,6 +22,8 @@ import {
   SpacerBlockData,
   HtmlBlockData,
   BlockEffect,
+  BlockPartStyles,
+  PartStyle,
   SBuildProviderStatus,
   SBuildSecretConfig,
   clampMinHeight,
@@ -34,7 +36,7 @@ import {
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
-type RightTab = "properties" | "ai" | "status";
+type RightTab = "properties" | "style" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug";
 type ChatItem = { role: "user" | "assistant"; text: string };
@@ -66,18 +68,55 @@ const WIDTH_PRESETS: Record<(typeof QUICK_WIDTHS)[number], number> = {
 };
 
 const themePresets = [
-  { name: "Harvest Light", colors: { bg: "#f6f3e9", surface: "#fffef9", text: "#1f2a24", accent: "#2f6b3f", muted: "#6f7f73" }, headingFont: "Nunito Sans", isDark: false },
-  { name: "Farmstand Dark", colors: { bg: "#1a1f1c", surface: "#242b26", text: "#e8f0e9", accent: "#5cb85c", muted: "#8a9a8d" }, headingFont: "Nunito Sans", isDark: true },
-  { name: "Slimy Neon", colors: { bg: "#0a0a12", surface: "#12121f", text: "#e0e0ff", accent: "#00ffaa", muted: "#6b6b8a" }, headingFont: "Space Grotesk", isDark: true },
-  { name: "Midnight Orchard", colors: { bg: "#0f1419", surface: "#1a2028", text: "#d4dde5", accent: "#7eb8da", muted: "#5a6b7a" }, headingFont: "Lato", isDark: true },
-  { name: "Retro Terminal", colors: { bg: "#0c0c0c", surface: "#1a1a1a", text: "#33ff33", accent: "#ffff33", muted: "#555555" }, headingFont: "Space Grotesk", isDark: true },
-  { name: "Clean Market", colors: { bg: "#fafafa", surface: "#ffffff", text: "#1a1a1a", accent: "#ff6b35", muted: "#888888" }, headingFont: "Poppins", isDark: false },
-  { name: "Ocean", colors: { bg: "#eef6fb", surface: "#ffffff", text: "#1b2f3b", accent: "#1a7ba8", muted: "#5f7380" }, headingFont: "Lato", isDark: false },
-  { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60" }, headingFont: "Playfair Display", isDark: false }
+  { name: "Harvest Light", colors: { bg: "#f6f3e9", surface: "#fffef9", text: "#1f2a24", accent: "#2f6b3f", muted: "#6f7f73", pageBackground: "#f3ecdc", canvasBackground: "#f6f3e9", navBackground: "#fffef9", blockBackground: "#fffef9", blockAltBackground: "#f7efdc", cardBackground: "#f8f1df", cardAltBackground: "#fff9ec", headingColor: "#1f2a24", bodyTextColor: "#2d3a32", mutedTextColor: "#6f7f73", accentColor: "#2f6b3f", buttonBackground: "#2f6b3f", buttonTextColor: "#ffffff", borderColor: "#d5cfbe", shadowColor: "rgba(41,51,44,.18)", linkColor: "#2f6b3f" }, headingFont: "Nunito Sans", bodyFont: "Nunito Sans", isDark: false },
+  { name: "Farmstand Dark", colors: { bg: "#1a1f1c", surface: "#242b26", text: "#e8f0e9", accent: "#5cb85c", muted: "#8a9a8d", pageBackground: "#131815", canvasBackground: "#1a1f1c", navBackground: "#1f2621", blockBackground: "#242b26", blockAltBackground: "#2c342f", cardBackground: "#2b342f", cardAltBackground: "#333d37", headingColor: "#eef8ef", bodyTextColor: "#d6e2d8", mutedTextColor: "#8a9a8d", accentColor: "#5cb85c", buttonBackground: "#315f39", buttonTextColor: "#eef8ef", borderColor: "#3b4740", shadowColor: "rgba(0,0,0,.35)", linkColor: "#77cb77" }, headingFont: "Nunito Sans", bodyFont: "Nunito Sans", isDark: true },
+  { name: "Slimy Neon", colors: { bg: "#0a0a12", surface: "#12121f", text: "#e0e0ff", accent: "#00ffaa", muted: "#6b6b8a", pageBackground: "#07070f", canvasBackground: "#0a0a12", navBackground: "#121824", blockBackground: "#12121f", blockAltBackground: "#17172a", cardBackground: "#191a2f", cardAltBackground: "#1f2140", headingColor: "#e8f2ff", bodyTextColor: "#d5ddf2", mutedTextColor: "#7b86a1", accentColor: "#00ffaa", buttonBackground: "#0d5a50", buttonTextColor: "#dffff5", borderColor: "#2c3048", shadowColor: "rgba(0,0,0,.45)", linkColor: "#4dfec8" }, headingFont: "Space Grotesk", bodyFont: "Lato", isDark: true },
+  { name: "Midnight Orchard", colors: { bg: "#0f1419", surface: "#1a2028", text: "#d4dde5", accent: "#7eb8da", muted: "#5a6b7a", pageBackground: "#0b1015", canvasBackground: "#0f1419", navBackground: "#161d25", blockBackground: "#1a2028", blockAltBackground: "#212a33", cardBackground: "#222c36", cardAltBackground: "#293541", headingColor: "#dde8f1", bodyTextColor: "#cfd9e2", mutedTextColor: "#6d7d8f", accentColor: "#7eb8da", buttonBackground: "#2f4f62", buttonTextColor: "#dfeef9", borderColor: "#34414d", shadowColor: "rgba(0,0,0,.4)", linkColor: "#97cce9" }, headingFont: "Lato", bodyFont: "Lato", isDark: true },
+  { name: "Retro Terminal", colors: { bg: "#0c0c0c", surface: "#1a1a1a", text: "#33ff33", accent: "#ffff33", muted: "#7ca57c", pageBackground: "#080808", canvasBackground: "#0c0c0c", navBackground: "#111111", blockBackground: "#1a1a1a", blockAltBackground: "#202020", cardBackground: "#222222", cardAltBackground: "#282828", headingColor: "#89ff89", bodyTextColor: "#33ff33", mutedTextColor: "#7ca57c", accentColor: "#ffff33", buttonBackground: "#2a3f2a", buttonTextColor: "#b6ff9b", borderColor: "#3e5a3e", shadowColor: "rgba(0,0,0,.5)", linkColor: "#d2ff55" }, headingFont: "Space Grotesk", bodyFont: "Lato", isDark: true },
+  { name: "Clean Market", colors: { bg: "#fafafa", surface: "#ffffff", text: "#1a1a1a", accent: "#ff6b35", muted: "#888888", pageBackground: "#f3f3f3", canvasBackground: "#fafafa", navBackground: "#ffffff", blockBackground: "#ffffff", blockAltBackground: "#f6f6f6", cardBackground: "#f8f8f8", cardAltBackground: "#ffffff", headingColor: "#111111", bodyTextColor: "#2b2b2b", mutedTextColor: "#7d7d7d", accentColor: "#ff6b35", buttonBackground: "#ff6b35", buttonTextColor: "#ffffff", borderColor: "#dedede", shadowColor: "rgba(0,0,0,.12)", linkColor: "#d95322" }, headingFont: "Poppins", bodyFont: "Nunito Sans", isDark: false },
+  { name: "Ocean", colors: { bg: "#eef6fb", surface: "#ffffff", text: "#1b2f3b", accent: "#1a7ba8", muted: "#5f7380", pageBackground: "#e5eff5", canvasBackground: "#eef6fb", navBackground: "#f7fbff", blockBackground: "#ffffff", blockAltBackground: "#f3f9fd", cardBackground: "#f4f9fc", cardAltBackground: "#ffffff", headingColor: "#163242", bodyTextColor: "#224051", mutedTextColor: "#6c818f", accentColor: "#1a7ba8", buttonBackground: "#1a7ba8", buttonTextColor: "#eaf8ff", borderColor: "#cddce6", shadowColor: "rgba(22,50,66,.16)", linkColor: "#1a7ba8" }, headingFont: "Lato", bodyFont: "Nunito Sans", isDark: false },
+  { name: "Sunset", colors: { bg: "#fff1e8", surface: "#fffaf4", text: "#3a241f", accent: "#cc5f2f", muted: "#8b6b60", pageBackground: "#ffe8db", canvasBackground: "#fff1e8", navBackground: "#fff7ef", blockBackground: "#fffaf4", blockAltBackground: "#fff2e6", cardBackground: "#fff0e1", cardAltBackground: "#fff8ef", headingColor: "#4a2c25", bodyTextColor: "#543931", mutedTextColor: "#8b6b60", accentColor: "#cc5f2f", buttonBackground: "#cc5f2f", buttonTextColor: "#fff2e7", borderColor: "#e6c2ae", shadowColor: "rgba(87,51,39,.2)", linkColor: "#c15323" }, headingFont: "Playfair Display", bodyFont: "Lato", isDark: false }
 ];
 
 const OLD_LIGHT_BACKGROUNDS = new Set(["#fff", "#ffffff", "#fffef9", "#fafafa", "#f6f3e9"]);
 const OLD_DARK_TEXT = new Set(["#222", "#222222", "#1f2a24", "#1a1a1a"]);
+
+function normalizedHex(value?: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isThemeDerivedColor(value: string | undefined, previous: SBuildProject["globalStyles"]["colors"], kind: "bg" | "text" | "border"): boolean {
+  const color = normalizedHex(value);
+  if (!color) return true;
+  if (kind === "bg") {
+    if (OLD_LIGHT_BACKGROUNDS.has(color)) return true;
+    const known = [
+      previous.bg,
+      previous.surface,
+      previous.pageBackground,
+      previous.canvasBackground,
+      previous.navBackground,
+      previous.blockBackground,
+      previous.blockAltBackground,
+      previous.cardBackground,
+      previous.cardAltBackground
+    ].map((v) => normalizedHex(v));
+    return known.includes(color);
+  }
+  if (kind === "text") {
+    if (OLD_DARK_TEXT.has(color)) return true;
+    const known = [
+      previous.text,
+      previous.bodyTextColor,
+      previous.headingColor,
+      previous.mutedTextColor,
+      previous.linkColor
+    ].map((v) => normalizedHex(v));
+    return known.includes(color);
+  }
+  const known = [previous.borderColor, previous.accent, previous.accentColor].map((v) => normalizedHex(v));
+  return known.includes(color);
+}
 
 function shortRowId(rowId?: string): string {
   if (!rowId) return "Single";
@@ -93,24 +132,27 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 function blockStyleToCss(block: Block): Record<string, string | number> {
   const s = block.styles || {};
+  const container = s.parts?.container || {};
   const layout = s.layout || {};
   const css: Record<string, string | number> = {
-    background: s.backgroundColor || "var(--sbuild-block-bg)",
-    backgroundImage: s.backgroundImage ? `url(${s.backgroundImage})` : "",
-    backgroundSize: s.backgroundSize === "contain" ? "contain" : s.backgroundSize === "fill" ? "100% 100%" : "cover",
+    background: container.backgroundColor || s.backgroundColor || "var(--sbuild-block-bg)",
+    backgroundImage: (container.backgroundImage || s.backgroundImage) ? `url(${container.backgroundImage || s.backgroundImage})` : "",
+    backgroundSize: (container.backgroundFit || s.backgroundSize) === "contain" ? "contain" : (container.backgroundFit || s.backgroundSize) === "fill" ? "100% 100%" : (container.backgroundFit || s.backgroundSize) === "repeat" ? "auto" : "cover",
     backgroundRepeat: s.backgroundImage ? "no-repeat" : "",
     backgroundPosition: s.backgroundPosition || "center",
-    color: s.textColor || "var(--sbuild-text)",
-    fontFamily: s.fontFamily
+    color: container.textColor || s.textColor || "var(--sbuild-text)",
+    fontFamily: container.fontFamily || (s.fontFamily
       ? `'${s.fontFamily}', sans-serif`
-      : (block.type === "hero" || block.type === "text" || block.type === "cards" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)"),
-    fontSize: s.fontSize ? `${s.fontSize}px` : "",
-    fontWeight: s.fontWeight || "",
-    textAlign: s.textAlign || "left",
-    padding: `${s.padding ?? 16}px`,
-    margin: `${s.margin ?? 8}px 0`,
-    borderRadius: `${s.borderRadius ?? 12}px`,
-    boxShadow: s.shadow || "",
+      : (block.type === "hero" || block.type === "text" || block.type === "cards" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)")),
+    fontSize: container.fontSize ? `${container.fontSize}px` : s.fontSize ? `${s.fontSize}px` : "",
+    fontWeight: container.fontWeight || s.fontWeight || "",
+    textAlign: container.textAlign || s.textAlign || "left",
+    padding: `${container.padding ?? s.padding ?? 16}px`,
+    margin: `${container.margin ?? s.margin ?? 8}px 0`,
+    borderRadius: `${container.borderRadius ?? s.borderRadius ?? 12}px`,
+    boxShadow: container.shadow || s.shadow || "",
+    border: container.borderWidth ? `${container.borderWidth}px solid ${container.borderColor || "var(--sbuild-border)"}` : "",
+    opacity: container.opacity ?? 1,
     width: layout.widthPercent ? `${layout.widthPercent}%` : layout.widthMode === "full" ? "100%" : layout.widthMode === "wide" ? "75%" : layout.widthMode === "medium" ? "50%" : layout.widthMode === "narrow" ? "25%" : "100%",
     maxWidth: layout.maxWidthPx ? `${layout.maxWidthPx}px` : "",
     minHeight: layout.minHeightPx ? `${layout.minHeightPx}px` : "",
@@ -132,6 +174,27 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
   if ((s.effects || []).includes("hover-grow")) css.transition = "transform .2s ease";
   if ((s.effects || []).includes("parallax")) css.backgroundAttachment = "fixed";
   return css;
+}
+
+function partStyleToCss(part?: PartStyle, fallbackFont?: "heading" | "body"): Record<string, string | number> {
+  if (!part) return fallbackFont ? { fontFamily: fallbackFont === "heading" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)" } : {};
+  return {
+    background: part.backgroundColor || "",
+    color: part.textColor || "",
+    fontFamily: part.fontFamily ? `'${part.fontFamily}', sans-serif` : fallbackFont ? (fallbackFont === "heading" ? "var(--sbuild-heading-font)" : "var(--sbuild-body-font)") : "",
+    fontSize: part.fontSize ? `${part.fontSize}px` : "",
+    fontWeight: part.fontWeight || "",
+    textAlign: part.textAlign || "",
+    padding: part.padding !== undefined ? `${part.padding}px` : "",
+    margin: part.margin !== undefined ? `${part.margin}px 0` : "",
+    border: part.borderWidth ? `${part.borderWidth}px solid ${part.borderColor || "var(--sbuild-border)"}` : "",
+    borderRadius: part.borderRadius !== undefined ? `${part.borderRadius}px` : "",
+    boxShadow: part.shadow || "",
+    opacity: part.opacity ?? 1,
+    backgroundImage: part.backgroundImage ? `url(${part.backgroundImage})` : "",
+    backgroundSize: part.backgroundFit === "contain" ? "contain" : part.backgroundFit === "fill" ? "100% 100%" : part.backgroundFit === "repeat" ? "auto" : "cover",
+    backgroundRepeat: part.backgroundFit === "repeat" ? "repeat" : "no-repeat"
+  };
 }
 
 function defaultBlock(type: BlockType): Block {
@@ -200,21 +263,23 @@ function withSavedStatusText(status: string, dirty: boolean): string {
 
 const HeroBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
   const data = block.data as HeroBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h1 contentEditable suppressContentEditableWarning onBlur={(e) => onText("heading", e.currentTarget.textContent || "")}>{data.heading}</h1>
-      <p contentEditable suppressContentEditableWarning onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")}>{data.subheading}</p>
-      <button className="cta-btn">{data.ctaLabel || "Call to Action"}</button>
+      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("heading", e.currentTarget.textContent || "")}>{data.heading}</h1>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")}>{data.subheading}</p>
+      <button className="cta-btn" style={partStyleToCss(parts?.button, "body")}>{data.ctaLabel || "Call to Action"}</button>
     </section>
   );
 };
 
 const TextBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
   const data = block.data as TextBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h2 contentEditable suppressContentEditableWarning onBlur={(e) => onText("title", e.currentTarget.textContent || "")}>{data.title}</h2>
-      <p contentEditable suppressContentEditableWarning onBlur={(e) => onText("body", e.currentTarget.textContent || "")}>{data.body}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("title", e.currentTarget.textContent || "")}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onBlur={(e) => onText("body", e.currentTarget.textContent || "")}>{data.body}</p>
     </section>
   );
 };
@@ -222,24 +287,26 @@ const TextBlock = ({ block, onText }: { block: Block; onText: (field: string, va
 const ImageBlock = ({ block }: { block: Block }) => {
   const data = block.data as ImageBlockData;
   const fit = block.styles?.backgroundSize || "cover";
+  const parts = block.styles?.parts;
   return (
     <section>
-      {data.src ? <img src={data.src} alt={data.alt} className="block-image" style={{ objectFit: fit }} /> : <div className="image-placeholder">Image Placeholder</div>}
-      <p>{data.caption}</p>
+      {data.src ? <img src={data.src} alt={data.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Image Placeholder</div>}
+      <p style={partStyleToCss(parts?.body, "body")}>{data.caption}</p>
     </section>
   );
 };
 
 const CardsBlock = ({ block }: { block: Block }) => {
   const data = block.data as CardsBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h2>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
       <div className="cards-grid">
         {data.cards.map((card) => (
-          <article key={card.id}>
-            <h3>{card.title}</h3>
-            <p>{card.body}</p>
+          <article key={card.id} style={partStyleToCss(parts?.card, "body")}>
+            <h3 style={partStyleToCss(parts?.cardHeading, "heading")}>{card.title}</h3>
+            <p style={partStyleToCss(parts?.cardBody, "body")}>{card.body}</p>
           </article>
         ))}
       </div>
@@ -249,12 +316,13 @@ const CardsBlock = ({ block }: { block: Block }) => {
 
 const HoursBlock = ({ block }: { block: Block }) => {
   const data = block.data as HoursBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h2>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
       <ul>
         {data.rows.map((row, i) => (
-          <li key={`${row.day}-${i}`}>{row.day}: {row.open} - {row.close}</li>
+          <li key={`${row.day}-${i}`} style={partStyleToCss(parts?.body, "body")}>{row.day}: {row.open} - {row.close}</li>
         ))}
       </ul>
     </section>
@@ -264,12 +332,13 @@ const HoursBlock = ({ block }: { block: Block }) => {
 const GalleryBlock = ({ block }: { block: Block }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h2>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
       <div className="gallery-grid">
         {data.images.map((img) => (
-          <figure key={img.id}>{img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit }} /> : <div className="image-placeholder">Gallery Image</div>}</figure>
+          <figure key={img.id} style={partStyleToCss(parts?.card)}>{img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Gallery Image</div>}</figure>
         ))}
       </div>
     </section>
@@ -278,34 +347,38 @@ const GalleryBlock = ({ block }: { block: Block }) => {
 
 const ContactBlock = ({ block }: { block: Block }) => {
   const data = block.data as ContactBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <h2>{data.title}</h2>
-      <p>{data.phone}</p>
-      <p>{data.email}</p>
-      <p>{data.address}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")}>{data.phone}</p>
+      <p style={partStyleToCss(parts?.body, "body")}>{data.email}</p>
+      <p style={partStyleToCss(parts?.body, "body")}>{data.address}</p>
     </section>
   );
 };
 
 const TestimonialBlock = ({ block }: { block: Block }) => {
   const data = block.data as TestimonialBlockData;
+  const parts = block.styles?.parts;
   return (
     <section>
-      <blockquote>"{data.quote}"</blockquote>
-      <cite>{data.author}</cite>
+      <blockquote style={partStyleToCss(parts?.body, "body")}>"{data.quote}"</blockquote>
+      <cite style={partStyleToCss(parts?.heading, "heading")}>{data.author}</cite>
     </section>
   );
 };
 
 const MapBlock = ({ block }: { block: Block }) => {
   const data = block.data as MapBlockData;
-  return <section><h2>Map</h2><p>{data.address || "Map placeholder"}</p></section>;
+  const parts = block.styles?.parts;
+  return <section><h2 style={partStyleToCss(parts?.heading, "heading")}>Map</h2><p style={partStyleToCss(parts?.body, "body")}>{data.address || "Map placeholder"}</p></section>;
 };
 
 const MarqueeBlock = ({ block }: { block: Block }) => {
   const data = block.data as MarqueeBlockData;
-  return <section className="marquee"><div>{data.text}</div></section>;
+  const parts = block.styles?.parts;
+  return <section className="marquee" style={partStyleToCss(parts?.container)}><div style={partStyleToCss(parts?.body, "body")}>{data.text}</div></section>;
 };
 
 const SpacerBlock = ({ block }: { block: Block }) => {
@@ -469,6 +542,8 @@ export function App() {
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
+  const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
+  const [copiedBlockStyle, setCopiedBlockStyle] = useState<Block["styles"] | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
@@ -551,19 +626,19 @@ export function App() {
     const colors = project.globalStyles.colors;
     const dark = ["Farmstand Dark", "Slimy Neon", "Midnight Orchard", "Retro Terminal"].includes(themeApplied)
       || [colors.bg, colors.surface].some((c) => /^#/.test(c) && parseInt(c.slice(1, 3), 16) < 80);
-    document.body.style.setProperty("--sbuild-editor-bg", dark ? colors.bg : "#f3ecdc");
-    document.body.style.setProperty("--sbuild-canvas-bg", colors.bg);
+    document.body.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
+    document.body.style.setProperty("--sbuild-canvas-bg", colors.canvasBackground || colors.bg);
     document.body.style.setProperty("--sbuild-surface", colors.surface);
-    document.body.style.setProperty("--sbuild-surface-2", dark ? "rgba(255,255,255,0.04)" : "#fffef9");
-    document.body.style.setProperty("--sbuild-border", dark ? "rgba(255,255,255,0.18)" : "#d5cfbe");
-    document.body.style.setProperty("--sbuild-text", colors.text);
-    document.body.style.setProperty("--sbuild-muted", colors.muted);
-    document.body.style.setProperty("--sbuild-accent", colors.accent);
-    document.body.style.setProperty("--sbuild-nav-bg", dark ? "rgba(12,12,18,0.86)" : colors.surface);
-    document.body.style.setProperty("--sbuild-block-bg", dark ? colors.surface : colors.surface);
-    document.body.style.setProperty("--sbuild-card-bg", dark ? "rgba(255,255,255,0.06)" : "#f7efdc");
-    document.body.style.setProperty("--sbuild-button-bg", dark ? "rgba(255,255,255,0.08)" : colors.surface);
-    document.body.style.setProperty("--sbuild-button-text", colors.text);
+    document.body.style.setProperty("--sbuild-surface-2", colors.blockAltBackground || (dark ? "rgba(255,255,255,0.04)" : "#fffef9"));
+    document.body.style.setProperty("--sbuild-border", colors.borderColor || (dark ? "rgba(255,255,255,0.18)" : "#d5cfbe"));
+    document.body.style.setProperty("--sbuild-text", colors.bodyTextColor || colors.text);
+    document.body.style.setProperty("--sbuild-muted", colors.mutedTextColor || colors.muted);
+    document.body.style.setProperty("--sbuild-accent", colors.accentColor || colors.accent);
+    document.body.style.setProperty("--sbuild-nav-bg", colors.navBackground || (dark ? "rgba(12,12,18,0.86)" : colors.surface));
+    document.body.style.setProperty("--sbuild-block-bg", colors.blockBackground || colors.surface);
+    document.body.style.setProperty("--sbuild-card-bg", colors.cardBackground || (dark ? "rgba(255,255,255,0.06)" : "#f7efdc"));
+    document.body.style.setProperty("--sbuild-button-bg", colors.buttonBackground || (dark ? "rgba(255,255,255,0.08)" : colors.surface));
+    document.body.style.setProperty("--sbuild-button-text", colors.buttonTextColor || colors.text);
     document.body.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
     document.body.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
   }, [project, themeApplied]);
@@ -636,6 +711,42 @@ export function App() {
 
   function patchSelectedBlockData(patch: Record<string, unknown>) {
     patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), ...patch } }));
+  }
+
+  function updateGlobalColor<K extends keyof NonNullable<SBuildProject["globalStyles"]["colors"]>>(key: K, value: string) {
+    if (!project) return;
+    setProject({ ...project, globalStyles: { ...project.globalStyles, colors: { ...project.globalStyles.colors, [key]: value } } });
+    setDirty(true);
+  }
+
+  function updateSelectedPartStyle(patch: Partial<PartStyle>) {
+    patchSelectedBlock((b) => ({
+      ...b,
+      styles: {
+        ...(b.styles || {}),
+        parts: {
+          ...(b.styles?.parts || {}),
+          [selectedPart]: {
+            ...((b.styles?.parts?.[selectedPart] || {}) as PartStyle),
+            ...patch
+          }
+        }
+      }
+    }));
+  }
+
+  function resetSelectedPartToTheme() {
+    patchSelectedBlock((b) => {
+      const nextParts = { ...(b.styles?.parts || {}) };
+      delete nextParts[selectedPart];
+      return { ...b, styles: { ...(b.styles || {}), parts: nextParts } };
+    });
+    setStatus(`Reset ${String(selectedPart)} to theme`);
+  }
+
+  function resetWholeBlockToTheme() {
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: undefined, textColor: undefined, fontFamily: undefined, parts: {} } }));
+    setStatus("Reset whole block to theme");
   }
 
   function currentTargetContext(): ImageTargetContext {
@@ -815,21 +926,33 @@ export function App() {
   function applyTheme(index: number) {
     if (!project) return;
     const theme = themePresets[index];
+    const previousColors = project.globalStyles.colors;
+    const nextGlobalColors = { ...project.globalStyles.colors, ...theme.colors };
     setSelectedThemeName(theme.name);
     const nextPages = project.pages.map((page) => ({
       ...page,
       blocks: page.blocks.map((block) => {
-        const bg = String(block.styles?.backgroundColor || "").toLowerCase();
-        const txt = String(block.styles?.textColor || "").toLowerCase();
-        const hasExplicitBg = Boolean(bg && !OLD_LIGHT_BACKGROUNDS.has(bg));
-        const hasExplicitText = Boolean(txt && !OLD_DARK_TEXT.has(txt));
+        const hasExplicitBg = !isThemeDerivedColor(block.styles?.backgroundColor, previousColors, "bg");
+        const hasExplicitText = !isThemeDerivedColor(block.styles?.textColor, previousColors, "text");
+        const nextParts = { ...(block.styles?.parts || {}) };
+        for (const partKey of Object.keys(nextParts) as Array<keyof BlockPartStyles>) {
+          const part = nextParts[partKey];
+          if (!part) continue;
+          nextParts[partKey] = {
+            ...part,
+            backgroundColor: isThemeDerivedColor(part.backgroundColor, previousColors, "bg") ? undefined : part.backgroundColor,
+            textColor: isThemeDerivedColor(part.textColor, previousColors, "text") ? undefined : part.textColor,
+            borderColor: isThemeDerivedColor(part.borderColor, previousColors, "border") ? undefined : part.borderColor
+          };
+        }
         return {
           ...block,
           styles: {
             ...(block.styles || {}),
-            backgroundColor: hasExplicitBg ? block.styles?.backgroundColor : theme.colors.surface,
-            textColor: hasExplicitText ? block.styles?.textColor : theme.colors.text,
-            fontFamily: block.styles?.fontFamily || (block.type === "hero" || block.type === "text" || block.type === "cards" ? theme.headingFont : project.globalStyles.bodyFont)
+            backgroundColor: hasExplicitBg ? block.styles?.backgroundColor : nextGlobalColors.blockBackground || theme.colors.surface,
+            textColor: hasExplicitText ? block.styles?.textColor : nextGlobalColors.bodyTextColor || theme.colors.text,
+            fontFamily: block.styles?.fontFamily || (block.type === "hero" || block.type === "text" || block.type === "cards" ? (theme.headingFont || project.globalStyles.headingFont) : (theme.bodyFont || project.globalStyles.bodyFont)),
+            parts: nextParts
           }
         };
       })
@@ -839,8 +962,8 @@ export function App() {
       globalStyles: {
         ...project.globalStyles,
         headingFont: theme.headingFont || project.globalStyles.headingFont,
-        bodyFont: theme.headingFont === "Playfair Display" ? "Lato" : project.globalStyles.bodyFont,
-        colors: { ...project.globalStyles.colors, ...theme.colors }
+        bodyFont: theme.bodyFont || project.globalStyles.bodyFont,
+        colors: nextGlobalColors
       },
       pages: nextPages
     });
@@ -932,6 +1055,7 @@ export function App() {
 
   function applyThemeToAllBlocks() {
     if (!project) return;
+    const previousColors = project.globalStyles.colors;
     setProject({
       ...project,
       pages: project.pages.map((page) => ({
@@ -940,12 +1064,12 @@ export function App() {
           ...b,
           styles: {
             ...(b.styles || {}),
-            backgroundColor: b.styles?.backgroundColor && !OLD_LIGHT_BACKGROUNDS.has(String(b.styles.backgroundColor).toLowerCase())
+            backgroundColor: !isThemeDerivedColor(b.styles?.backgroundColor, previousColors, "bg")
               ? b.styles?.backgroundColor
-              : project.globalStyles.colors.surface,
-            textColor: b.styles?.textColor && !OLD_DARK_TEXT.has(String(b.styles.textColor).toLowerCase())
+              : project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface,
+            textColor: !isThemeDerivedColor(b.styles?.textColor, previousColors, "text")
               ? b.styles?.textColor
-              : project.globalStyles.colors.text,
+              : project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text,
             fontFamily: b.styles?.fontFamily || (b.type === "hero" || b.type === "text" || b.type === "cards" ? project.globalStyles.headingFont : project.globalStyles.bodyFont)
           }
         }))
@@ -1321,6 +1445,7 @@ export function App() {
         <aside className="right-drawer">
           <div className="tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""}>Properties</button>
+            <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""}>Style</button>
             <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""}>Resize</button>
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""}>AI Chat</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""}>Debug</button>
@@ -1562,6 +1687,86 @@ export function App() {
                     </label>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {rightTab === "style" && selectedBlock && (
+            <div className="panel">
+              <h3>Style</h3>
+              <p className="panel-status"><strong>Design:</strong> global + selected block parts</p>
+
+              <h4>Global Style</h4>
+              <label>Theme
+                <select value={selectedThemeName} onChange={(e) => {
+                  const next = e.target.value;
+                  setSelectedThemeName(next);
+                  const idx = themePresets.findIndex((t) => t.name === next);
+                  if (idx >= 0) applyTheme(idx);
+                }}>
+                  {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
+                </select>
+              </label>
+              <div className="button-row compact">
+                <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+              </div>
+              <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
+              <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
+              <label>Block Background <input type="color" value={project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("blockBackground", e.target.value)} /></label>
+              <label>Card Background <input type="color" value={project.globalStyles.colors.cardBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("cardBackground", e.target.value)} /></label>
+              <label>Heading Color <input type="color" value={project.globalStyles.colors.headingColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("headingColor", e.target.value)} /></label>
+              <label>Body Text Color <input type="color" value={project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("bodyTextColor", e.target.value)} /></label>
+              <label>Accent Color <input type="color" value={project.globalStyles.colors.accentColor || project.globalStyles.colors.accent} onChange={(e) => updateGlobalColor("accentColor", e.target.value)} /></label>
+              <label>Heading Font
+                <select value={project.globalStyles.headingFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: e.target.value } }); setDirty(true); }}>
+                  {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                </select>
+              </label>
+              <label>Body Font
+                <select value={project.globalStyles.bodyFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, bodyFont: e.target.value } }); setDirty(true); }}>
+                  {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                </select>
+              </label>
+
+              <h4>Selected Block Style</h4>
+              <label>Part
+                <select value={selectedPart} onChange={(e) => setSelectedPart(e.target.value as keyof BlockPartStyles)}>
+                  <option value="container">Container</option>
+                  <option value="heading">Heading</option>
+                  <option value="body">Body text</option>
+                  <option value="button">Button/CTA</option>
+                  <option value="card">Cards/items</option>
+                  <option value="cardHeading">Card heading</option>
+                  <option value="cardBody">Card body</option>
+                  <option value="nav">Nav</option>
+                  <option value="image">Image/background</option>
+                </select>
+              </label>
+              <label>Background color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor as string) || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} /></label>
+              <label>Text color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.textColor as string) || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} /></label>
+              <label>Font family <input value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""} onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })} placeholder="Use theme font when empty" /></label>
+              <label>Font size <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontSize || ""} onChange={(e) => updateSelectedPartStyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Font weight <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || ""} onChange={(e) => updateSelectedPartStyle({ fontWeight: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Padding <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.padding || ""} onChange={(e) => updateSelectedPartStyle({ padding: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Margin <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.margin || ""} onChange={(e) => updateSelectedPartStyle({ margin: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Border color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.borderColor as string) || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} /></label>
+              <label>Border width <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth || ""} onChange={(e) => updateSelectedPartStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Border radius <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius || ""} onChange={(e) => updateSelectedPartStyle({ borderRadius: e.target.value ? Number(e.target.value) : undefined })} /></label>
+              <label>Shadow <input value={selectedBlock.styles?.parts?.[selectedPart]?.shadow || ""} onChange={(e) => updateSelectedPartStyle({ shadow: e.target.value || undefined })} placeholder="0 8px 24px rgba(0,0,0,.2)" /></label>
+              <label>Background image URL <input value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage || ""} onChange={(e) => updateSelectedPartStyle({ backgroundImage: e.target.value || undefined })} placeholder="/project/images/example.png" /></label>
+              <label>Background fit
+                <select value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundFit || "cover"} onChange={(e) => updateSelectedPartStyle({ backgroundFit: e.target.value as PartStyle["backgroundFit"] })}>
+                  <option value="cover">cover</option>
+                  <option value="contain">contain</option>
+                  <option value="fill">fill</option>
+                  <option value="repeat">repeat</option>
+                </select>
+              </label>
+              <div className="button-row compact">
+                <button onClick={() => resetSelectedPartToTheme()}>Reset selected part to theme</button>
+                <button onClick={() => resetWholeBlockToTheme()}>Reset whole block to theme</button>
+                <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy selected block style</button>
+                <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style to selected block</button>
               </div>
             </div>
           )}
