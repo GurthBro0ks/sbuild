@@ -1,41 +1,64 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Lato:wght@400;700&family=Libre+Baskerville:wght@400;700&family=Merriweather:wght@400;700&family=Nunito+Sans:wght@400;700&family=Playfair+Display:wght@700&family=Poppins:wght@400;600;700&family=Space+Grotesk:wght@400;700&display=swap');
 
 /* ===== EDITOR CHROME VARIABLES (fixed, not affected by site themes) ===== */
-.sbuild-editor-shell {
-  --editor-bg: #f3ecdc;
-  --editor-panel-bg: #fffdf7;
-  --editor-panel-bg-2: #f7efdc;
-  --editor-text: #1f2a24;
-  --editor-muted: #6f7f73;
-  --editor-border: #d5cfbe;
-  --editor-button-bg: #fffdf7;
-  --editor-button-text: #1f2a24;
-  --editor-button-border: #d5cfbe;
-  --editor-accent: #2f6b3f;
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  background-color: var(--editor-bg);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --editor-bg: #f9f9f9;
+  --editor-panel-bg: #ffffff;
+  --editor-panel-bg-2: #f3f3f3;
+  --editor-border: #e0e0e0;
+  --editor-text: #222222;
+  --editor-text-muted: #666666;
+  --editor-accent: #2b6dff;
+  --editor-button-bg: #ffffff;
+  --editor-button-text: #222222;
+  --editor-button-border: #e0e0e0;
   --editor-status-bg: #eef5ff;
-  --editor-status-text: #1f2a24;
+  --editor-status-text: #222222;
   --editor-input-bg: #ffffff;
-  --editor-input-text: #1f2a24;
+  --editor-input-text: #222222;
   --editor-danger: #c44;
-  --editor-highlight: #244fda;
+  --editor-highlight: #2b6dff;
+}
+
+.sbuild-editor-shell.theme-dark {
+  --editor-bg: #1e1e1e;
+  --editor-panel-bg: #252526;
+  --editor-panel-bg-2: #2d2d2d;
+  --editor-border: #3e3e42;
+  --editor-text: #e0e0e0;
+  --editor-text-muted: #858585;
+  --editor-accent: #3794ff;
+  --editor-button-bg: #333333;
+  --editor-button-text: #e0e0e0;
+  --editor-button-border: #444444;
+  --editor-status-bg: #2d2d2d;
+  --editor-status-text: #e0e0e0;
+  --editor-input-bg: #3c3c3c;
+  --editor-input-text: #e0e0e0;
+  --editor-danger: #f44747;
+  --editor-highlight: #3794ff;
 }
 
 * { box-sizing: border-box; }
 
 /* ===== EDITOR SHELL ===== */
 .sbuild-editor-shell {
-  --editor-danger: #c44;
   margin: 0;
   font-family: "Nunito Sans", sans-serif;
   background: var(--editor-bg);
   color: var(--editor-text);
+  min-height: 100vh;
 }
 
 /* ===== SITE PREVIEW (user content) ===== */
 .sbuild-site-preview,
 .sbuild-rendered-page,
 .sbuild-block-content {
-  /* Site theme variables apply here via inline styles, NOT globally */
   color: inherit;
 }
 
@@ -90,7 +113,7 @@
   margin-left: auto;
   font-size: 12px;
   background: var(--editor-status-bg);
-  border: 1px solid #c6d7ff;
+  border: 1px solid var(--editor-border);
   border-radius: 999px;
   padding: 4px 10px;
   color: var(--editor-status-text);
@@ -135,14 +158,18 @@ button:disabled {
 /* ===== LEFT / RIGHT DRAWERS (editor chrome panels) ===== */
 .left-drawer,
 .right-drawer {
+  width: 280px;
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);
   border-radius: 12px;
-  padding: 10px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   max-height: calc(100vh - 90px);
-  overflow-x: hidden;
-  color: var(--editor-text);
+  overflow: auto;
+}
+.right-drawer > * {
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* Drawer headings */
@@ -163,7 +190,7 @@ button:disabled {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: var(--editor-muted);
+  color: var(--editor-text-muted);
 }
 
 /* Drawer paragraphs */
@@ -229,7 +256,7 @@ button:disabled {
   font-size: 12px;
   color: var(--editor-status-text);
   background: var(--editor-status-bg);
-  border: 1px solid #d4ddea;
+  border: 1px solid var(--editor-border);
   border-radius: 8px;
   padding: 6px 8px;
   margin: 6px 0 10px;
@@ -243,12 +270,13 @@ button:disabled {
 }
 .style-selected-summary {
   position: sticky;
-  top: 0;
+  top: 40px;
   background: var(--editor-panel-bg);
   z-index: 5;
-  padding: 8px 0;
-  border-bottom: 2px solid var(--editor-accent);
-  margin-bottom: 6px;
+  padding-bottom: 8px;
+  padding-top: 8px;
+  border-bottom: 1px solid var(--editor-border);
+  margin-bottom: 12px;
 }
 .style-selected-badge {
   font-weight: 700;
@@ -394,9 +422,14 @@ button:disabled {
   margin-bottom: 10px;
 }
 .compact-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--editor-panel-bg);
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-top: 16px;
+  padding-bottom: 8px;
   gap: 4px;
 }
 .compact-tabs button {
@@ -703,14 +736,14 @@ button:disabled {
 }
 .cards-grid article,
 .gallery-grid figure {
-  background: var(--editor-panel-bg-2);
-  border: 1px solid var(--editor-border);
+  background: var(--sbuild-card-bg, var(--editor-panel-bg-2));
+  border: 1px solid var(--sbuild-border, var(--editor-border));
   border-radius: 10px;
   padding: 8px;
 }
 .cta-btn {
-  background: #2f6b3f;
-  color: white;
+  background: var(--sbuild-button-bg, #2f6b3f);
+  color: var(--sbuild-button-text, white);
   border: none;
   border-radius: 999px;
 }

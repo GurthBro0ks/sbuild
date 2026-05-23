@@ -338,6 +338,7 @@ export interface ImageTargetContext {
   currentBlockId?: string;
   currentImagePath?: string;
   cropMode?: CropMode;
+  imageSlot?: number;
 }
 
 export interface ImageSizeDecision {

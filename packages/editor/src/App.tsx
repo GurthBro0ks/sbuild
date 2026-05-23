@@ -428,7 +428,7 @@ const HoursBlock = ({ block }: { block: Block }) => {
   );
 };
 
-const GalleryBlock = ({ block }: { block: Block }) => {
+const GalleryBlock = ({ block, onImageSelect }: { block: Block; onImageSelect?: (index: number) => void }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
@@ -436,8 +436,10 @@ const GalleryBlock = ({ block }: { block: Block }) => {
     <section>
       <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
       <div className="gallery-grid">
-        {data.images.map((img) => (
-          <figure key={img.id} style={partStyleToCss(parts?.card)}>{img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Gallery Image</div>}</figure>
+        {data.images.map((img, i) => (
+          <figure key={img.id} style={partStyleToCss(parts?.card)} onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}>
+            {img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Gallery Image</div>}
+          </figure>
         ))}
       </div>
     </section>
@@ -572,14 +574,14 @@ const HtmlBlock = ({ block }: { block: Block }) => {
   return <section dangerouslySetInnerHTML={{ __html: data.html }} />;
 };
 
-function renderTypedBlock(block: Block, onText: (field: string, value: string) => void): JSX.Element {
+function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void): JSX.Element {
   switch (block.type) {
     case "hero": return <HeroBlock block={block} onText={onText} />;
     case "text": return <TextBlock block={block} onText={onText} />;
     case "image": return <ImageBlock block={block} />;
     case "cards": return <CardsBlock block={block} />;
     case "hours": return <HoursBlock block={block} />;
-    case "gallery": return <GalleryBlock block={block} />;
+    case "gallery": return <GalleryBlock block={block} onImageSelect={onImageSelect} />;
     case "contact": return <ContactBlock block={block} />;
     case "testimonial": return <TestimonialBlock block={block} />;
     case "map": return <MapBlock block={block} />;
@@ -636,6 +638,11 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
+  const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
+
+  useEffect(() => {
+    localStorage.setItem("sbuild_editor_theme", editorTheme);
+  }, [editorTheme]);
   const [layoutHighlight, setLayoutHighlight] = useState(false);
   const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
@@ -644,6 +651,7 @@ export function App() {
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
+  const [selectedGalleryIndex, setSelectedGalleryIndex] = useState<number | null>(null);
   const [copiedBlockStyle, setCopiedBlockStyle] = useState<Block["styles"] | null>(null);
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
@@ -1075,8 +1083,9 @@ export function App() {
       viewportHint: deviceMode === "phone" ? "mobile" : deviceMode === "tablet" ? "tablet" : "desktop",
       aspectRatioHint: inferAspectRatioHint(selectedBlock),
       currentBlockId: selectedBlock?.id,
-      currentImagePath: selectedBlock?.type === "image" ? (selectedBlock.data as ImageBlockData).src : undefined,
-      cropMode: selectedBlock?.type === "hero" ? "cover" : selectedBlock?.type === "image" ? "contain" : "cover"
+      currentImagePath: selectedBlock?.type === "image" ? (selectedBlock.data as ImageBlockData).src : selectedBlock?.type === "gallery" && selectedGalleryIndex !== null ? (selectedBlock.data as GalleryBlockData).images[selectedGalleryIndex]?.src : undefined,
+      cropMode: selectedBlock?.type === "hero" ? "cover" : selectedBlock?.type === "image" ? "contain" : "cover",
+      imageSlot: selectedGalleryIndex !== null ? selectedGalleryIndex : undefined
     };
   }
 
@@ -1093,10 +1102,14 @@ export function App() {
     if (selectedBlock?.type === "gallery") {
       patchSelectedBlock((b) => {
         const data = b.data as GalleryBlockData;
-        const existing = data.images.findIndex((img) => !img.src);
+        const targetIndex = selectedGalleryIndex !== null ? selectedGalleryIndex : data.images.findIndex((img) => !img.src);
         const images = [...data.images];
         const next = { id: `g-${Date.now()}`, src: nextImage, alt: altText };
-        if (existing >= 0) images[existing] = next; else images.push(next);
+        if (targetIndex >= 0 && targetIndex < images.length) {
+          images[targetIndex] = next;
+        } else {
+          images.push(next);
+        }
         return { ...b, data: { ...data, images } };
       });
       return;
@@ -1394,13 +1407,13 @@ export function App() {
     if (!project || !selectedPage) return;
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: project.globalStyles.colors.surface, textColor: project.globalStyles.colors.text, fontFamily: undefined } })) });
-    setStatus("Block colors reset to theme");
+    const targetBlock = selectedPage.blocks.find(b => b.id === targetId);
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: undefined, textColor: undefined, fontFamily: undefined, parts: {} } })) });
+    setStatus(`Selected ${targetBlock ? (blockTypeLabels[targetBlock.type] || targetBlock.type) : "block"} section colors reset to theme.`);
   }
 
   function applyThemeToAllBlocks() {
     if (!project) return;
-    const previousColors = project.globalStyles.colors;
     setProject({
       ...project,
       pages: project.pages.map((page) => ({
@@ -1409,19 +1422,16 @@ export function App() {
           ...b,
           styles: {
             ...(b.styles || {}),
-            backgroundColor: !isThemeDerivedColor(b.styles?.backgroundColor, previousColors, "bg")
-              ? b.styles?.backgroundColor
-              : project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface,
-            textColor: !isThemeDerivedColor(b.styles?.textColor, previousColors, "text")
-              ? b.styles?.textColor
-              : project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text,
-            fontFamily: b.styles?.fontFamily || (b.type === "hero" || b.type === "text" || b.type === "cards" ? project.globalStyles.headingFont : project.globalStyles.bodyFont)
+            backgroundColor: undefined,
+            textColor: undefined,
+            fontFamily: b.type === "hero" || b.type === "text" || b.type === "cards" ? project.globalStyles.headingFont : project.globalStyles.bodyFont,
+            parts: {}
           }
         }))
       }))
     });
     setDirty(true);
-    setStatus("Blocks reset to selected theme.");
+    setStatus(`Blocks reset to ${selectedThemeName} theme.`);
   }
 
   function addBlock(type: BlockType) {
@@ -1552,7 +1562,7 @@ export function App() {
 
   function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
     if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
-    if (!drag) { setSelectedBlockId(blockId); }
+    if (!drag) { setSelectedBlockId(blockId); setSelectedGalleryIndex(null); }
   }
 
   function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
@@ -1606,7 +1616,7 @@ export function App() {
   }
 
   return (
-    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"}`}>
+    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
@@ -1673,7 +1683,7 @@ export function App() {
             </div>
             <div className="button-row compact">
               <button onClick={() => {
-                if (window.confirm("This resets block colors/fonts that were customized. Continue?")) {
+                if (window.confirm("Reset block colors/fonts to the selected theme? Custom block colors may be replaced.")) {
                   applyThemeToAllBlocks();
                 }
               }}>Reset blocks to this theme</button>
@@ -1742,7 +1752,7 @@ export function App() {
                       <div
                         key={block.id}
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
-                        data-background-style={block.styles?.backgroundStyle || ""}
+                        data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
                         style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
                         onClick={() => setSelectedBlockId(block.id)}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
@@ -1765,6 +1775,11 @@ export function App() {
                         )}
                         {renderTypedBlock(block, (field, value) => {
                           patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
+                        }, (index) => {
+                          setSelectedBlockId(block.id);
+                          setSelectedGalleryIndex(index);
+                          setRightTab("images");
+                          setStatus(`Selected gallery image ${index + 1}`);
                         })}
                         {selectedBlock?.id === block.id && !previewMode && (
                           <>
@@ -2075,6 +2090,105 @@ export function App() {
                 </div>
               </div>
 
+              {/* Visual effect presets */}
+              <div className="style-section">
+                <h4>Visual Effects</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Background style:</span>
+                  {Object.entries(BACKGROUND_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
+                      title={`${preset.label}: ${preset.description}`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
+                  >None</button>
+                </div>
+                {(() => {
+                  const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
+                  const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
+                  return preset ? <p className="preset-description"><strong>{preset.label}:</strong> {preset.description}</p> : null;
+                })()}
+                <p className="hint">Preset descriptions shown when selected.</p>
+                <div className="preset-row">
+                  <span className="preset-label">Border style:</span>
+                  {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Shadow style:</span>
+                  {Object.entries(SHADOW_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ shadowStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ shadowStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Text effect:</span>
+                  {Object.entries(TEXT_EFFECT_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.textEffect === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ textEffect: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textEffect ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textEffect: undefined })}
+                  >None</button>
+                </div>
+                {selectedPart === "button" && (
+                  <div className="preset-row">
+                    <span className="preset-label">Button style:</span>
+                    {Object.entries(BUTTON_STYLE_PRESETS).map(([key, preset]) => (
+                      <button
+                        key={key}
+                        className={selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle === key ? "selected" : ""}
+                        onClick={() => updateSelectedPartStyle({ buttonStyle: key as any })}
+                        title={preset.label}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      className={!selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ buttonStyle: undefined })}
+                    >Default</button>
+                  </div>
+                )}
+              </div>
+
+
               {/* Quick toolbar */}
               <div className="style-section">
                 <h4>Quick</h4>
@@ -2248,6 +2362,7 @@ export function App() {
                               }}
                               className="color-input-inline"
                             />
+                            
                           </span>
                         ))}
                         {!hasThird && (
@@ -2379,104 +2494,6 @@ export function App() {
                 </div>
               </div>
 
-              {/* Visual effect presets */}
-              <div className="style-section">
-                <h4>Visual Effects</h4>
-                <div className="preset-row">
-                  <span className="preset-label">Background style:</span>
-                  {Object.entries(BACKGROUND_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
-                      title={`${preset.label}: ${preset.description}`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
-                  >None</button>
-                </div>
-                {(() => {
-                  const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
-                  const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
-                  return preset ? <p className="preset-description"><strong>{preset.label}:</strong> {preset.description}</p> : null;
-                })()}
-                <p className="hint">Preset descriptions shown when selected.</p>
-                <div className="preset-row">
-                  <span className="preset-label">Border style:</span>
-                  {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ borderStyle: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ borderStyle: undefined })}
-                  >Default</button>
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Shadow style:</span>
-                  {Object.entries(SHADOW_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ shadowStyle: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ shadowStyle: undefined })}
-                  >Default</button>
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Text effect:</span>
-                  {Object.entries(TEXT_EFFECT_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.textEffect === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ textEffect: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textEffect ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ textEffect: undefined })}
-                  >None</button>
-                </div>
-                {selectedPart === "button" && (
-                  <div className="preset-row">
-                    <span className="preset-label">Button style:</span>
-                    {Object.entries(BUTTON_STYLE_PRESETS).map(([key, preset]) => (
-                      <button
-                        key={key}
-                        className={selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle === key ? "selected" : ""}
-                        onClick={() => updateSelectedPartStyle({ buttonStyle: key as any })}
-                        title={preset.label}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                    <button
-                      className={!selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ buttonStyle: undefined })}
-                    >Default</button>
-                  </div>
-                )}
-              </div>
-
               {/* Advanced accordion */}
               <div className="style-section">
                 <button className="accordion-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
@@ -2524,11 +2541,11 @@ export function App() {
                 </label>
                 <div className="button-row compact">
                   <button onClick={() => {
-                    if (window.confirm("This resets block colors/fonts that were customized. Continue?")) {
+                    if (window.confirm("Reset block colors/fonts to the selected theme? Custom block colors may be replaced.")) {
                       applyThemeToAllBlocks();
                     }
                   }}>Reset blocks to this theme</button>
-                  <button onClick={() => resetWholeBlockToTheme()}>Reset selected block to theme</button>
+                  <button onClick={() => resetBlockColorsToTheme()}>Reset selected block colors</button>
                 </div>
                 <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
                 <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
@@ -2558,7 +2575,10 @@ export function App() {
 
           {rightTab === "images" && (
             <div className="panel image-manager-panel">
-              <h3>Image Manager</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Image Manager</h3>
+              <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
+            </div>
               <p className="panel-status">Upload, manage, and apply images</p>
 
               <div className="image-manager-upload">
@@ -2611,7 +2631,7 @@ export function App() {
               {selectedUploadImage && (
                 <div className="image-manager-actions">
                   <p className="hint">Selected: {selectedUploadImage.split("/").pop()}</p>
-                  <p className="hint">Crop/Fit target: {selectedBlock ? `${selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select a block first"}</p>
+                  <p className="hint">Crop/Fit target: {selectedBlock ? `${selectedBlock.type === "gallery" && selectedGalleryIndex !== null ? `Gallery image ${selectedGalleryIndex + 1}` : selectedBlock.type === "hero" ? "Hero background" : selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select a block first"}</p>
                   <div className="button-row compact">
                     <button onClick={() => applyImageFromManager(selectedUploadImage)}>Apply to selected block</button>
                     <button onClick={() => {
@@ -2623,8 +2643,13 @@ export function App() {
                         patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
                         setStatus("Image block photo updated.");
                       }}>Set as this Image block's photo</button>
+                    ) : selectedBlock?.type === "gallery" && selectedGalleryIndex !== null ? (
+                      <button onClick={() => {
+                        applyImageToSelectedBlock(selectedUploadImage, "Selected gallery image");
+                        setStatus("Gallery image updated.");
+                      }}>Set as Gallery image {selectedGalleryIndex + 1}</button>
                     ) : (
-                      <button title="Select an Image block to use this as image content.">Image source (select Image block)</button>
+                      <button title="Select an Image or Gallery block to use this as image content.">Image source (select Image/Gallery block)</button>
                     )}
                     {selectedBlock?.type === "hero" && (
                       <button onClick={() => {
@@ -2854,7 +2879,17 @@ export function App() {
               <button className={settingsTab === "debug" ? "selected" : ""} onClick={() => setSettingsTab("debug")}>Debug</button>
               <button className={settingsTab === "about" ? "selected" : ""} onClick={() => setSettingsTab("about")}>About</button>
             </div>
-            {settingsTab === "general" && <p className="panel-status">Use tabs to configure providers, keys, and deploy safety.</p>}
+            {settingsTab === "general" && (
+              <div className="panel-status">
+                <p>Use tabs to configure providers, keys, and deploy safety.</p>
+                <label style={{ marginTop: 12, display: "block" }}>Editor Theme
+                  <select value={editorTheme} onChange={(e) => setEditorTheme(e.target.value)} style={{ marginLeft: 8 }}>
+                    <option value="Light">Light</option>
+                    <option value="Dark">Dark</option>
+                  </select>
+                </label>
+              </div>
+            )}
             {settingsTab === "providers" && <div>
               <p className="hint"><strong>A) Subscription providers through OpenCode</strong></p>
               <p className="hint">These providers are authenticated through OpenCode on this NUC. sBuild does not store your subscription login.</p>
