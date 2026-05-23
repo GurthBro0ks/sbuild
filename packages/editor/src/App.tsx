@@ -88,7 +88,7 @@ const BACKGROUND_STYLE_PRESETS: Record<string, { label: string; description: str
   neon: { label: "Neon glow", description: "Bright glow border and luminous shadow.", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
   soft: { label: "Soft card", description: "Clean rounded surface with soft shadow.", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
   bold: { label: "Bold panel", description: "Strong border and high-contrast background.", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
-  terminal: { label: "Terminal", description: "Retro terminal surface with scanlines and cursor motion.", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
+  terminal: { label: "Terminal", description: "Retro terminal surface with animated scanlines, blinking cursor, and CRT flicker.", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
   "image-overlay": { label: "Image overlay", description: "Dark gradient for text legibility over images.", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
 };
 
@@ -653,6 +653,8 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sbuild_editor_theme", editorTheme);
   }, [editorTheme]);
+  const [selectedSitePart, setSelectedSitePart] = useState<string | null>(null);
+  const [selectedNavIndex, setSelectedNavIndex] = useState<number | null>(null);
   const [layoutHighlight, setLayoutHighlight] = useState(false);
   const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
@@ -1058,17 +1060,23 @@ export function App() {
   function selectBlock(blockId: string) {
     setSelectedBlockId(blockId);
     setSelectedGalleryIndex(null);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
   }
 
   function selectGallerySlot(blockId: string, index: number) {
     setSelectedBlockId(blockId);
     setSelectedPart("image");
     setSelectedGalleryIndex(index);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
     setRightTab("images");
     setStatus(`Selected Gallery image ${index + 1}`);
   }
 
   function targetSummary(): string {
+    if (selectedSitePart === "site-title") return "Editing Site header → Site title";
+    if (selectedSitePart === "nav" && selectedNavIndex !== null) return `Editing Site header → Nav link ${selectedNavIndex + 1}`;
     if (!selectedBlock) return "No image content target selected";
     const blockLabel = blockTypeLabels[selectedBlock.type] || selectedBlock.type;
     if (selectedBlock.type === "gallery" && selectedGalleryIndex !== null) return `Target: ${blockLabel} → Image ${selectedGalleryIndex + 1}`;
@@ -1080,7 +1088,7 @@ export function App() {
 
   function contentActionLabel(): string {
     if (!selectedBlock) return "No image content target selected";
-    if (selectedBlock.type === "gallery") return selectedGalleryIndex !== null ? `Replace Gallery image ${selectedGalleryIndex + 1}` : "Add to Gallery";
+    if (selectedBlock.type === "gallery") return selectedGalleryIndex !== null ? `Replace Gallery image ${selectedGalleryIndex + 1}` : "Add to Gallery (append new image)";
     if (selectedBlock.type === "image") return "Set as this Image block's photo";
     return "Select an Image block or Gallery image slot to use this as image content.";
   }
@@ -1362,10 +1370,12 @@ export function App() {
   }
 
   function renderCurrentTargetCard() {
+    const showSitePart = selectedSitePart === "site-title" || selectedSitePart === "nav";
     return (
       <div className="image-target-card">
         <strong>{targetSummary()}</strong>
-        <span>{selectedBlock ? `Selected block: ${blockTypeLabels[selectedBlock.type] || selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select an Image block or Gallery image slot to use image content actions."}</span>
+        {showSitePart && <span>Click a block to edit image content. Site header/nav fields appear in the Props tab.</span>}
+        {!showSitePart && <span>{selectedBlock ? `Selected block: ${blockTypeLabels[selectedBlock.type] || selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select an Image block or Gallery image slot to use image content actions."}</span>}
       </div>
     );
   }
@@ -1374,6 +1384,8 @@ export function App() {
     const hasImage = Boolean(selectedUploadImage);
     const canUseContent = selectedBlock?.type === "image" || selectedBlock?.type === "gallery";
     const cropTarget = cropFitTargetLabel();
+    const isGalleryNoSlot = selectedBlock?.type === "gallery" && selectedGalleryIndex === null;
+    const isGalleryWithSlot = selectedBlock?.type === "gallery" && selectedGalleryIndex !== null;
     return (
       <div className="image-manager-actions">
         {renderCurrentTargetCard()}
@@ -1390,7 +1402,21 @@ export function App() {
           >
             {contentActionLabel()}
           </button>
+          {isGalleryNoSlot && <p className="hint action-explain">No gallery slot selected. This image will be appended as a new gallery item.</p>}
+          {isGalleryWithSlot && <p className="hint action-explain">Selected gallery slot will be replaced. "Add to Gallery" appends a new image.</p>}
+          {isGalleryNoSlot && <p className="hint action-explain">Select a gallery slot to replace a specific image, or use Add to Gallery to append.</p>}
           {!canUseContent && <p className="hint action-explain">Select an Image block or Gallery image slot to use this as image content.</p>}
+          {isGalleryWithSlot && hasImage && (
+            <button
+              onClick={() => {
+                if (!selectedUploadImage) return;
+                addGalleryImage(selectedUploadImage);
+                if (closeAfterApply) setImageManagerOpen(false);
+              }}
+            >
+              Add to Gallery as new image
+            </button>
+          )}
           <button
             onClick={() => {
               if (!selectedUploadImage) return;
@@ -1847,7 +1873,8 @@ export function App() {
           </section>
           <section>
             <h3>Theme</h3>
-            <p className="hint">Changes site theme defaults. Custom block edits stay preserved.</p>
+            <p className="hint">Website theme: affects the preview/site only (your header, nav, and content blocks). Custom block edits stay preserved.</p>
+            <p className="hint">Builder UI Theme (in Settings → General) controls editor chrome only — topbar, panels, buttons.</p>
             <label>
               Theme
               <select value={selectedThemeName} onChange={(e) => {
@@ -1921,12 +1948,20 @@ export function App() {
             onPointerDown={beginPaint}
             onPointerMove={movePaint}
             onPointerUp={endPaint}
+            onClick={() => { if (!previewMode) { setSelectedSitePart(null); setSelectedNavIndex(null); } }}
           >
             <nav className="canvas-nav">
-              <strong>{project.site.siteName}</strong>
+              <strong
+                className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
+                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); setStatus("Editing site title"); } }}
+              >{project.site.siteName}</strong>
               <div className="nav-items">
-                {project.site.nav.map((item) => (
-                  <span key={item.id}>{item.label}</span>
+                {project.site.nav.map((item, ni) => (
+                  <span
+                    key={item.id}
+                    className={selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
+                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); setStatus(`Editing nav link ${ni + 1}`); } }}
+                  >{item.label}</span>
                 ))}
               </div>
             </nav>
@@ -2010,6 +2045,31 @@ export function App() {
 
           {rightTab === "properties" && selectedBlock && (
             <div className="panel">
+              {selectedSitePart && (() => {
+                if (selectedSitePart === "site-title") return (
+                  <div className="site-header-edit">
+                    <h4>Editing Site Header</h4>
+                    <label>Site title
+                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
+                    </label>
+                  </div>
+                );
+                if (selectedSitePart === "nav" && selectedNavIndex !== null && selectedNavIndex >= 0 && selectedNavIndex < project.site.nav.length) {
+                  const navItem = project.site.nav[selectedNavIndex];
+                  return (
+                    <div className="site-header-edit">
+                      <h4>Editing Site Header → Nav link {selectedNavIndex + 1}</h4>
+                      <label>Nav label
+                        <input value={navItem.label} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-label"); }} />
+                      </label>
+                      <label>Nav href/anchor
+                        <input value={navItem.href} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-href"); }} />
+                      </label>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               <h3>Block Fields</h3>
               <div className="button-row">
                 <button className={propertiesTab === "fields" ? "selected" : ""} onClick={() => setPropertiesTab("fields")}>Fields</button>
@@ -3022,8 +3082,9 @@ export function App() {
             {settingsTab === "general" && (
               <div className="panel-status">
                 <p>Use tabs to configure providers, keys, and deploy safety.</p>
-                <p>Builder UI Theme changes the editor toolbar/panels only. Website Theme changes the page preview only.</p>
-                <p className="hint">Topbar uses Builder UI Theme.</p>
+                <p><strong>Builder UI Theme</strong> changes only the editor toolbar, panels, buttons, and modals.</p>
+                <p><strong>Website Theme</strong> changes only the page preview, including your site header/nav and content blocks.</p>
+                <p className="hint">The SBUILD topbar, left/right panels, and all editor buttons always use Builder UI Theme colors — Website Theme never affects them.</p>
                 <label style={{ marginTop: 12, display: "block" }}>Editor Theme
                   <select value={editorTheme} onChange={(e) => setEditorTheme(e.target.value)} style={{ marginLeft: 8 }}>
                     <option value="Light">Light</option>

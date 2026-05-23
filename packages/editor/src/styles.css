@@ -147,7 +147,7 @@ button:disabled {
 /* ===== WORKSPACE ===== */
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) minmax(340px, 360px);
+  grid-template-columns: 280px minmax(0, 1fr) minmax(320px, 360px);
   gap: 10px;
   padding: 10px;
   flex: 1;
@@ -155,7 +155,7 @@ button:disabled {
   align-items: start;
 }
 .workspace.left-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr) minmax(340px, 360px);
+  grid-template-columns: 0 minmax(0, 1fr) minmax(320px, 360px);
 }
 
 /* ===== LEFT / RIGHT DRAWERS (editor chrome panels) ===== */
@@ -176,6 +176,7 @@ button:disabled {
   position: sticky;
   top: 68px;
   align-self: start;
+  min-width: 320px;
 }
 .right-drawer > * {
   padding-left: 16px;
@@ -657,18 +658,67 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--editor-panel-bg);
-  border: 1px solid var(--editor-border);
+  background: var(--sbuild-nav-bg, var(--sbuild-surface, #ffffff));
+  border: 1px solid var(--sbuild-border, #d5cfbe);
   border-radius: 10px;
   padding: 10px;
 }
+.canvas-nav strong {
+  color: var(--sbuild-heading-color, var(--sbuild-text, #1f2a24));
+  font-family: var(--sbuild-heading-font, "Nunito Sans"), sans-serif;
+  cursor: default;
+}
 .canvas-nav span,
+.nav-items span {
+  color: var(--sbuild-text, #1f2a24);
+  cursor: default;
+}
+.canvas-nav .selected-site-part {
+  outline: 3px solid var(--editor-accent, #2b6dff);
+  outline-offset: 3px;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.canvas-nav .selected-site-part:hover {
+  cursor: pointer;
+}
+.nav-items { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Site part editing section in right drawer */
+.site-header-edit {
+  border: 1px solid var(--editor-border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--editor-accent) 6%, transparent);
+}
+.site-header-edit h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--editor-accent);
+}
+.site-header-edit label {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--editor-text);
+}
+.site-header-edit input {
+  width: 100%;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  padding: 7px;
+  background: var(--editor-input-bg);
+  color: var(--editor-input-text);
+}
 .block-meta,
 .panel-status,
 .hint {
   color: var(--editor-muted);
 }
-.nav-items { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ===== BLOCK SHELL (user content area) ===== */
 .block-shell {
@@ -1103,10 +1153,16 @@ button:disabled {
   50% { opacity: 1; }
   100% { opacity: 0.97; }
 }
+@keyframes terminalGlow {
+  0%, 100% { box-shadow: inset 0 0 20px rgba(51, 255, 51, 0.05); }
+  50% { box-shadow: inset 0 0 30px rgba(51, 255, 51, 0.12); }
+}
 
 .block-shell[data-background-style="terminal"],
 .sbuild-block-content[data-background-style="terminal"] {
   position: relative;
+  overflow: hidden;
+  animation: terminalCrt 4s ease-in-out infinite, terminalGlow 3s ease-in-out infinite;
 }
 
 .block-shell[data-background-style="terminal"]::after,
@@ -1118,26 +1174,40 @@ button:disabled {
     0deg,
     transparent,
     transparent 2px,
-    rgba(51, 255, 51, 0.04) 2px,
-    rgba(51, 255, 51, 0.04) 4px
+    rgba(51, 255, 51, 0.08) 2px,
+    rgba(51, 255, 51, 0.08) 4px
   );
   pointer-events: none;
   animation: terminalScan 0.5s linear infinite;
   border-radius: inherit;
+  z-index: 1;
 }
 
 .block-shell[data-background-style="terminal"] h1::after,
-.sbuild-block-content[data-background-style="terminal"] h1::after {
+.block-shell[data-background-style="terminal"] h2::after,
+.sbuild-block-content[data-background-style="terminal"] h1::after,
+.sbuild-block-content[data-background-style="terminal"] h2::after {
   content: "▌";
   animation: terminalBlink 1s step-end infinite;
   color: #33ff33;
   margin-left: 2px;
   font-size: inherit;
+  position: relative;
+  z-index: 2;
 }
 
-.block-shell[data-background-style="terminal"],
-.sbuild-block-content[data-background-style="terminal"] {
-  animation: terminalCrt 4s ease-in-out infinite;
+.block-shell[data-background-style="terminal"]::before,
+.sbuild-block-content[data-background-style="terminal"]::before {
+  content: "> TERMINAL MODE";
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  font-family: monospace;
+  color: rgba(51, 255, 51, 0.25);
+  letter-spacing: 2px;
+  pointer-events: none;
+  z-index: 2;
 }
 
 @media (prefers-reduced-motion: reduce) {

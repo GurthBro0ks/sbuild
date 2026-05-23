@@ -31,6 +31,9 @@ test("crop-fit and modal layout expose safe visible targets", () => {
 });
 
 test("builder UI theme helper explains editor chrome versus website preview", () => {
-  assert.match(appSource, /Builder UI Theme changes the editor toolbar\/panels only\. Website Theme changes the page preview only\./);
-  assert.match(appSource, /Topbar uses Builder UI Theme\./);
+  assert.match(appSource, /Builder UI Theme/);
+  assert.match(appSource, /Website Theme/);
+  assert.match(appSource, /changes only the editor/);
+  assert.match(appSource, /changes only the page preview/);
+  assert.match(appSource, /topbar.*left.*right.*panels.*buttons.*Builder/i);
 });
