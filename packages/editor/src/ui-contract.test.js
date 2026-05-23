@@ -37,3 +37,27 @@ test("builder UI theme helper explains editor chrome versus website preview", ()
   assert.match(appSource, /changes only the page preview/);
   assert.match(appSource, /topbar.*left.*right.*panels.*buttons.*Builder/i);
 });
+
+test("style persistence updates selected block part and triggers dirty", () => {
+  assert.match(appSource, /updateSelectedPartStyle/);
+  assert.match(appSource, /patchSelectedBlock/);
+  assert.match(appSource, /setDirty\(true\)/);
+  assert.match(appSource, /saveProject/);
+  assert.match(appSource, /\/api\/project.{0,40}PUT/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*position: sticky/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*overflow-y: auto/);
+  assert.match(cssSource, /\.compact-tabs[\s\S]*position: sticky/);
+  assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
+  assert.match(cssSource, /\.image-action-stack button[\s\S]*width: 100%/);
+});
+
+test("right panel layout prevents content clipping", () => {
+  assert.match(cssSource, /\.right-drawer[\s\S]*max-height: calc/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*\bmin-width\b.*\d+px/);
+  assert.match(cssSource, /overflow-x: hidden/);
+  assert.match(cssSource, /overscroll-behavior: contain/);
+  assert.match(cssSource, /scrollbar-gutter: stable/);
+  assert.match(cssSource, /\.panel[\s\S]*overflow-x: hidden/);
+  assert.match(cssSource, /\.compact-tabs[\s\S]*border-bottom/);
+  assert.match(cssSource, /\.image-action-stack button[\s\S]*word-break: break-word/);
+});

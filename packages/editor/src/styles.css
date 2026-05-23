@@ -147,7 +147,7 @@ button:disabled {
 /* ===== WORKSPACE ===== */
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) minmax(320px, 360px);
+  grid-template-columns: 280px minmax(0, 1fr) minmax(320px, 420px);
   gap: 10px;
   padding: 10px;
   flex: 1;
@@ -155,12 +155,11 @@ button:disabled {
   align-items: start;
 }
 .workspace.left-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr) minmax(320px, 360px);
+  grid-template-columns: 0 minmax(0, 1fr) minmax(320px, 420px);
 }
 
 /* ===== LEFT / RIGHT DRAWERS (editor chrome panels) ===== */
-.left-drawer,
-.right-drawer {
+.left-drawer {
   width: 100%;
   min-width: 0;
   background: var(--editor-panel-bg);
@@ -173,10 +172,21 @@ button:disabled {
   overflow-x: hidden;
 }
 .right-drawer {
+  width: 100%;
+  min-width: 320px;
+  background: var(--editor-panel-bg);
+  border: 1px solid var(--editor-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
   position: sticky;
   top: 68px;
   align-self: start;
-  min-width: 320px;
+  max-height: calc(100vh - 78px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .right-drawer > * {
   padding-left: 16px;
@@ -282,7 +292,7 @@ button:disabled {
 }
 .style-selected-summary {
   position: sticky;
-  top: 40px;
+  top: 80px;
   background: var(--editor-panel-bg);
   z-index: 5;
   padding-bottom: 8px;
@@ -440,9 +450,14 @@ button:disabled {
   background: var(--editor-panel-bg);
   flex-wrap: wrap;
   overflow-x: hidden;
-  padding-top: 16px;
+  padding-top: 10px;
   padding-bottom: 8px;
   gap: 4px;
+  border-bottom: 1px solid var(--editor-border);
+  margin-bottom: 0;
+}
+.compact-tabs + * {
+  margin-top: 8px;
 }
 .compact-tabs button {
   font-size: 12px;
@@ -457,6 +472,9 @@ button:disabled {
   width: min(860px, 96vw);
   max-height: 85vh;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+.image-manager-panel {
   overflow-x: hidden;
 }
 .image-manager-upload {
@@ -531,6 +549,7 @@ button:disabled {
   padding-top: 10px;
   border-top: 1px solid var(--editor-border);
   min-width: 0;
+  overflow-x: hidden;
 }
 .image-action-stack {
   display: grid;
@@ -542,6 +561,7 @@ button:disabled {
   width: 100%;
   white-space: normal;
   text-align: left;
+  word-break: break-word;
 }
 .image-target-card,
 .crop-fit-card {
@@ -553,6 +573,7 @@ button:disabled {
   padding: 8px;
   color: var(--editor-status-text);
   min-width: 0;
+  overflow-wrap: break-word;
 }
 .image-target-card span,
 .action-explain {
@@ -572,11 +593,16 @@ button:disabled {
   border: none;
   overflow: hidden;
 }
-.left-drawer section,
+.left-drawer section {
+  margin-bottom: 14px;
+  border-bottom: 1px dashed var(--editor-border);
+  padding-bottom: 10px;
+}
 .panel {
   margin-bottom: 14px;
   border-bottom: 1px dashed var(--editor-border);
   padding-bottom: 10px;
+  overflow-x: hidden;
 }
 .palette-grid {
   display: grid;
@@ -1247,5 +1273,14 @@ button:disabled {
   }
   .row-grid {
     flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 1101px) and (max-width: 1300px) {
+  .workspace {
+    grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 360px);
+  }
+  .right-drawer {
+    min-width: 300px;
   }
 }
