@@ -84,12 +84,12 @@ const themePresets = [
 
 const BACKGROUND_STYLE_PRESETS: Record<string, { label: string; description: string; css: Partial<Record<string, string>> }> = {
   clean: { label: "Clean", description: "No effects. Flat background.", css: {} },
-  glass: { label: "Glass", description: "Frosted glass with subtle border.", css: { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" } },
-  neon: { label: "Neon glow", description: "Glowing edge and inset shadow.", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
-  soft: { label: "Soft card", description: "Rounded corners with soft shadow.", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
-  bold: { label: "Bold panel", description: "Strong shadow with accent border.", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
-  terminal: { label: "Terminal", description: "Retro terminal with scanline glow.", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
-  "image-overlay": { label: "Image overlay", description: "Dark gradient for text over images.", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
+  glass: { label: "Glass", description: "Transparent frosted panel with soft blur and border.", css: { backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" } },
+  neon: { label: "Neon glow", description: "Bright glow border and luminous shadow.", css: { boxShadow: "0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1)", border: "1px solid rgba(0,255,170,0.4)" } },
+  soft: { label: "Soft card", description: "Clean rounded surface with soft shadow.", css: { boxShadow: "0 8px 32px rgba(0,0,0,0.08)", borderRadius: "16px", border: "1px solid rgba(0,0,0,0.04)" } },
+  bold: { label: "Bold panel", description: "Strong border and high-contrast background.", css: { boxShadow: "0 12px 40px rgba(0,0,0,0.18)", borderRadius: "8px", border: "2px solid var(--sbuild-accent)" } },
+  terminal: { label: "Terminal", description: "Retro terminal surface with scanlines and cursor motion.", css: { background: "#0c0c0c", color: "#33ff33", border: "1px solid #3e5a3e", fontFamily: "monospace", boxShadow: "inset 0 0 20px rgba(51,255,51,0.05)" } },
+  "image-overlay": { label: "Image overlay", description: "Dark gradient for text legibility over images.", css: { background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))", color: "#ffffff" } },
 };
 
 const BORDER_STYLE_PRESETS: Record<string, { label: string; borderWidth: number; borderColor?: string; borderStyle?: string }> = {
@@ -855,23 +855,25 @@ export function App() {
     const colors = project.globalStyles.colors;
     const dark = ["Farmstand Dark", "Slimy Neon", "Midnight Orchard", "Retro Terminal"].includes(themeApplied)
       || [colors.bg, colors.surface].some((c) => /^#/.test(c) && parseInt(c.slice(1, 3), 16) < 80);
-    const shell = document.querySelector(".sbuild-editor-shell") as HTMLElement | null;
-    const target = shell || document.documentElement;
-    target.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
-    target.style.setProperty("--sbuild-canvas-bg", colors.canvasBackground || colors.bg);
-    target.style.setProperty("--sbuild-surface", colors.surface);
-    target.style.setProperty("--sbuild-surface-2", colors.blockAltBackground || (dark ? "rgba(255,255,255,0.04)" : "#fffef9"));
-    target.style.setProperty("--sbuild-border", colors.borderColor || (dark ? "rgba(255,255,255,0.18)" : "#d5cfbe"));
-    target.style.setProperty("--sbuild-text", colors.bodyTextColor || colors.text);
-    target.style.setProperty("--sbuild-muted", colors.mutedTextColor || colors.muted);
-    target.style.setProperty("--sbuild-accent", colors.accentColor || colors.accent);
-    target.style.setProperty("--sbuild-nav-bg", colors.navBackground || (dark ? "rgba(12,12,18,0.86)" : colors.surface));
-    target.style.setProperty("--sbuild-block-bg", colors.blockBackground || colors.surface);
-    target.style.setProperty("--sbuild-card-bg", colors.cardBackground || (dark ? "rgba(255,255,255,0.06)" : "#f7efdc"));
-    target.style.setProperty("--sbuild-button-bg", colors.buttonBackground || (dark ? "rgba(255,255,255,0.08)" : colors.surface));
-    target.style.setProperty("--sbuild-button-text", colors.buttonTextColor || colors.text);
-    target.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
-    target.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
+    const frames = document.querySelectorAll(".canvas-frame, .sbuild-site-preview, .sbuild-rendered-page");
+    frames.forEach((el) => {
+      const target = el as HTMLElement;
+      target.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
+      target.style.setProperty("--sbuild-canvas-bg", colors.canvasBackground || colors.bg);
+      target.style.setProperty("--sbuild-surface", colors.surface);
+      target.style.setProperty("--sbuild-surface-2", colors.blockAltBackground || (dark ? "rgba(255,255,255,0.04)" : "#fffef9"));
+      target.style.setProperty("--sbuild-border", colors.borderColor || (dark ? "rgba(255,255,255,0.18)" : "#d5cfbe"));
+      target.style.setProperty("--sbuild-text", colors.bodyTextColor || colors.text);
+      target.style.setProperty("--sbuild-muted", colors.mutedTextColor || colors.muted);
+      target.style.setProperty("--sbuild-accent", colors.accentColor || colors.accent);
+      target.style.setProperty("--sbuild-nav-bg", colors.navBackground || (dark ? "rgba(12,12,18,0.86)" : colors.surface));
+      target.style.setProperty("--sbuild-block-bg", colors.blockBackground || colors.surface);
+      target.style.setProperty("--sbuild-card-bg", colors.cardBackground || (dark ? "rgba(255,255,255,0.06)" : "#f7efdc"));
+      target.style.setProperty("--sbuild-button-bg", colors.buttonBackground || (dark ? "rgba(255,255,255,0.08)" : colors.surface));
+      target.style.setProperty("--sbuild-button-text", colors.buttonTextColor || colors.text);
+      target.style.setProperty("--sbuild-heading-font", project.globalStyles.headingFont || "Nunito Sans");
+      target.style.setProperty("--sbuild-body-font", project.globalStyles.bodyFont || "Nunito Sans");
+    });
   }, [project, themeApplied]);
 
   useEffect(() => {
@@ -1313,7 +1315,7 @@ export function App() {
     setDirty(true);
     setLastAction(`theme-${theme.name}`);
     setThemeApplied(theme.name);
-    setStatus(`Theme changed: ${theme.name}. Custom block styles preserved.`);
+    setStatus(`Theme changed to ${theme.name}. Custom block edits stay preserved.`);
   }
 
   function openResizeLayoutForBlock(blockId: string) {
@@ -1419,7 +1421,7 @@ export function App() {
       }))
     });
     setDirty(true);
-    setStatus("Applied theme to all blocks");
+    setStatus("Blocks reset to selected theme.");
   }
 
   function addBlock(type: BlockType) {
@@ -1644,6 +1646,7 @@ export function App() {
           </section>
           <section>
             <h3>Theme</h3>
+            <p className="hint">Changes site theme defaults. Custom block edits stay preserved.</p>
             <label>
               Theme
               <select value={selectedThemeName} onChange={(e) => {
@@ -1669,7 +1672,11 @@ export function App() {
               })()}
             </div>
             <div className="button-row compact">
-              <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+              <button onClick={() => {
+                if (window.confirm("This resets block colors/fonts that were customized. Continue?")) {
+                  applyThemeToAllBlocks();
+                }
+              }}>Reset blocks to this theme</button>
               <button onClick={() => resetBlockColorsToTheme()}>Reset selected block colors</button>
             </div>
             {themeApplied && <p className="panel-status">Theme: {themeApplied} · dark={themePresets.find((t) => t.name === themeApplied)?.isDark ? "true" : "false"}</p>}
@@ -2395,8 +2402,9 @@ export function App() {
                 {(() => {
                   const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
                   const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
-                  return preset ? <p className="preset-description">{preset.description}</p> : null;
+                  return preset ? <p className="preset-description"><strong>{preset.label}:</strong> {preset.description}</p> : null;
                 })()}
+                <p className="hint">Preset descriptions shown when selected.</p>
                 <div className="preset-row">
                   <span className="preset-label">Border style:</span>
                   {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
@@ -2515,7 +2523,11 @@ export function App() {
                   </select>
                 </label>
                 <div className="button-row compact">
-                  <button onClick={() => applyThemeToAllBlocks()}>Apply theme to all blocks</button>
+                  <button onClick={() => {
+                    if (window.confirm("This resets block colors/fonts that were customized. Continue?")) {
+                      applyThemeToAllBlocks();
+                    }
+                  }}>Reset blocks to this theme</button>
                   <button onClick={() => resetWholeBlockToTheme()}>Reset selected block to theme</button>
                 </div>
                 <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
@@ -2606,10 +2618,20 @@ export function App() {
                       patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: selectedUploadImage, backgroundSize: "cover", backgroundPosition: "center" } }));
                       setStatus(`Applied image to ${friendlySelectedLabel()} background`);
                     }}>Set as block background</button>
-                    <button onClick={() => {
-                      patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
-                      setStatus(`Applied image to ${friendlySelectedLabel()} source`);
-                    }}>Set as image source</button>
+                    {selectedBlock?.type === "image" ? (
+                      <button onClick={() => {
+                        patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
+                        setStatus("Image block photo updated.");
+                      }}>Set as this Image block's photo</button>
+                    ) : (
+                      <button title="Select an Image block to use this as image content.">Image source (select Image block)</button>
+                    )}
+                    {selectedBlock?.type === "hero" && (
+                      <button onClick={() => {
+                        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: selectedUploadImage, backgroundSize: "cover", backgroundPosition: "center" } }));
+                        setStatus("Set as Hero background");
+                      }}>Set as Hero background</button>
+                    )}
                     <button
                       onClick={() => void applyPhotoEdit({ editType: "crop-fit", instruction: "Crop/fit to selected block" })}
                       disabled={!selectedBlock}
@@ -2618,6 +2640,9 @@ export function App() {
                       Crop/Fit
                     </button>
                   </div>
+                  {selectedBlock && selectedBlock.type !== "image" && (
+                    <p className="hint" style={{ color: "var(--editor-danger)" }}>Select an Image block to use this as image content.</p>
+                  )}
                   <h4>Edit Selected Image</h4>
                   <div className="button-row compact">
                     <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
@@ -2800,7 +2825,7 @@ export function App() {
           <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
           <button onClick={() => { removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row</button>
           <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
-          <button onClick={() => { applyThemeToAllBlocks(); setContextMenu(null); }}>Apply theme to all blocks</button>
+          <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
           <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
           <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
           <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
@@ -2877,16 +2902,25 @@ export function App() {
               <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
               <p><strong>Loaded project source:</strong> {loadedProjectSource}</p>
               {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
+              <p><strong>App dirty (unsaved edits):</strong> {dirty ? "Yes — has unsaved changes" : "No — all saved"}</p>
+              <p><strong>Git working tree:</strong> {buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)"}</p>
+              {buildInfo?.dirtySummary && (
+                <p><strong>Git summary:</strong> {`${buildInfo.dirtySummary.modifiedTracked} tracked modified, ${buildInfo.dirtySummary.untracked} untracked`}</p>
+              )}
+              <p className="hint">Dirty means local source files differ from the last commit. Ignored uploads/cache not counted.</p>
               <div className="button-row compact">
                 <button onClick={() => {
+                  const dirtySummary = buildInfo?.dirtySummary;
                   const diag = {
                     app: SBUILD_APP_NAME,
                     version: SBUILD_VERSION,
                     buildInfo,
                     theme: themeApplied || "custom",
                     dirty,
+                    dirtyNote: dirty ? "App has unsaved project edits" : "All app edits saved",
                     gitDirty: buildInfo?.dirty,
-                    gitDirtySummary: (buildInfo as unknown as { dirtySummary?: { modifiedTracked: number; untracked: number } })?.dirtySummary,
+                    gitDirtyNote: buildInfo?.dirty ? "Source files differ from last commit" : "Clean working tree",
+                    gitDirtySummary: dirtySummary,
                     blocks: project?.pages.reduce((sum, p) => sum + p.blocks.length, 0) || 0,
                     pages: project?.pages.length || 0,
                     userAgent: navigator.userAgent
