@@ -724,17 +724,17 @@ export function App() {
 
   // Gradient helpers
   function readGradientFromPart(part?: PartStyle): { colors: string[]; direction: string; type: "linear" | "radial" | "conic" } {
-    // Prefer structured fields for reliable persistence
-    if (part?.gradientType && part.gradientColors && part.gradientColors.length >= 2) {
+    const grad = part?.backgroundColor || "";
+    const isGradient = grad.includes("gradient");
+    // Only trust structured fields if backgroundColor is actually a gradient
+    if (isGradient && part?.gradientType && part.gradientColors && part.gradientColors.length >= 2) {
       return {
         colors: part.gradientColors,
         direction: part.gradientDirection || "135deg",
         type: part.gradientType
       };
     }
-    // Fallback: parse CSS string
-    const grad = part?.backgroundColor || "";
-    if (!grad.includes("gradient")) {
+    if (!isGradient) {
       return { colors: ["#ff6b6b", "#feca57"], direction: "135deg", type: "linear" };
     }
     const type: "linear" | "radial" | "conic" = grad.includes("conic-gradient") ? "conic" : grad.includes("radial-gradient") ? "radial" : "linear";
@@ -2529,133 +2529,140 @@ export function App() {
               {/* Background section */}
               <div className="style-section">
                 <h4>Background</h4>
-                <div className="preset-row">
-                  <span className="preset-label">Type:</span>
-                  <button onClick={() => {
-                    updateSelectedPartStyle({ backgroundColor: undefined, backgroundImage: undefined });
-                  }}>Theme</button>
-                  <button onClick={() => {
-                    updateSelectedPartStyle({ backgroundColor: "#ffffff", backgroundImage: undefined });
-                  }}>Solid</button>
-                  <button onClick={() => {
-                    updateSelectedPartStyle({ backgroundColor: "linear-gradient(135deg, #ff6b6b, #feca57)", backgroundImage: undefined });
-                  }}>Gradient</button>
-                  <button onClick={() => openImageManager("part-bg")}>Image</button>
-                  <button onClick={() => {
-                    updateSelectedPartStyle({ backgroundColor: "transparent", backgroundImage: undefined });
-                  }}>Transparent</button>
-                </div>
-
-                {/* Color mode selector for background */}
-                <div className="preset-row">
-                  <span className="preset-label">Color:</span>
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ backgroundColor: undefined })}
-                    title="Use theme background"
-                  >Theme</button>
-                  <button
-                    className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor === "transparent" ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ backgroundColor: "transparent" })}
-                    title="Transparent background"
-                  >
-                    <span className="checkerboard-swatch" />
-                  </button>
-                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} className="color-input-inline" />
-                </div>
-
-                {/* Solid color picker (shown when solid is active or no gradient/image) */}
-                {(!selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage &&
-                  (!selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor ||
-                   !selectedBlock.styles.parts[selectedPart].backgroundColor?.includes("gradient"))) && (
-                  <label>Custom Color
-                    <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
-                  </label>
-                )}
-
-                {/* Gradient builder */}
-                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor?.includes("gradient") && (() => {
+                {(() => {
                   const part = selectedBlock.styles?.parts?.[selectedPart];
-                  const grad = readGradientFromPart(part);
-                  const hasThird = grad.colors.length >= 3;
+                  const bgValue = part?.backgroundColor;
+                  const bgImage = part?.backgroundImage;
+                  let bgMode: "theme" | "solid" | "gradient" | "image" | "transparent" = "theme";
+                  if (bgImage) bgMode = "image";
+                  else if (bgValue === "transparent") bgMode = "transparent";
+                  else if (bgValue?.includes("gradient")) bgMode = "gradient";
+                  else if (bgValue) bgMode = "solid";
+
                   return (
-                    <div className="gradient-builder">
+                    <>
                       <div className="preset-row">
-                        <span className="preset-label">Preset:</span>
-                        {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => {
-                          const match = grad.colors.length === preset.colors.length && grad.colors.every((c, i) => c.toLowerCase() === preset.colors[i].toLowerCase());
-                          return (
-                            <button
-                              key={name}
-                              className={match ? "selected" : ""}
-                              onClick={() => applyGradientToPart(preset.colors, preset.direction, preset.type)}
-                            >
-                              {name}
-                            </button>
-                          );
-                        })}
+                        <span className="preset-label">Type:</span>
+                        <button
+                          className={bgMode === "theme" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: undefined, backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Theme</button>
+                        <button
+                          className={bgMode === "solid" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: "#ffffff", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Solid</button>
+                        <button
+                          className={bgMode === "gradient" ? "selected" : ""}
+                          onClick={() => {
+                            const preset = GRADIENT_PRESETS["Sunset"];
+                            applyGradientToPart(preset.colors, preset.direction, preset.type);
+                          }}
+                        >Gradient</button>
+                        <button
+                          className={bgMode === "image" ? "selected" : ""}
+                          onClick={() => openImageManager("part-bg")}
+                        >Image</button>
+                        <button
+                          className={bgMode === "transparent" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: "transparent", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Transparent</button>
                       </div>
-                      <div className="preset-row">
-                        {grad.colors.map((c, i) => (
-                          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <span className="preset-label">Color {i + 1}:</span>
-                            <input
-                              type="color"
-                              value={c}
-                              onChange={(e) => {
-                                const next = [...grad.colors];
-                                next[i] = e.target.value;
-                                applyGradientToPart(next, grad.direction, grad.type);
-                              }}
-                              className="color-input-inline"
-                            />
-                            
-                          </span>
-                        ))}
-                        {!hasThird && (
-                          <button onClick={() => applyGradientToPart([...grad.colors, "#ffffff"], grad.direction, grad.type)}>+ Add 3rd</button>
-                        )}
-                        {hasThird && (
-                          <button onClick={() => applyGradientToPart(grad.colors.slice(0, 2), grad.direction, grad.type)}>− 2 colors</button>
-                        )}
-                      </div>
-                      <div className="preset-row">
-                        <span className="preset-label">Direction:</span>
-                        {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => {
-                          const isRadial = val.startsWith("circle");
-                          const selected = grad.direction === val && (grad.type === "radial") === isRadial;
-                          return (
-                            <button
-                              key={name}
-                              className={selected ? "selected" : ""}
-                              onClick={() => applyGradientToPart(grad.colors, val, isRadial ? "radial" : "linear")}
-                            >
-                              {name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="gradient-preview" style={{ background: part?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
-                    </div>
+
+                      {bgMode === "solid" && (
+                        <label>Custom Color
+                          <input type="color" value={bgValue || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
+                        </label>
+                      )}
+
+                      {bgMode === "transparent" && (
+                        <div className="preset-row" style={{ alignItems: "center", gap: 8 }}>
+                          <span className="checkerboard-swatch" />
+                          <span className="hint">Transparent — content behind this block shows through.</span>
+                        </div>
+                      )}
+
+                      {bgMode === "gradient" && (() => {
+                        const grad = readGradientFromPart(part);
+                        const hasThird = grad.colors.length >= 3;
+                        return (
+                          <div className="gradient-builder">
+                            <div className="preset-row">
+                              <span className="preset-label">Preset:</span>
+                              {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => {
+                                const match = grad.colors.length === preset.colors.length && grad.colors.every((c, i) => c.toLowerCase() === preset.colors[i].toLowerCase());
+                                return (
+                                  <button
+                                    key={name}
+                                    className={match ? "selected" : ""}
+                                    onClick={() => applyGradientToPart(preset.colors, preset.direction, preset.type)}
+                                  >
+                                    {name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="preset-row">
+                              {grad.colors.map((c, i) => (
+                                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <span className="preset-label">Color {i + 1}:</span>
+                                  <input
+                                    type="color"
+                                    value={c}
+                                    onChange={(e) => {
+                                      const next = [...grad.colors];
+                                      next[i] = e.target.value;
+                                      applyGradientToPart(next, grad.direction, grad.type);
+                                    }}
+                                    className="color-input-inline"
+                                  />
+                                </span>
+                              ))}
+                              {!hasThird && (
+                                <button onClick={() => applyGradientToPart([...grad.colors, "#ffffff"], grad.direction, grad.type)}>+ Add 3rd</button>
+                              )}
+                              {hasThird && (
+                                <button onClick={() => applyGradientToPart(grad.colors.slice(0, 2), grad.direction, grad.type)}>− 2 colors</button>
+                              )}
+                            </div>
+                            <div className="preset-row">
+                              <span className="preset-label">Direction:</span>
+                              {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => {
+                                const isRadial = val.startsWith("circle");
+                                const selected = grad.direction === val && (grad.type === "radial") === isRadial;
+                                return (
+                                  <button
+                                    key={name}
+                                    className={selected ? "selected" : ""}
+                                    onClick={() => applyGradientToPart(grad.colors, val, isRadial ? "radial" : "linear")}
+                                  >
+                                    {name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="gradient-preview" style={{ background: part?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
+                          </div>
+                        );
+                      })()}
+
+                      {bgMode === "image" && (
+                        <div>
+                          <p className="hint">Image: {bgImage?.slice(0, 60)}...</p>
+                          <div className="button-row compact">
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "cover" })}>Cover</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "contain" })}>Contain</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "fill" })}>Stretch</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "repeat" })}>Tile</button>
+                          </div>
+                          <label>Overlay opacity
+                            <input type="range" min={0} max={100} value={Math.round((part?.opacity || 1) * 100)} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) / 100 })} />
+                          </label>
+                          <button onClick={() => openImageManager("part-bg")}>Change image</button>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
-
-                {/* Image background controls */}
-                {selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage && (
-                  <div>
-                    <p className="hint">Image: {selectedBlock.styles.parts[selectedPart].backgroundImage?.slice(0, 60)}...</p>
-                    <div className="button-row compact">
-                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "cover" })}>Cover</button>
-                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "contain" })}>Contain</button>
-                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "fill" })}>Stretch</button>
-                      <button onClick={() => updateSelectedPartStyle({ backgroundFit: "repeat" })}>Tile</button>
-                    </div>
-                    <label>Overlay opacity
-                      <input type="range" min={0} max={100} value={Math.round((selectedBlock.styles?.parts?.[selectedPart]?.opacity || 1) * 100)} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) / 100 })} />
-                    </label>
-                    <button onClick={() => openImageManager("part-bg")}>Change image</button>
-                  </div>
-                )}
               </div>
 
               {/* Box/spacing section */}

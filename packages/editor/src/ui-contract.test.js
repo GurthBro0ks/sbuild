@@ -27,7 +27,7 @@ test("crop-fit and modal layout expose safe visible targets", () => {
   assert.match(appSource, /Close Image Manager/);
   assert.match(cssSource, /\.image-action-stack/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*position: sticky/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*overflow-y: auto/);
 });
 
 test("builder UI theme helper explains editor chrome versus website preview", () => {
@@ -44,7 +44,6 @@ test("style persistence updates selected block part and triggers dirty", () => {
   assert.match(appSource, /setDirty\(true\)/);
   assert.match(appSource, /saveProject/);
   assert.match(appSource, /\/api\/project.{0,40}PUT/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*position: sticky/);
   assert.match(cssSource, /\.right-drawer[\s\S]*overflow-y: auto/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*position: sticky/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
@@ -52,7 +51,7 @@ test("style persistence updates selected block part and triggers dirty", () => {
 });
 
 test("right panel layout prevents content clipping", () => {
-  assert.match(cssSource, /\.right-drawer[\s\S]*max-height: calc/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*max-height: 100%/);
   assert.match(cssSource, /\.right-drawer[\s\S]*\bmin-width\b.*\d+px/);
   assert.match(cssSource, /overflow-x: hidden/);
   assert.match(cssSource, /overscroll-behavior: contain/);
@@ -60,4 +59,23 @@ test("right panel layout prevents content clipping", () => {
   assert.match(cssSource, /\.panel[\s\S]*overflow-x: hidden/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*border-bottom/);
   assert.match(cssSource, /\.image-action-stack button[\s\S]*word-break: break-word/);
+  assert.match(cssSource, /\.app[\s\S]*height: 100vh/);
+  assert.match(cssSource, /\.app[\s\S]*overflow: hidden/);
+  assert.match(cssSource, /\.workspace[\s\S]*overflow: hidden/);
+  assert.match(cssSource, /\.canvas-area[\s\S]*overflow-y: auto/);
+});
+
+test("background mode controls expose type selector and mode-specific panels", () => {
+  assert.match(appSource, /bgMode/);
+  assert.match(appSource, /backgroundColor: undefined, backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined/);
+  assert.match(appSource, /className=\{bgMode === "theme" \? "selected" : ""\}/);
+  assert.match(appSource, /className=\{bgMode === "solid" \? "selected" : ""\}/);
+  assert.match(appSource, /className=\{bgMode === "gradient" \? "selected" : ""\}/);
+  assert.match(appSource, /className=\{bgMode === "image" \? "selected" : ""\}/);
+  assert.match(appSource, /className=\{bgMode === "transparent" \? "selected" : ""\}/);
+  assert.match(appSource, /bgMode === "solid"/);
+  assert.match(appSource, /bgMode === "transparent"/);
+  assert.match(appSource, /bgMode === "gradient"/);
+  assert.match(appSource, /bgMode === "image"/);
+  assert.match(appSource, /Transparent — content behind this block shows through/);
 });

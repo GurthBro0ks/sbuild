@@ -97,7 +97,8 @@ html, body, #root { overflow-x: hidden; }
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -153,6 +154,7 @@ button:disabled {
   flex: 1;
   min-width: 0;
   align-items: start;
+  overflow: hidden;
 }
 .workspace.left-collapsed {
   grid-template-columns: 0 minmax(0, 1fr) minmax(320px, 420px);
@@ -167,7 +169,7 @@ button:disabled {
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 78px);
+  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -179,10 +181,8 @@ button:disabled {
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 68px;
   align-self: start;
-  max-height: calc(100vh - 78px);
+  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -660,6 +660,8 @@ button:disabled {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  overflow-y: auto;
+  height: 100%;
 }
 .canvas-controls {
   display: flex;
