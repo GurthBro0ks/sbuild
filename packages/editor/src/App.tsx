@@ -428,7 +428,7 @@ const HoursBlock = ({ block }: { block: Block }) => {
   );
 };
 
-const GalleryBlock = ({ block, onImageSelect }: { block: Block; onImageSelect?: (index: number) => void }) => {
+const GalleryBlock = ({ block, selectedIndex, onImageSelect }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
@@ -437,7 +437,17 @@ const GalleryBlock = ({ block, onImageSelect }: { block: Block; onImageSelect?: 
       <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
       <div className="gallery-grid">
         {data.images.map((img, i) => (
-          <figure key={img.id} style={partStyleToCss(parts?.card)} onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}>
+          <figure
+            key={img.id}
+            className={`gallery-slot ${selectedIndex === i ? "selected-gallery-slot" : ""}`}
+            style={partStyleToCss(parts?.card)}
+            tabIndex={onImageSelect ? 0 : undefined}
+            role={onImageSelect ? "button" : undefined}
+            aria-label={`Select Gallery image ${i + 1}`}
+            onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}
+            onKeyDown={(e) => { if (onImageSelect && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); onImageSelect(i); } }}
+          >
+            {selectedIndex === i && <span className="gallery-slot-badge">Image {i + 1}</span>}
             {img.src ? <img src={img.src} alt={img.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Gallery Image</div>}
           </figure>
         ))}
@@ -574,14 +584,14 @@ const HtmlBlock = ({ block }: { block: Block }) => {
   return <section dangerouslySetInnerHTML={{ __html: data.html }} />;
 };
 
-function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void): JSX.Element {
+function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null): JSX.Element {
   switch (block.type) {
     case "hero": return <HeroBlock block={block} onText={onText} />;
     case "text": return <TextBlock block={block} onText={onText} />;
     case "image": return <ImageBlock block={block} />;
     case "cards": return <CardsBlock block={block} />;
     case "hours": return <HoursBlock block={block} />;
-    case "gallery": return <GalleryBlock block={block} onImageSelect={onImageSelect} />;
+    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} />;
     case "contact": return <ContactBlock block={block} />;
     case "testimonial": return <TestimonialBlock block={block} />;
     case "map": return <MapBlock block={block} />;
@@ -777,6 +787,10 @@ export function App() {
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
   const rowGroups = useMemo(() => groupBlocksIntoRows(selectedPage?.blocks || []), [selectedPage?.blocks]);
 
+  useEffect(() => {
+    if (selectedBlock?.type !== "gallery" && selectedGalleryIndex !== null) setSelectedGalleryIndex(null);
+  }, [selectedBlock?.id, selectedBlock?.type, selectedGalleryIndex]);
+
   async function loadBuildInfo() {
     try {
       const data = await fetchJson<SBuildBuildInfo>("/health");
@@ -814,6 +828,10 @@ export function App() {
 
   useEffect(() => {
     const onToggle = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && imageManagerOpen) {
+        setImageManagerOpen(false);
+        return;
+      }
       if ((e.ctrlKey && e.key.toLowerCase() === "b") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "b")) {
         e.preventDefault();
         setLeftCollapsed((prev) => {
@@ -825,7 +843,7 @@ export function App() {
     };
     window.addEventListener("keydown", onToggle);
     return () => window.removeEventListener("keydown", onToggle);
-  }, []);
+  }, [imageManagerOpen]);
 
   useEffect(() => {
     if (!resizeDrag) return;
@@ -1037,6 +1055,95 @@ export function App() {
     return partLabel ? `${blockLabel} → ${partLabel}` : blockLabel;
   }
 
+  function selectBlock(blockId: string) {
+    setSelectedBlockId(blockId);
+    setSelectedGalleryIndex(null);
+  }
+
+  function selectGallerySlot(blockId: string, index: number) {
+    setSelectedBlockId(blockId);
+    setSelectedPart("image");
+    setSelectedGalleryIndex(index);
+    setRightTab("images");
+    setStatus(`Selected Gallery image ${index + 1}`);
+  }
+
+  function targetSummary(): string {
+    if (!selectedBlock) return "No image content target selected";
+    const blockLabel = blockTypeLabels[selectedBlock.type] || selectedBlock.type;
+    if (selectedBlock.type === "gallery" && selectedGalleryIndex !== null) return `Target: ${blockLabel} → Image ${selectedGalleryIndex + 1}`;
+    if (selectedBlock.type === "gallery") return `Target: ${blockLabel} → Add to Gallery`;
+    if (selectedBlock.type === "image") return `Target: ${blockLabel} → Photo`;
+    if (selectedBlock.type === "hero") return `Target: ${blockLabel} → Background`;
+    return `Target: ${blockLabel} → Background`;
+  }
+
+  function contentActionLabel(): string {
+    if (!selectedBlock) return "No image content target selected";
+    if (selectedBlock.type === "gallery") return selectedGalleryIndex !== null ? `Replace Gallery image ${selectedGalleryIndex + 1}` : "Add to Gallery";
+    if (selectedBlock.type === "image") return "Set as this Image block's photo";
+    return "Select an Image block or Gallery image slot to use this as image content.";
+  }
+
+  function cropFitTargetLabel(): string {
+    if (!selectedBlock) return "Select a block, Image block, or Gallery image slot first.";
+    if (selectedBlock.type === "gallery") return selectedGalleryIndex !== null ? `Gallery image ${selectedGalleryIndex + 1}` : "Select a Gallery image slot first.";
+    if (selectedBlock.type === "hero") return "Hero background";
+    if (selectedBlock.type === "image") return "Image block photo";
+    return `${blockTypeLabels[selectedBlock.type] || selectedBlock.type} background`;
+  }
+
+  function hasValidCropFitTarget(): boolean {
+    return Boolean(selectedBlock && (selectedBlock.type !== "gallery" || selectedGalleryIndex !== null));
+  }
+
+  function setSelectedBlockBackground(url: string) {
+    if (!selectedBlock || !url) return;
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: url, backgroundSize: "cover", backgroundPosition: "center" } }));
+    setStatus(selectedBlock.type === "hero" ? "Set as Hero background" : `Set as ${blockTypeLabels[selectedBlock.type] || selectedBlock.type} background`);
+  }
+
+  function replaceImageBlockPhoto(url: string, altText = "Selected image") {
+    if (!url) return;
+    patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: url, alt: altText } }));
+    setStatus("Image block photo updated.");
+  }
+
+  function replaceGalleryImage(url: string, altText = "Selected gallery image") {
+    if (!selectedBlock || selectedBlock.type !== "gallery" || selectedGalleryIndex === null || !url) return;
+    const targetNumber = selectedGalleryIndex + 1;
+    patchSelectedBlock((b) => {
+      const data = b.data as GalleryBlockData;
+      if (selectedGalleryIndex < 0 || selectedGalleryIndex >= data.images.length) return b;
+      const images = [...data.images];
+      images[selectedGalleryIndex] = { ...images[selectedGalleryIndex], src: url, alt: altText };
+      return { ...b, data: { ...data, images } };
+    });
+    setStatus(`Replaced Gallery image ${targetNumber}`);
+  }
+
+  function addGalleryImage(url: string, altText = "Gallery image") {
+    if (!selectedBlock || selectedBlock.type !== "gallery" || !url) return;
+    patchSelectedBlock((b) => {
+      const data = b.data as GalleryBlockData;
+      const images = [...data.images, { id: `g-${Date.now()}`, src: url, alt: altText }];
+      return { ...b, data: { ...data, images } };
+    });
+    setStatus("Added image to Gallery");
+  }
+
+  function applySelectedImageContent(url: string) {
+    if (!selectedBlock || !url) return;
+    if (selectedBlock.type === "image") {
+      replaceImageBlockPhoto(url);
+      return;
+    }
+    if (selectedBlock.type === "gallery") {
+      if (selectedGalleryIndex !== null) replaceGalleryImage(url);
+      else addGalleryImage(url);
+    }
+  }
+
   function openImageManager(target: "block-bg" | "part-bg" | "hero" | "image-block") {
     setImageManagerTarget(target);
     setImageManagerOpen(true);
@@ -1102,13 +1209,11 @@ export function App() {
     if (selectedBlock?.type === "gallery") {
       patchSelectedBlock((b) => {
         const data = b.data as GalleryBlockData;
-        const targetIndex = selectedGalleryIndex !== null ? selectedGalleryIndex : data.images.findIndex((img) => !img.src);
         const images = [...data.images];
-        const next = { id: `g-${Date.now()}`, src: nextImage, alt: altText };
-        if (targetIndex >= 0 && targetIndex < images.length) {
-          images[targetIndex] = next;
+        if (selectedGalleryIndex !== null && selectedGalleryIndex >= 0 && selectedGalleryIndex < images.length) {
+          images[selectedGalleryIndex] = { ...images[selectedGalleryIndex], src: nextImage, alt: altText };
         } else {
-          images.push(next);
+          images.push({ id: `g-${Date.now()}`, src: nextImage, alt: altText });
         }
         return { ...b, data: { ...data, images } };
       });
@@ -1232,6 +1337,10 @@ export function App() {
     if (!selectedUploadImage) { setPhotoEditStatus("Select an uploaded image first."); return; }
     const type = overrides?.editType ?? photoEditType;
     const instruction = overrides?.instruction ?? photoEditInstruction;
+    if (type === "crop-fit" && !hasValidCropFitTarget()) {
+      setPhotoEditStatus("Crop/Fit is disabled: select a block, Image block, or Gallery image slot first.");
+      return;
+    }
     const targetContext = currentTargetContext();
     const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; error?: string; editedImageUrl?: string; originalImageUrl?: string; sizeDecision?: ImageSizeDecision; warnings?: string[] }>("/api/images/edit", {
       method: "POST",
@@ -1240,10 +1349,89 @@ export function App() {
     if (data.sizeDecision) setImageSizeDecision(data.sizeDecision);
     if (!data.ok || !data.editedImageUrl) { setPhotoEditStatus(data.message || data.error || "Photo edit unavailable."); return; }
     setLastEditedImage(data.editedImageUrl);
-    applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${type})`);
+    if (type === "crop-fit") {
+      if (selectedBlock?.type === "gallery") replaceGalleryImage(data.editedImageUrl, `Edited photo (${type})`);
+      else if (selectedBlock?.type === "image") replaceImageBlockPhoto(data.editedImageUrl, `Edited photo (${type})`);
+      else setSelectedBlockBackground(data.editedImageUrl);
+    } else {
+      applyImageToSelectedBlock(data.editedImageUrl, `Edited photo (${type})`);
+    }
     await loadImages();
-    setPhotoEditStatus(`Edited photo ready. ${(data.warnings || []).join(" ")}`.trim());
+    setPhotoEditStatus(`Edited photo ready for ${type === "crop-fit" ? cropFitTargetLabel() : targetSummary().replace(/^Target: /, "")}. ${(data.warnings || []).join(" ")}`.trim());
     setLastAction("photo-edit");
+  }
+
+  function renderCurrentTargetCard() {
+    return (
+      <div className="image-target-card">
+        <strong>{targetSummary()}</strong>
+        <span>{selectedBlock ? `Selected block: ${blockTypeLabels[selectedBlock.type] || selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select an Image block or Gallery image slot to use image content actions."}</span>
+      </div>
+    );
+  }
+
+  function renderImageManagerActions(closeAfterApply: boolean) {
+    const hasImage = Boolean(selectedUploadImage);
+    const canUseContent = selectedBlock?.type === "image" || selectedBlock?.type === "gallery";
+    const cropTarget = cropFitTargetLabel();
+    return (
+      <div className="image-manager-actions">
+        {renderCurrentTargetCard()}
+        <p className="hint">Selected image: {hasImage ? selectedUploadImage.split("/").pop() : "Choose a project image first."}</p>
+        <div className="image-action-stack">
+          <button
+            onClick={() => {
+              if (!selectedUploadImage) return;
+              applySelectedImageContent(selectedUploadImage);
+              if (closeAfterApply) setImageManagerOpen(false);
+            }}
+            disabled={!hasImage || !canUseContent}
+            title={canUseContent ? contentActionLabel() : "Select an Image block or Gallery image slot to use this as image content."}
+          >
+            {contentActionLabel()}
+          </button>
+          {!canUseContent && <p className="hint action-explain">Select an Image block or Gallery image slot to use this as image content.</p>}
+          <button
+            onClick={() => {
+              if (!selectedUploadImage) return;
+              setSelectedBlockBackground(selectedUploadImage);
+              if (closeAfterApply) setImageManagerOpen(false);
+            }}
+            disabled={!hasImage || !selectedBlock}
+          >
+            {selectedBlock?.type === "hero" ? "Set as Hero background" : "Set as block background"}
+          </button>
+          {imageManagerTarget === "part-bg" && (
+            <button
+              onClick={() => {
+                if (!selectedUploadImage) return;
+                applyImageFromManager(selectedUploadImage);
+                if (closeAfterApply) setImageManagerOpen(false);
+              }}
+              disabled={!hasImage || !selectedBlock}
+            >
+              Set as selected style image
+            </button>
+          )}
+        </div>
+        <div className="crop-fit-card">
+          <strong>Crop/Fit target: {cropTarget}</strong>
+          <button
+            onClick={() => void applyPhotoEdit({ editType: "crop-fit", instruction: `Crop/fit to ${cropTarget}` })}
+            disabled={!hasImage || !hasValidCropFitTarget()}
+            title={hasValidCropFitTarget() ? `Crop/Fit and replace ${cropTarget}` : "Select a block, Image block, or Gallery image slot first."}
+          >
+            {hasValidCropFitTarget() ? `Crop/Fit and replace ${cropTarget}` : "Crop/Fit disabled"}
+          </button>
+          {!hasValidCropFitTarget() && <p className="hint action-explain">Select a block, Image block, or Gallery image slot first.</p>}
+        </div>
+        <div className="image-action-stack">
+          <h4>Edit Selected Image</h4>
+          <button disabled={!hasImage} onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
+          <button disabled={!hasImage} onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Black &amp; white</button>
+        </div>
+      </div>
+    );
   }
 
   function duplicateBlock(blockId?: string) {
@@ -1254,6 +1442,7 @@ export function App() {
     const copy: Block = { ...target, id: `${target.id}-copy-${Math.random().toString(36).slice(2, 6)}` };
     patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, copy] });
     setSelectedBlockId(copy.id);
+    setSelectedGalleryIndex(null);
     setLastAction("duplicate-block");
   }
 
@@ -1264,6 +1453,7 @@ export function App() {
     const next = selectedPage.blocks.filter((b) => b.id !== targetId);
     patchCurrentPage({ ...selectedPage, blocks: next });
     setSelectedBlockId(next[0]?.id || "");
+    setSelectedGalleryIndex(null);
     setLastAction("delete-block");
     setContextMenu(null);
   }
@@ -1439,6 +1629,7 @@ export function App() {
     const b = defaultBlock(type);
     patchCurrentPage({ ...selectedPage, blocks: [...selectedPage.blocks, b] });
     setSelectedBlockId(b.id);
+    setSelectedGalleryIndex(null);
     setLastAction(`add-${type}`);
   }
 
@@ -1562,7 +1753,7 @@ export function App() {
 
   function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
     if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
-    if (!drag) { setSelectedBlockId(blockId); setSelectedGalleryIndex(null); }
+    if (!drag) selectBlock(blockId);
   }
 
   function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
@@ -1619,7 +1810,7 @@ export function App() {
     <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-        <div className="logo">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
+        <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
         <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
         <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
@@ -1754,7 +1945,7 @@ export function App() {
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
                         style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
-                        onClick={() => setSelectedBlockId(block.id)}
+                        onClick={() => selectBlock(block.id)}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
                         onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
@@ -1775,12 +1966,7 @@ export function App() {
                         )}
                         {renderTypedBlock(block, (field, value) => {
                           patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
-                        }, (index) => {
-                          setSelectedBlockId(block.id);
-                          setSelectedGalleryIndex(index);
-                          setRightTab("images");
-                          setStatus(`Selected gallery image ${index + 1}`);
-                        })}
+                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null)}
                         {selectedBlock?.id === block.id && !previewMode && (
                           <>
                             <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
@@ -1820,6 +2006,7 @@ export function App() {
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
           </div>
+          <p className="panel-status right-target-summary">{targetSummary()}</p>
 
           {rightTab === "properties" && selectedBlock && (
             <div className="panel">
@@ -2628,54 +2815,7 @@ export function App() {
                 </div>
               </div>
 
-              {selectedUploadImage && (
-                <div className="image-manager-actions">
-                  <p className="hint">Selected: {selectedUploadImage.split("/").pop()}</p>
-                  <p className="hint">Crop/Fit target: {selectedBlock ? `${selectedBlock.type === "gallery" && selectedGalleryIndex !== null ? `Gallery image ${selectedGalleryIndex + 1}` : selectedBlock.type === "hero" ? "Hero background" : selectedBlock.type} (${selectedBlock.id.slice(0, 8)})` : "Select a block first"}</p>
-                  <div className="button-row compact">
-                    <button onClick={() => applyImageFromManager(selectedUploadImage)}>Apply to selected block</button>
-                    <button onClick={() => {
-                      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: selectedUploadImage, backgroundSize: "cover", backgroundPosition: "center" } }));
-                      setStatus(`Applied image to ${friendlySelectedLabel()} background`);
-                    }}>Set as block background</button>
-                    {selectedBlock?.type === "image" ? (
-                      <button onClick={() => {
-                        patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as Record<string, unknown>), src: selectedUploadImage, alt: "Selected image" } }));
-                        setStatus("Image block photo updated.");
-                      }}>Set as this Image block's photo</button>
-                    ) : selectedBlock?.type === "gallery" && selectedGalleryIndex !== null ? (
-                      <button onClick={() => {
-                        applyImageToSelectedBlock(selectedUploadImage, "Selected gallery image");
-                        setStatus("Gallery image updated.");
-                      }}>Set as Gallery image {selectedGalleryIndex + 1}</button>
-                    ) : (
-                      <button title="Select an Image or Gallery block to use this as image content.">Image source (select Image/Gallery block)</button>
-                    )}
-                    {selectedBlock?.type === "hero" && (
-                      <button onClick={() => {
-                        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: selectedUploadImage, backgroundSize: "cover", backgroundPosition: "center" } }));
-                        setStatus("Set as Hero background");
-                      }}>Set as Hero background</button>
-                    )}
-                    <button
-                      onClick={() => void applyPhotoEdit({ editType: "crop-fit", instruction: "Crop/fit to selected block" })}
-                      disabled={!selectedBlock}
-                      title={!selectedBlock ? "Select a block first" : "Crop and fit for selected block"}
-                    >
-                      Crop/Fit
-                    </button>
-                  </div>
-                  {selectedBlock && selectedBlock.type !== "image" && (
-                    <p className="hint" style={{ color: "var(--editor-danger)" }}>Select an Image block to use this as image content.</p>
-                  )}
-                  <h4>Edit Selected Image</h4>
-                  <div className="button-row compact">
-                    <button onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
-                    <button onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Black &amp; white</button>
-                  </div>
-                  {!selectedBlock && <p className="hint">Crop/Fit is disabled: select a block first.</p>}
-                </div>
-              )}
+              {renderImageManagerActions(false)}
             </div>
           )}
 
@@ -2842,9 +2982,9 @@ export function App() {
       {/* Context Menu */}
       {contextMenu?.visible && (
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
+          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
           <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
+          <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
           <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
           <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
           <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
@@ -2855,9 +2995,9 @@ export function App() {
           <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
           <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
           <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
-          <button onClick={() => { setSelectedBlockId(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
+          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
+          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
+          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
           <button onClick={() => {
             const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
             if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));
@@ -2882,6 +3022,8 @@ export function App() {
             {settingsTab === "general" && (
               <div className="panel-status">
                 <p>Use tabs to configure providers, keys, and deploy safety.</p>
+                <p>Builder UI Theme changes the editor toolbar/panels only. Website Theme changes the page preview only.</p>
+                <p className="hint">Topbar uses Builder UI Theme.</p>
                 <label style={{ marginTop: 12, display: "block" }}>Editor Theme
                   <select value={editorTheme} onChange={(e) => setEditorTheme(e.target.value)} style={{ marginLeft: 8 }}>
                     <option value="Light">Light</option>
@@ -2993,7 +3135,10 @@ export function App() {
       {imageManagerOpen && (
         <div className="modal-backdrop" onClick={() => setImageManagerOpen(false)}>
           <div className="modal image-manager-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Image Manager</h3>
+            <div className="modal-header">
+              <h3>Image Manager</h3>
+              <button className="modal-close" onClick={() => setImageManagerOpen(false)} aria-label="Close Image Manager">✕</button>
+            </div>
             <div className="image-manager-upload">
               <label>Upload image
                 <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
@@ -3039,8 +3184,8 @@ export function App() {
               </div>
             </div>
             
-            <div className="image-manager-actions">
-              <button onClick={() => { if (selectedUploadImage) applyImageFromManager(selectedUploadImage); }} disabled={!selectedUploadImage}>Use selected image</button>
+            {renderImageManagerActions(true)}
+            <div className="image-manager-footer">
               <button onClick={() => setImageManagerOpen(false)}>Cancel</button>
             </div>
           </div>

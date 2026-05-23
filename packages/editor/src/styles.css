@@ -45,6 +45,7 @@ html, body {
 }
 
 * { box-sizing: border-box; }
+html, body, #root { overflow-x: hidden; }
 
 /* ===== EDITOR SHELL ===== */
 .sbuild-editor-shell {
@@ -146,30 +147,40 @@ button:disabled {
 /* ===== WORKSPACE ===== */
 .workspace {
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
+  grid-template-columns: 280px minmax(0, 1fr) minmax(340px, 360px);
   gap: 10px;
   padding: 10px;
   flex: 1;
+  min-width: 0;
+  align-items: start;
 }
 .workspace.left-collapsed {
-  grid-template-columns: 0 1fr 320px;
+  grid-template-columns: 0 minmax(0, 1fr) minmax(340px, 360px);
 }
 
 /* ===== LEFT / RIGHT DRAWERS (editor chrome panels) ===== */
 .left-drawer,
 .right-drawer {
-  width: 280px;
+  width: 100%;
+  min-width: 0;
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 90px);
-  overflow: auto;
+  max-height: calc(100vh - 78px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.right-drawer {
+  position: sticky;
+  top: 68px;
+  align-self: start;
 }
 .right-drawer > * {
   padding-left: 16px;
   padding-right: 16px;
+  min-width: 0;
 }
 
 /* Drawer headings */
@@ -426,8 +437,8 @@ button:disabled {
   top: 0;
   z-index: 10;
   background: var(--editor-panel-bg);
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: hidden;
   padding-top: 16px;
   padding-bottom: 8px;
   gap: 4px;
@@ -436,13 +447,16 @@ button:disabled {
   font-size: 12px;
   padding: 5px 8px;
   white-space: nowrap;
-  min-width: 0;
+  min-width: 48px;
+  flex: 1 1 auto;
 }
 
 /* ===== IMAGE MANAGER ===== */
 .image-manager-modal {
+  width: min(860px, 96vw);
   max-height: 85vh;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .image-manager-upload {
   margin-bottom: 12px;
@@ -455,10 +469,12 @@ button:disabled {
 }
 .image-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
   max-height: 300px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
 }
 .image-card {
   border: 2px solid var(--editor-border);
@@ -509,11 +525,42 @@ button:disabled {
   background: var(--editor-panel-bg);
 }
 .image-manager-actions {
-  display: flex;
+  display: grid;
   gap: 8px;
-  justify-content: flex-end;
   padding-top: 10px;
   border-top: 1px solid var(--editor-border);
+  min-width: 0;
+}
+.image-action-stack {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.image-action-stack button,
+.crop-fit-card button {
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.image-target-card,
+.crop-fit-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--editor-border);
+  background: var(--editor-status-bg);
+  border-radius: 10px;
+  padding: 8px;
+  color: var(--editor-status-text);
+  min-width: 0;
+}
+.image-target-card span,
+.action-explain {
+  overflow-wrap: anywhere;
+}
+.image-manager-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
 }
 
 /* ===== LEFT DRAWER COLLAPSED ===== */
@@ -585,6 +632,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 .canvas-controls {
   display: flex;
@@ -740,6 +788,29 @@ button:disabled {
   border: 1px solid var(--sbuild-border, var(--editor-border));
   border-radius: 10px;
   padding: 8px;
+}
+.gallery-slot {
+  position: relative;
+  cursor: pointer;
+}
+.gallery-slot:focus-visible,
+.selected-gallery-slot {
+  outline: 3px solid var(--editor-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--editor-accent) 22%, transparent);
+}
+.gallery-slot-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  background: var(--editor-accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
 }
 .cta-btn {
   background: var(--sbuild-button-bg, #2f6b3f);
@@ -913,6 +984,21 @@ button:disabled {
   border: 1px solid var(--editor-border);
   padding: 14px;
   color: var(--editor-text);
+  overflow-x: hidden;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.modal-header h3 {
+  margin: 0;
+}
+.modal-close {
+  min-width: 40px;
+  line-height: 1;
 }
 .modal h3 {
   color: var(--editor-text);
@@ -1087,6 +1173,7 @@ button:disabled {
   .left-drawer,
   .right-drawer {
     max-height: none;
+    position: static;
   }
   .row-grid {
     flex-wrap: wrap;
