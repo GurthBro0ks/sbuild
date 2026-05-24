@@ -340,3 +340,28 @@ test("project save/load roundtrip preserves block part styles including transpar
     await fs.writeFile(projectFile, originalRaw, "utf8");
   }
 });
+
+test("/api/images/folder accepts project/images and rejects unsafe paths", async () => {
+  const accepted = await fetch(`${baseUrl}/api/images/folder`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ folder: "project/images/subfolder" })
+  });
+  assert.equal(accepted.status, 200);
+  const acceptedBody = await accepted.json() as { ok: boolean; folder?: string };
+  assert.equal(acceptedBody.ok, true);
+  assert.equal(acceptedBody.folder, "project/images/subfolder");
+
+  const invalidPaths = ["", "/go", "../", "../../etc", "project/../secrets", "go", "project/images/../../etc"];
+  for (const invalid of invalidPaths) {
+    const response = await fetch(`${baseUrl}/api/images/folder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: invalid })
+    });
+    assert.equal(response.status, 400, `expected 400 for ${invalid}`);
+    const body = await response.json() as { ok: boolean; error?: string };
+    assert.equal(body.ok, false);
+    assert.ok((body.error || "").length > 0);
+  }
+});

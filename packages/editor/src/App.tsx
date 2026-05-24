@@ -605,6 +605,7 @@ function renderTypedBlock(block: Block, onText: (field: string, value: string) =
 
 export function App() {
   const [project, setProject] = useState<SBuildProject | null>(null);
+  const projectRef = useRef<SBuildProject | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string>("");
   const [selectedBlockId, setSelectedBlockId] = useState<string>("");
   const [previewMode, setPreviewMode] = useState(false);
@@ -653,6 +654,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sbuild_editor_theme", editorTheme);
   }, [editorTheme]);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
   const [selectedSitePart, setSelectedSitePart] = useState<string | null>(null);
   const [selectedNavIndex, setSelectedNavIndex] = useState<number | null>(null);
   const [layoutHighlight, setLayoutHighlight] = useState(false);
@@ -972,13 +977,14 @@ export function App() {
 
   async function savePhotoFolder() {
     try {
-      const data = await fetchJson<{ ok: boolean; message?: string }>("/api/images/folder", {
+      const data = await fetchJson<{ ok: boolean; message?: string; error?: string }>("/api/images/folder", {
         method: "POST",
         body: JSON.stringify({ folder: photoFolder })
       });
-      setStatus(data.ok ? (data.message || "Folder saved") : "Failed to save folder");
+      setStatus(data.ok ? (data.message || "Folder saved") : (data.error || "Failed to save folder"));
     } catch (error) {
-      setStatus(`Failed to save folder: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(`Failed to save folder: ${message}`);
     }
   }
 
@@ -1046,7 +1052,18 @@ export function App() {
   }
 
   function resetWholeBlockToTheme() {
-    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: undefined, textColor: undefined, fontFamily: undefined, parts: {} } }));
+    patchSelectedBlock((b) => ({
+      ...b,
+      styles: {
+        ...(b.styles || {}),
+        backgroundColor: undefined,
+        backgroundImage: undefined,
+        backgroundStyle: undefined,
+        textColor: undefined,
+        fontFamily: undefined,
+        parts: {}
+      }
+    }));
     setStatus("Reset whole block to theme");
   }
 
@@ -1238,9 +1255,10 @@ export function App() {
   }
 
   async function saveProject() {
-    if (!project) return;
+    const latestProject = projectRef.current;
+    if (!latestProject) return;
     setStatus("Saving...");
-    const data = await fetchJson<{ ok: boolean; lastSavedAt?: string; projectPath?: string }>("/api/project", { method: "PUT", body: JSON.stringify({ project }) });
+    const data = await fetchJson<{ ok: boolean; lastSavedAt?: string; projectPath?: string }>("/api/project", { method: "PUT", body: JSON.stringify({ project: latestProject }) });
     if (data.ok) {
       setLastSavedAt(data.lastSavedAt || new Date().toISOString());
       setProjectPath(data.projectPath || projectPath);
@@ -1624,7 +1642,21 @@ export function App() {
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
     const targetBlock = selectedPage.blocks.find(b => b.id === targetId);
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: undefined, textColor: undefined, fontFamily: undefined, parts: {} } })) });
+    patchCurrentPage({
+      ...selectedPage,
+      blocks: updateBlock(selectedPage.blocks, targetId, (b) => ({
+        ...b,
+        styles: {
+          ...(b.styles || {}),
+          backgroundColor: undefined,
+          backgroundImage: undefined,
+          backgroundStyle: undefined,
+          textColor: undefined,
+          fontFamily: undefined,
+          parts: {}
+        }
+      }))
+    });
     setStatus(`Selected ${targetBlock ? (blockTypeLabels[targetBlock.type] || targetBlock.type) : "block"} section colors reset to theme.`);
   }
 
@@ -1639,6 +1671,8 @@ export function App() {
           styles: {
             ...(b.styles || {}),
             backgroundColor: undefined,
+            backgroundImage: undefined,
+            backgroundStyle: undefined,
             textColor: undefined,
             fontFamily: b.type === "hero" || b.type === "text" || b.type === "cards" ? project.globalStyles.headingFont : project.globalStyles.bodyFont,
             parts: {}

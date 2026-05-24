@@ -99,6 +99,27 @@ async function writeImageFolderSetting(folder: string): Promise<void> {
   await fs.mkdir(path.dirname(imageFolderConfigFile), { recursive: true });
   await fs.writeFile(imageFolderConfigFile, JSON.stringify({ folder }, null, 2), "utf8");
 }
+
+function validateImageFolderPath(input: string): { ok: true; normalized: string } | { ok: false; error: string } {
+  const raw = String(input || "").trim();
+  if (!raw) return { ok: false, error: "Folder path is required." };
+  if (/[^\x20-\x7E]/.test(raw)) return { ok: false, error: "Folder path contains invalid control characters." };
+  if (path.isAbsolute(raw) || raw.startsWith("/")) return { ok: false, error: "Folder path must be project-relative, not absolute." };
+  if (raw.includes("\\")) return { ok: false, error: "Folder path must use forward slashes (/)." };
+
+  const normalized = path.posix.normalize(raw);
+  if (normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || normalized === "..") {
+    return { ok: false, error: "Folder path cannot traverse outside project/images." };
+  }
+  if (!normalized.startsWith("project/images")) {
+    return { ok: false, error: "Folder path must start with project/images." };
+  }
+  if (normalized !== "project/images" && !normalized.startsWith("project/images/")) {
+    return { ok: false, error: "Folder path must stay under project/images." };
+  }
+
+  return { ok: true, normalized };
+}
 import {
   applyLocalEditWithSharp,
   ensureImageSubdir,
@@ -407,21 +428,13 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
 
   app.post("/api/images/folder", async (req, res) => {
     const requested = String(req.body?.folder || "").trim();
-    if (!requested) {
-      res.status(400).json({ ok: false, error: "folder is required" });
+    const validated = validateImageFolderPath(requested);
+    if (!validated.ok) {
+      res.status(400).json({ ok: false, error: validated.error });
       return;
     }
-    // Safety: reject traversal and absolute paths
-    if (requested.includes("..") || path.isAbsolute(requested)) {
-      res.status(400).json({ ok: false, error: "Invalid folder path. Use a relative project subfolder." });
-      return;
-    }
-    if (requested.startsWith(".") || requested.startsWith("/")) {
-      res.status(400).json({ ok: false, error: "Invalid folder path. Use a relative project subfolder." });
-      return;
-    }
-    await writeImageFolderSetting(requested);
-    res.json({ ok: true, folder: requested, message: "Folder setting saved." });
+    await writeImageFolderSetting(validated.normalized);
+    res.json({ ok: true, folder: validated.normalized, message: "Folder setting saved." });
   });
 
   app.get("/api/fonts", async (_req, res) => {
