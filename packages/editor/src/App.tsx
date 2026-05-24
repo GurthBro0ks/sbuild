@@ -445,6 +445,7 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect }: { block: Block; s
             role={onImageSelect ? "button" : undefined}
             aria-label={`Select Gallery image ${i + 1}`}
             onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}
+            onPointerUp={(e) => { if (onImageSelect) { onImageSelect(i); } }}
             onKeyDown={(e) => { if (onImageSelect && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); onImageSelect(i); } }}
           >
             {selectedIndex === i && <span className="gallery-slot-badge">Image {i + 1}</span>}
@@ -1831,6 +1832,10 @@ export function App() {
 
   function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
     if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    const target = e.target as HTMLElement;
+    if (isMobileViewport && target.closest('.gallery-slot')) {
+      return;
+    }
     if (isMobileViewport) {
       selectBlock(blockId);
       return;

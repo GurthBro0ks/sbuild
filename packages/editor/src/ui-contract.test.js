@@ -104,6 +104,26 @@ test("right drawer chip/button rows allow wrap and visible focus space", () => {
   assert.match(cssSource, /\.tabs[\s\S]*padding-block:\s*3px/);
 });
 
+test("mobile right drawer header and tabs are not clipped by overflow-hidden", () => {
+  assert.doesNotMatch(cssSource, /\.right-drawer-header\s*\{[^{}]*min-height:\s*0[^{}]*\}/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*overflow:\s*visible/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.right-drawer[\s\S]*overflow:\s*visible/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*padding-top:\s*6px/);
+});
+
+test("gallery slot has mobile-safe pointer handler that stops parent block overwrite", () => {
+  assert.match(appSource, /onPointerUp=\{\(e\)\s*=>\s*\{\s*if\s*\(onImageSelect\)\s*\{\s*onImageSelect\(i\)/);
+  assert.match(appSource, /target\.closest\('\.gallery-slot'\)/);
+  assert.match(appSource, /if\s*\(isMobileViewport\s*&&\s*target\.closest\('\.gallery-slot'\)\)\s*\{\s*return;\s*\}/);
+});
+
+test("gallery slot selection opens images tab and right drawer on mobile", () => {
+  assert.match(appSource, /function selectGallerySlot/);
+  assert.match(appSource, /setSelectedGalleryIndex\(index\)/);
+  assert.match(appSource, /setRightTab\("images"\)/);
+  assert.match(appSource, /if\s*\(isMobileViewport\)\s*setRightDrawerMobileOpen\(true\)/);
+});
+
 test("canvas frame background uses site variables not editor variables", () => {
   assert.match(cssSource, /\.canvas-frame[\s\S]*background:\s*var\(--sbuild-canvas-bg/);
   assert.doesNotMatch(cssSource, /\.canvas-frame\s*\{[^{}]*background:\s*var\(--editor-panel-bg\)[^{}]*\}/);

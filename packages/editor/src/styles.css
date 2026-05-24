@@ -192,9 +192,9 @@ button:disabled {
 }
 .right-drawer-header {
   flex: 0 0 auto;
-  min-height: 0;
   background: var(--editor-panel-bg);
   border-bottom: 1px solid var(--editor-border);
+  overflow: visible;
 }
 .right-drawer-content {
   flex: 1 1 auto;
@@ -1450,9 +1450,14 @@ button:disabled {
     right: 8px;
     bottom: 8px;
     order: 3;
-    overflow: hidden;
+    overflow: visible;
     z-index: 65;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+  }
+
+  .right-drawer-header {
+    overflow: visible;
+    padding-top: 6px;
   }
 
   .right-drawer.mobile-closed {
@@ -1467,6 +1472,8 @@ button:disabled {
     position: sticky;
     top: 0;
     z-index: 18;
+    overflow: visible;
+    padding-top: 6px;
   }
 
   .right-drawer-content {
@@ -1479,6 +1486,8 @@ button:disabled {
     min-width: 68px;
     font-size: 11px;
     padding: 7px 8px;
+    min-height: 36px;
+    line-height: 1.3;
   }
 }
 
