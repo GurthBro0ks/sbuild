@@ -678,6 +678,7 @@ export function App() {
   const [drag, setDrag] = useState<DragState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
+  const siteHeaderLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
   const [themeApplied, setThemeApplied] = useState("");
   const [providerStatus, setProviderStatus] = useState<SBuildProviderStatus[]>([]);
   const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
@@ -1895,6 +1896,35 @@ export function App() {
     }
   }
 
+  function openSiteHeaderDrawer(sitePart: "site-title" | "nav", navIndex?: number) {
+    setSelectedSitePart(sitePart);
+    if (navIndex !== undefined) setSelectedNavIndex(navIndex);
+    else setSelectedNavIndex(null);
+    setSelectedBlockId("");
+    setSelectedGalleryIndex(null);
+    setRightDrawerMobileOpen(true);
+    setRightTab("properties");
+    setStatus(sitePart === "site-title" ? "Editing site title" : `Editing nav link ${(navIndex ?? 0) + 1}`);
+  }
+
+  function startSiteHeaderLongPress(sitePart: "site-title" | "nav", x: number, y: number, navIndex?: number) {
+    siteHeaderLongPressRef.current.fired = false;
+    siteHeaderLongPressRef.current.startX = x;
+    siteHeaderLongPressRef.current.startY = y;
+    siteHeaderLongPressRef.current.timer = setTimeout(() => {
+      siteHeaderLongPressRef.current.fired = true;
+      siteHeaderLongPressRef.current.timer = null;
+      openSiteHeaderDrawer(sitePart, navIndex);
+    }, 500);
+  }
+
+  function cancelSiteHeaderLongPress() {
+    if (siteHeaderLongPressRef.current.timer) {
+      clearTimeout(siteHeaderLongPressRef.current.timer);
+      siteHeaderLongPressRef.current.timer = null;
+    }
+  }
+
   function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
     if (e.button !== 0) return;
     const target = e.target as HTMLElement;
@@ -2111,16 +2141,92 @@ export function App() {
             onClick={() => { if (!previewMode) { setSelectedSitePart(null); setSelectedNavIndex(null); } }}
           >
             <nav className="canvas-nav">
-              <strong
-                className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
-                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); setStatus("Editing site title"); } }}
-              >{project.site.siteName}</strong>
+              <div className="site-header-left">
+                <strong
+                  className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
+                  onClick={(e) => {
+                    if (previewMode) return;
+                    e.stopPropagation();
+                    if (isMobileViewport) {
+                      setSelectedSitePart("site-title");
+                      setSelectedNavIndex(null);
+                      setSelectedBlockId("");
+                      setStatus("Site title selected");
+                    } else {
+                      setSelectedSitePart("site-title");
+                      setSelectedNavIndex(null);
+                      setRightTab("properties");
+                      setStatus("Editing site title");
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    if (previewMode || !isMobileViewport) return;
+                    startSiteHeaderLongPress("site-title", e.clientX, e.clientY);
+                  }}
+                  onPointerUp={(e) => {
+                    if (previewMode || !isMobileViewport) return;
+                    cancelSiteHeaderLongPress();
+                    if (siteHeaderLongPressRef.current.fired) {
+                      siteHeaderLongPressRef.current.fired = false;
+                      return;
+                    }
+                  }}
+                  onPointerMove={(e) => {
+                    if (!siteHeaderLongPressRef.current.timer) return;
+                    const dx = Math.abs(e.clientX - siteHeaderLongPressRef.current.startX);
+                    const dy = Math.abs(e.clientY - siteHeaderLongPressRef.current.startY);
+                    if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
+                  }}
+                >{project.site.siteName}</strong>
+                {isMobileViewport && !previewMode && (
+                  <button
+                    className="site-header-edit-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openSiteHeaderDrawer("site-title");
+                    }}
+                    title="Edit site header"
+                  >⋯</button>
+                )}
+              </div>
               <div className="nav-items">
                 {project.site.nav.map((item, ni) => (
                   <span
                     key={item.id}
                     className={selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
-                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); setStatus(`Editing nav link ${ni + 1}`); } }}
+                    onClick={(e) => {
+                      if (previewMode) return;
+                      e.stopPropagation();
+                      if (isMobileViewport) {
+                        setSelectedSitePart("nav");
+                        setSelectedNavIndex(ni);
+                        setSelectedBlockId("");
+                        setStatus(`Nav link ${ni + 1} selected`);
+                      } else {
+                        setSelectedSitePart("nav");
+                        setSelectedNavIndex(ni);
+                        setRightTab("properties");
+                        setStatus(`Editing nav link ${ni + 1}`);
+                      }
+                    }}
+                    onPointerDown={(e) => {
+                      if (previewMode || !isMobileViewport) return;
+                      startSiteHeaderLongPress("nav", e.clientX, e.clientY, ni);
+                    }}
+                    onPointerUp={(e) => {
+                      if (previewMode || !isMobileViewport) return;
+                      cancelSiteHeaderLongPress();
+                      if (siteHeaderLongPressRef.current.fired) {
+                        siteHeaderLongPressRef.current.fired = false;
+                        return;
+                      }
+                    }}
+                    onPointerMove={(e) => {
+                      if (!siteHeaderLongPressRef.current.timer) return;
+                      const dx = Math.abs(e.clientX - siteHeaderLongPressRef.current.startX);
+                      const dy = Math.abs(e.clientY - siteHeaderLongPressRef.current.startY);
+                      if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
+                    }}
                   >{item.label}</span>
                 ))}
               </div>
@@ -2212,7 +2318,7 @@ export function App() {
           </div>
           <div className="right-drawer-content">
 
-          {rightTab === "properties" && selectedBlock && (
+          {rightTab === "properties" && (selectedBlock || selectedSitePart) && (
             <div className="panel">
               {selectedSitePart && (() => {
                 if (selectedSitePart === "site-title") return (
@@ -2239,6 +2345,8 @@ export function App() {
                 }
                 return null;
               })()}
+              {selectedBlock && (
+              <>
               <h3>Block Fields</h3>
               <div className="button-row">
                 <button className={propertiesTab === "fields" ? "selected" : ""} onClick={() => setPropertiesTab("fields")}>Fields</button>
@@ -2474,6 +2582,8 @@ export function App() {
                   );
                 })}
               </div>
+              </>
+              )}
             </div>
           )}
 

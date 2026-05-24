@@ -765,6 +765,34 @@ button:disabled {
 }
 .nav-items { display: flex; gap: 8px; flex-wrap: wrap; }
 
+.site-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.site-header-edit-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 8px;
+  background: #f1f3f8;
+  border: 1px solid #d4d8e4;
+  color: var(--editor-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .site-header-left {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+}
+
 /* Site part editing section in right drawer */
 .site-header-edit {
   border: 1px solid var(--editor-border);

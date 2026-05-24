@@ -208,3 +208,46 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
 });
+
+test("mobile site title single tap selects without opening drawer", () => {
+  assert.match(appSource, /function openSiteHeaderDrawer/);
+  assert.match(appSource, /setSelectedSitePart\("site-title"\)/);
+  assert.match(appSource, /setSelectedBlockId\(\"\"\)/);
+  assert.match(appSource, /Site title selected/);
+});
+
+test("mobile site title long press opens right drawer", () => {
+  assert.match(appSource, /function startSiteHeaderLongPress/);
+  assert.match(appSource, /siteHeaderLongPressRef\.current\.timer = setTimeout/);
+  assert.match(appSource, /openSiteHeaderDrawer\("site-title"\)/);
+  assert.match(appSource, /function cancelSiteHeaderLongPress/);
+  assert.match(appSource, /cancelSiteHeaderLongPress/);
+});
+
+test("mobile nav link single tap selects without opening drawer", () => {
+  assert.match(appSource, /setSelectedSitePart\("nav"\)/);
+  assert.match(appSource, /setSelectedNavIndex\(ni\)/);
+  assert.match(appSource, /Nav link \$\{ni \+ 1\} selected/);
+});
+
+test("mobile nav link long press opens right drawer", () => {
+  assert.match(appSource, /startSiteHeaderLongPress\("nav"/);
+  assert.match(appSource, /openSiteHeaderDrawer\(sitePart, navIndex\)/);
+});
+
+test("mobile site header edit button opens drawer", () => {
+  assert.match(appSource, /site-header-edit-btn/);
+  assert.match(appSource, /openSiteHeaderDrawer\("site-title"\)/);
+  assert.match(cssSource, /\.site-header-edit-btn \{/);
+  assert.match(cssSource, /min-width:\s*36px/);
+  assert.match(cssSource, /min-height:\s*36px/);
+});
+
+test("site header target label includes Site header and Nav link", () => {
+  assert.match(appSource, /Editing Site header → Site title/);
+  assert.match(appSource, /Editing Site header → Nav link/);
+});
+
+test("properties tab renders when site part is selected without block", () => {
+  assert.match(appSource, /rightTab === "properties" && \(selectedBlock \|\| selectedSitePart\)/);
+});
