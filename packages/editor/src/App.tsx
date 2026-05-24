@@ -650,6 +650,7 @@ export function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
+  const [rightDrawerMobileOpen, setRightDrawerMobileOpen] = useState(false);
   const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
 
   useEffect(() => {
@@ -830,10 +831,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (isMobileViewport && !leftCollapsed) {
+    if (isMobileViewport) {
       setLeftCollapsed(true);
+      setRightDrawerMobileOpen(false);
     }
-  }, [isMobileViewport, leftCollapsed]);
+  }, [isMobileViewport]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -1093,6 +1095,7 @@ export function App() {
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
+    if (isMobileViewport) setRightDrawerMobileOpen(true);
   }
 
   function selectGallerySlot(blockId: string, index: number) {
@@ -1103,6 +1106,7 @@ export function App() {
     setSelectedNavIndex(null);
     setRightTab("images");
     setStatus(`Selected Gallery image ${index + 1}`);
+    if (isMobileViewport) setRightDrawerMobileOpen(true);
   }
 
   function targetSummary(): string {
@@ -1881,7 +1885,7 @@ export function App() {
   }
 
   return (
-    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""}`}>
+    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
@@ -1901,6 +1905,12 @@ export function App() {
 
         <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
         <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
+          {isMobileViewport && !leftCollapsed && (
+            <div className="mobile-drawer-toolbar">
+              <strong>Left panel</strong>
+              <button className="drawer-close-btn" onClick={() => setLeftCollapsed(true)} aria-label="Close left panel">Close</button>
+            </div>
+          )}
           <p className="panel-status">
             <strong>Left panel:</strong> page {selectedPage.title} · blocks {selectedPage.blocks.length}
             {drag && ` · dragging ${drag.blockId.slice(0, 12)}`}
@@ -2080,8 +2090,14 @@ export function App() {
           )}
         </main>
 
-        <aside className="right-drawer">
+        <aside className={`right-drawer ${isMobileViewport ? (rightDrawerMobileOpen ? "mobile-open" : "mobile-closed") : ""}`}>
           <div className="right-drawer-header">
+            {isMobileViewport && (
+              <div className="mobile-drawer-toolbar">
+                <strong>Edit block</strong>
+                <button className="drawer-close-btn" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close right panel">Close</button>
+              </div>
+            )}
             <div className="tabs compact-tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
             <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>

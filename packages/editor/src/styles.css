@@ -1377,6 +1377,24 @@ button:disabled {
     display: none;
   }
 
+  .mobile-drawer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--editor-panel-bg);
+    border-bottom: 1px solid var(--editor-border);
+    padding: 8px;
+  }
+
+  .drawer-close-btn {
+    min-width: 72px;
+    flex: 0 0 auto;
+  }
+
   .canvas-area {
     min-width: 0;
     overflow-x: hidden;
@@ -1424,22 +1442,35 @@ button:disabled {
 
   .right-drawer {
     min-width: 0;
-    width: 100%;
+    width: auto;
     height: auto;
-    max-height: none;
-    position: static;
+    max-height: 72vh;
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
     order: 3;
-    overflow: visible;
+    overflow: hidden;
+    z-index: 65;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+  }
+
+  .right-drawer.mobile-closed {
+    display: none;
+  }
+
+  .right-drawer.mobile-open {
+    display: flex;
   }
 
   .right-drawer-header {
     position: sticky;
-    top: 116px;
+    top: 0;
     z-index: 18;
   }
 
   .right-drawer-content {
-    max-height: 60vh;
+    max-height: 62vh;
     overflow-y: auto;
   }
 
