@@ -198,7 +198,7 @@ test("desktop single click behavior remains unchanged", () => {
 
 test("mobile edit hint is visible only on mobile", () => {
   assert.match(appSource, /mobile-edit-hint/);
-  assert.match(appSource, /Tap to select · Long-press or tap/);
+  assert.match(appSource, /Tap text to edit directly · Long-press or tap/);
   assert.match(cssSource, /\.mobile-edit-hint \{/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.mobile-edit-hint[\s\S]*display:\s*block/);
 });
@@ -209,11 +209,10 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /dryRun/);
 });
 
-test("mobile site title single tap selects without opening drawer", () => {
-  assert.match(appSource, /function openSiteHeaderDrawer/);
-  assert.match(appSource, /setSelectedSitePart\("site-title"\)/);
-  assert.match(appSource, /setSelectedBlockId\(\"\"\)/);
-  assert.match(appSource, /Site title selected/);
+test("mobile site title single tap edits directly without opening drawer", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /if \(previewMode\) return;[\s\S]*setSelectedSitePart\("site-title"\)/);
+  assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("site-title"\)[\s\S]{0,60}Site title selected/);
 });
 
 test("mobile site title long press opens right drawer", () => {
@@ -224,10 +223,10 @@ test("mobile site title long press opens right drawer", () => {
   assert.match(appSource, /cancelSiteHeaderLongPress/);
 });
 
-test("mobile nav link single tap selects without opening drawer", () => {
-  assert.match(appSource, /setSelectedSitePart\("nav"\)/);
-  assert.match(appSource, /setSelectedNavIndex\(ni\)/);
-  assert.match(appSource, /Nav link \$\{ni \+ 1\} selected/);
+test("mobile nav link single tap edits directly without opening drawer", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
+  assert.match(appSource, /if \(previewMode\) return;[\s\S]*setSelectedSitePart\("nav"\)/);
+  assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("nav"\)[\s\S]{0,60}Nav link/);
 });
 
 test("mobile nav link long press opens right drawer", () => {
@@ -250,4 +249,57 @@ test("site header target label includes Site header and Nav link", () => {
 
 test("properties tab renders when site part is selected without block", () => {
   assert.match(appSource, /rightTab === "properties" && \(selectedBlock \|\| selectedSitePart\)/);
+});
+
+test("preview mode disables contentEditable on hero and text blocks", () => {
+  assert.match(appSource, /contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /HeroBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /TextBlock[\s\S]*contentEditable=\{!isPreview\}/);
+});
+
+test("preview mode clears selection and closes drawers via useEffect", () => {
+  assert.match(appSource, /useEffect\(\(\) => \{\s*if \(previewMode\)/);
+  assert.match(appSource, /setSelectedBlockId\(""\)/);
+  assert.match(appSource, /setSelectedGalleryIndex\(null\)/);
+  assert.match(appSource, /setSelectedSitePart\(null\)/);
+  assert.match(appSource, /setSelectedNavIndex\(null\)/);
+  assert.match(appSource, /setRightDrawerMobileOpen\(false\)/);
+});
+
+test("preview mode guards block pointer handlers", () => {
+  assert.match(appSource, /function handleBlockPointerDown[\s\S]{0,120}if \(previewMode\) return;/);
+  assert.match(appSource, /function handleBlockPointerUp[\s\S]{0,200}if \(previewMode\) return;/);
+});
+
+test("preview mode guards context menu", () => {
+  assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
+});
+
+test("preview mode hides selection outlines via CSS", () => {
+  assert.match(cssSource, /\.app\.preview \.selected-block/);
+  assert.match(cssSource, /\.app\.preview \.selected-site-part/);
+});
+
+test("edit mode supports direct text editing with stopPropagation on contentEditable", () => {
+  assert.match(appSource, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+});
+
+test("site title is contentEditable in edit mode and guarded in preview", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /setProject\(\{ \.\.\.project, site: \{ \.\.\.project\.site, siteName:/);
+});
+
+test("nav labels are contentEditable in edit mode and guarded in preview", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
+  assert.match(appSource, /nav\[ni\] = \{ \.\.\.nav\[ni\], label: e\.currentTarget\.textContent/);
+});
+
+test("cards block title and card text are contentEditable in edit mode", () => {
+  assert.match(appSource, /CardsBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onCardText\?\./);
+});
+
+test("gallery slots are guarded in preview mode", () => {
+  assert.match(appSource, /if \(isPreview\) return;[\s\S]*onImageSelect/);
 });

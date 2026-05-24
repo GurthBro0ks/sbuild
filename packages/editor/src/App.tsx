@@ -360,25 +360,25 @@ function withSavedStatusText(status: string, dirty: boolean): string {
   return "Idle";
 }
 
-const HeroBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
+const HeroBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
   const data = block.data as HeroBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")}>{data.heading}</h1>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")}>{data.subheading}</p>
+      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.heading}</h1>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.subheading}</p>
       <button className="cta-btn" style={partStyleToCss(parts?.button, "body")}>{data.ctaLabel || "Call to Action"}</button>
     </section>
   );
 };
 
-const TextBlock = ({ block, onText }: { block: Block; onText: (field: string, value: string) => void }) => {
+const TextBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
   const data = block.data as TextBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")}>{data.body}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.body}</p>
     </section>
   );
 };
@@ -395,17 +395,17 @@ const ImageBlock = ({ block }: { block: Block }) => {
   );
 };
 
-const CardsBlock = ({ block }: { block: Block }) => {
+const CardsBlock = ({ block, onText, onCardText, isPreview }: { block: Block; onText?: (field: string, value: string) => void; onCardText?: (cardIndex: number, field: string, value: string) => void; isPreview?: boolean }) => {
   const data = block.data as CardsBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
       <div className="cards-grid">
-        {data.cards.map((card) => (
+        {data.cards.map((card, i) => (
           <article key={card.id} style={partStyleToCss(parts?.card, "body")}>
-            <h3 style={partStyleToCss(parts?.cardHeading, "heading")}>{card.title}</h3>
-            <p style={partStyleToCss(parts?.cardBody, "body")}>{card.body}</p>
+            <h3 style={partStyleToCss(parts?.cardHeading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{card.title}</h3>
+            <p style={partStyleToCss(parts?.cardBody, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{card.body}</p>
           </article>
         ))}
       </div>
@@ -428,7 +428,7 @@ const HoursBlock = ({ block }: { block: Block }) => {
   );
 };
 
-const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, onSlotLongPress }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void; isMobileViewport?: boolean; onSlotLongPress?: (index: number) => void }) => {
+const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, onSlotLongPress, isPreview }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void; isMobileViewport?: boolean; onSlotLongPress?: (index: number) => void; isPreview?: boolean }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
@@ -460,14 +460,16 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, o
             tabIndex={onImageSelect ? 0 : undefined}
             role={onImageSelect ? "button" : undefined}
             aria-label={`Select Gallery image ${i + 1}`}
-            onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}
+            onClick={(e) => { if (isPreview) return; if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}
             onPointerDown={(e) => {
+              if (isPreview) return;
               if (isMobileViewport && onSlotLongPress) {
                 e.stopPropagation();
                 startSlotLongPress(i);
               }
             }}
             onPointerUp={(e) => {
+              if (isPreview) return;
               if (isMobileViewport && onSlotLongPress) {
                 e.stopPropagation();
                 cancelSlotLongPress();
@@ -622,14 +624,14 @@ const HtmlBlock = ({ block }: { block: Block }) => {
   return <section dangerouslySetInnerHTML={{ __html: data.html }} />;
 };
 
-function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null, isMobileViewport?: boolean, onSlotLongPress?: (index: number) => void): JSX.Element {
+function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null, isMobileViewport?: boolean, onSlotLongPress?: (index: number) => void, isPreview?: boolean, onCardText?: (cardIndex: number, field: string, value: string) => void): JSX.Element {
   switch (block.type) {
-    case "hero": return <HeroBlock block={block} onText={onText} />;
-    case "text": return <TextBlock block={block} onText={onText} />;
+    case "hero": return <HeroBlock block={block} onText={onText} isPreview={isPreview} />;
+    case "text": return <TextBlock block={block} onText={onText} isPreview={isPreview} />;
     case "image": return <ImageBlock block={block} />;
-    case "cards": return <CardsBlock block={block} />;
+    case "cards": return <CardsBlock block={block} onText={onText} onCardText={onCardText} isPreview={isPreview} />;
     case "hours": return <HoursBlock block={block} />;
-    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} isMobileViewport={isMobileViewport} onSlotLongPress={onSlotLongPress} />;
+    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} isMobileViewport={isMobileViewport} onSlotLongPress={onSlotLongPress} isPreview={isPreview} />;
     case "contact": return <ContactBlock block={block} />;
     case "testimonial": return <TestimonialBlock block={block} />;
     case "map": return <MapBlock block={block} />;
@@ -695,6 +697,17 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sbuild_editor_theme", editorTheme);
   }, [editorTheme]);
+
+  useEffect(() => {
+    if (previewMode) {
+      setSelectedBlockId("");
+      setSelectedGalleryIndex(null);
+      setSelectedSitePart(null);
+      setSelectedNavIndex(null);
+      setRightDrawerMobileOpen(false);
+      setContextMenu(null);
+    }
+  }, [previewMode]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -1866,6 +1879,7 @@ export function App() {
 
   // Context menu handlers
   function openContextMenu(e: React.MouseEvent | React.TouchEvent, blockId: string) {
+    if (previewMode) return;
     e.preventDefault();
     e.stopPropagation();
     let x = 0, y = 0;
@@ -1927,6 +1941,7 @@ export function App() {
 
   function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
     if (e.button !== 0) return;
+    if (previewMode) return;
     const target = e.target as HTMLElement;
     if (isMobileViewport && target.closest('.gallery-slot')) {
       return;
@@ -1940,6 +1955,7 @@ export function App() {
       longPressRef.current.fired = false;
       return;
     }
+    if (previewMode) return;
     const target = e.target as HTMLElement;
     if (isMobileViewport && target.closest('.gallery-slot')) {
       return;
@@ -1956,6 +1972,7 @@ export function App() {
   }
 
   function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
+    if (previewMode) return;
     if (longPressRef.current.timer) {
       const dx = Math.abs(e.clientX - longPressRef.current.startX);
       const dy = Math.abs(e.clientY - longPressRef.current.startY);
@@ -2127,7 +2144,7 @@ export function App() {
           </p>
           {isMobileViewport && !previewMode && (
             <p className="panel-status mobile-edit-hint">
-              <strong>Tip:</strong> Tap to select · Long-press or tap ⋯ to edit
+              <strong>Tip:</strong> Tap text to edit directly · Long-press or tap ⋯ for styles
             </p>
           )}
 
@@ -2143,16 +2160,15 @@ export function App() {
             <nav className="canvas-nav">
               <div className="site-header-left">
                 <strong
-                  className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
+                  className={!previewMode && selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
+                  contentEditable={!previewMode}
+                  suppressContentEditableWarning
+                  onInput={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
+                  onBlur={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
                   onClick={(e) => {
                     if (previewMode) return;
                     e.stopPropagation();
-                    if (isMobileViewport) {
-                      setSelectedSitePart("site-title");
-                      setSelectedNavIndex(null);
-                      setSelectedBlockId("");
-                      setStatus("Site title selected");
-                    } else {
+                    if (!isMobileViewport) {
                       setSelectedSitePart("site-title");
                       setSelectedNavIndex(null);
                       setRightTab("properties");
@@ -2193,16 +2209,15 @@ export function App() {
                 {project.site.nav.map((item, ni) => (
                   <span
                     key={item.id}
-                    className={selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
+                    className={!previewMode && selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
+                    contentEditable={!previewMode}
+                    suppressContentEditableWarning
+                    onInput={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
+                    onBlur={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onClick={(e) => {
                       if (previewMode) return;
                       e.stopPropagation();
-                      if (isMobileViewport) {
-                        setSelectedSitePart("nav");
-                        setSelectedNavIndex(ni);
-                        setSelectedBlockId("");
-                        setStatus(`Nav link ${ni + 1} selected`);
-                      } else {
+                      if (!isMobileViewport) {
                         setSelectedSitePart("nav");
                         setSelectedNavIndex(ni);
                         setRightTab("properties");
@@ -2267,7 +2282,14 @@ export function App() {
                         )}
                         {renderTypedBlock(block, (field, value) => {
                           patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
-                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, previewMode ? undefined : (index) => openGallerySlotDrawer(block.id, index))}
+                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, previewMode ? undefined : (index) => openGallerySlotDrawer(block.id, index), previewMode, (cardIndex, field, value) => {
+                          patchSelectedBlock((current) => {
+                            const data = current.data as CardsBlockData;
+                            const cards = [...data.cards];
+                            cards[cardIndex] = { ...cards[cardIndex], [field]: value };
+                            return { ...current, data: { ...data, cards } };
+                          });
+                        })}
                         {selectedBlock?.id === block.id && !previewMode && (
                           <>
                             <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />

@@ -1271,6 +1271,21 @@ button:disabled {
   }
 }
 
+/* ===== PREVIEW MODE ===== */
+.app.preview .selected-block {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.app.preview .selected-site-part {
+  outline: none !important;
+}
+.app.preview .block-shell [contenteditable="true"],
+.app.preview .canvas-nav [contenteditable="true"] {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* ===== TERMINAL PRESET ANIMATION ===== */
 @keyframes terminalScan {
   0% { background-position: 0 0; }
