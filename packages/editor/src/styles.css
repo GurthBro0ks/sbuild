@@ -1491,6 +1491,15 @@ button:disabled {
     max-height: none;
     position: static;
   }
+  .app.mobile-shell .left-drawer {
+    position: fixed;
+  }
+  .app.mobile-shell .right-drawer {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+  }
   .row-grid {
     flex-wrap: wrap;
   }

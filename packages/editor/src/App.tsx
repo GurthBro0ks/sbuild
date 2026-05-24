@@ -1831,6 +1831,10 @@ export function App() {
 
   function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
     if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    if (isMobileViewport) {
+      selectBlock(blockId);
+      return;
+    }
     if (!drag) selectBlock(blockId);
   }
 
@@ -2011,14 +2015,14 @@ export function App() {
             <nav className="canvas-nav">
               <strong
                 className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
-                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); setStatus("Editing site title"); } }}
+                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); if (isMobileViewport) setRightDrawerMobileOpen(true); setStatus("Editing site title"); } }}
               >{project.site.siteName}</strong>
               <div className="nav-items">
                 {project.site.nav.map((item, ni) => (
                   <span
                     key={item.id}
                     className={selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
-                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); setStatus(`Editing nav link ${ni + 1}`); } }}
+                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); if (isMobileViewport) setRightDrawerMobileOpen(true); setStatus(`Editing nav link ${ni + 1}`); } }}
                   >{item.label}</span>
                 ))}
               </div>

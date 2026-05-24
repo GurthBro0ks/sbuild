@@ -128,4 +128,7 @@ test("mobile editor shell uses <=768px stacked layout and non-overlapping drawer
   assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*sticky/);
   assert.match(cssSource, /\.topbar-status[\s\S]*width:\s*100%/);
   assert.match(cssSource, /overflow-x:\s*hidden/);
+  assert.match(appSource, /if \(isMobileViewport\) \{\s*selectBlock\(blockId\);\s*return;\s*\}/);
+  assert.match(appSource, /setRightTab\("properties"\); if \(isMobileViewport\) setRightDrawerMobileOpen\(true\);/);
+  assert.match(cssSource, /\.app\.mobile-shell \.right-drawer[\s\S]*position:\s*fixed/);
 });
