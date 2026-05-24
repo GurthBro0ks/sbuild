@@ -108,3 +108,16 @@ test("canvas frame background uses site variables not editor variables", () => {
   assert.match(cssSource, /\.canvas-frame[\s\S]*background:\s*var\(--sbuild-canvas-bg/);
   assert.doesNotMatch(cssSource, /\.canvas-frame\s*\{[^{}]*background:\s*var\(--editor-panel-bg\)[^{}]*\}/);
 });
+
+test("mobile editor shell uses <=768px stacked layout and non-overlapping drawers", () => {
+  assert.match(appSource, /isMobileViewport/);
+  assert.match(appSource, /mobile-shell/);
+  assert.match(cssSource, /@media \(max-width: 768px\)/);
+  assert.match(cssSource, /\.workspace,\n\s*\.workspace\.left-collapsed[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /\.left-drawer[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.left-drawer\.collapsed[\s\S]*display:\s*none/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*min-width:\s*0/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*position:\s*static/);
+  assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*sticky/);
+  assert.match(cssSource, /\.topbar-status[\s\S]*width:\s*100%/);
+});

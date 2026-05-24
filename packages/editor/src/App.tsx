@@ -649,6 +649,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
+  const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
   const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
 
   useEffect(() => {
@@ -820,6 +821,19 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("sbuild_left_collapsed", leftCollapsed ? "1" : "0");
   }, [leftCollapsed]);
+
+  useEffect(() => {
+    const syncViewport = () => setIsMobileViewport(window.innerWidth <= 768);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileViewport && !leftCollapsed) {
+      setLeftCollapsed(true);
+    }
+  }, [isMobileViewport, leftCollapsed]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -1867,7 +1881,7 @@ export function App() {
   }
 
   return (
-    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""}`}>
+    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""}`}>
       <header className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
@@ -1885,7 +1899,7 @@ export function App() {
         </div>
       </header>
 
-      <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
+        <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
         <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
           <p className="panel-status">
             <strong>Left panel:</strong> page {selectedPage.title} · blocks {selectedPage.blocks.length}
