@@ -88,7 +88,20 @@ test("background mode controls expose type selector and mode-specific panels", (
 test("right drawer tabs have reduced padding and button min-width to prevent clipping", () => {
   assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-left:\s*8px/);
   assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-right:\s*8px/);
+  assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-top:\s*12px/);
+  assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-bottom:\s*10px/);
   assert.match(cssSource, /\.compact-tabs button[\s\S]*min-width:\s*36px/);
+  assert.match(cssSource, /\.compact-tabs button[\s\S]*min-height:\s*34px/);
+  assert.match(cssSource, /\.compact-tabs button[\s\S]*line-height:\s*1\.2/);
+});
+
+test("right drawer chip/button rows allow wrap and visible focus space", () => {
+  assert.match(cssSource, /\.right-drawer \.tabs,\n\.right-drawer \.button-row,\n\.right-drawer \.preset-row[\s\S]*overflow:\s*visible/);
+  assert.match(cssSource, /\.right-drawer button[\s\S]*min-height:\s*34px/);
+  assert.match(cssSource, /\.right-drawer button[\s\S]*line-height:\s*1\.25/);
+  assert.match(cssSource, /\.right-drawer \.button-row,\n\.right-drawer \.preset-row,\n\.right-drawer \.quick-actions[\s\S]*row-gap:\s*8px/);
+  assert.match(cssSource, /\.tabs[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.tabs[\s\S]*padding-block:\s*3px/);
 });
 
 test("canvas frame background uses site variables not editor variables", () => {

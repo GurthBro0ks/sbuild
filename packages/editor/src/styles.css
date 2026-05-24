@@ -208,9 +208,18 @@ button:disabled {
   padding-right: 16px;
   min-width: 0;
 }
+.right-drawer .tabs,
+.right-drawer .button-row,
+.right-drawer .preset-row,
+.right-drawer .quick-actions,
+.right-drawer .image-action-stack {
+  overflow: visible;
+}
 .right-drawer .compact-tabs {
   padding-left: 8px;
   padding-right: 8px;
+  padding-top: 12px;
+  padding-bottom: 10px;
 }
 .right-drawer > * {
   min-width: 0;
@@ -280,12 +289,17 @@ button:disabled {
 .right-drawer button,
 .modal button,
 .settings-modal button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--editor-button-text);
   background: var(--editor-button-bg);
   border: 1px solid var(--editor-button-border);
   border-radius: 10px;
   font-weight: 700;
   padding: 7px 10px;
+  min-height: 34px;
+  line-height: 1.25;
   cursor: pointer;
 }
 .left-drawer button:hover,
@@ -462,30 +476,47 @@ button:disabled {
 /* ===== TABS ===== */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  row-gap: 8px;
   margin-bottom: 10px;
+  padding-block: 3px;
 }
 .compact-tabs {
   position: relative;
   z-index: 1;
   background: var(--editor-panel-bg);
   flex-wrap: wrap;
+  align-items: center;
   overflow-x: hidden;
-  padding-top: 10px;
-  padding-bottom: 8px;
+  overflow-y: visible;
+  padding-top: 12px;
+  padding-bottom: 10px;
   gap: 4px;
+  row-gap: 8px;
   margin-bottom: 0;
   min-height: 0;
 }
 .compact-tabs + * {
   margin-top: 8px;
 }
-  .compact-tabs button {
+.compact-tabs button {
   font-size: 12px;
-  padding: 5px 8px;
+  padding: 7px 9px;
+  min-height: 34px;
+  line-height: 1.2;
   white-space: nowrap;
   min-width: 36px;
   flex: 1 1 auto;
+}
+.right-drawer .button-row,
+.right-drawer .preset-row,
+.right-drawer .quick-actions {
+  gap: 8px;
+  row-gap: 8px;
+  align-items: center;
+  padding-block: 3px;
 }
 
 /* ===== IMAGE MANAGER ===== */
