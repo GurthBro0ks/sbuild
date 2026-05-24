@@ -428,10 +428,26 @@ const HoursBlock = ({ block }: { block: Block }) => {
   );
 };
 
-const GalleryBlock = ({ block, selectedIndex, onImageSelect }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void }) => {
+const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, onSlotLongPress }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void; isMobileViewport?: boolean; onSlotLongPress?: (index: number) => void }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
+  const slotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slotFiredRef = useRef(false);
+  function startSlotLongPress(index: number) {
+    slotFiredRef.current = false;
+    slotTimerRef.current = setTimeout(() => {
+      slotFiredRef.current = true;
+      slotTimerRef.current = null;
+      onSlotLongPress?.(index);
+    }, 500);
+  }
+  function cancelSlotLongPress() {
+    if (slotTimerRef.current) {
+      clearTimeout(slotTimerRef.current);
+      slotTimerRef.current = null;
+    }
+  }
   return (
     <section>
       <h2 style={partStyleToCss(parts?.heading, "heading")}>{data.title}</h2>
@@ -445,7 +461,28 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect }: { block: Block; s
             role={onImageSelect ? "button" : undefined}
             aria-label={`Select Gallery image ${i + 1}`}
             onClick={(e) => { if (onImageSelect) { e.stopPropagation(); onImageSelect(i); } }}
-            onPointerUp={(e) => { if (onImageSelect) { onImageSelect(i); } }}
+            onPointerDown={(e) => {
+              if (isMobileViewport && onSlotLongPress) {
+                e.stopPropagation();
+                startSlotLongPress(i);
+              }
+            }}
+            onPointerUp={(e) => {
+              if (isMobileViewport && onSlotLongPress) {
+                e.stopPropagation();
+                cancelSlotLongPress();
+                if (slotFiredRef.current) {
+                  slotFiredRef.current = false;
+                  return;
+                }
+              }
+              if (onImageSelect) { onImageSelect(i); }
+            }}
+            onPointerMove={(e) => {
+              if (slotTimerRef.current) {
+                cancelSlotLongPress();
+              }
+            }}
             onKeyDown={(e) => { if (onImageSelect && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.stopPropagation(); onImageSelect(i); } }}
           >
             {selectedIndex === i && <span className="gallery-slot-badge">Image {i + 1}</span>}
@@ -585,14 +622,14 @@ const HtmlBlock = ({ block }: { block: Block }) => {
   return <section dangerouslySetInnerHTML={{ __html: data.html }} />;
 };
 
-function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null): JSX.Element {
+function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null, isMobileViewport?: boolean, onSlotLongPress?: (index: number) => void): JSX.Element {
   switch (block.type) {
     case "hero": return <HeroBlock block={block} onText={onText} />;
     case "text": return <TextBlock block={block} onText={onText} />;
     case "image": return <ImageBlock block={block} />;
     case "cards": return <CardsBlock block={block} />;
     case "hours": return <HoursBlock block={block} />;
-    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} />;
+    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} isMobileViewport={isMobileViewport} onSlotLongPress={onSlotLongPress} />;
     case "contact": return <ContactBlock block={block} />;
     case "testimonial": return <TestimonialBlock block={block} />;
     case "map": return <MapBlock block={block} />;
@@ -640,7 +677,7 @@ export function App() {
   const [paintOpen, setPaintOpen] = useState(false);
   const [drag, setDrag] = useState<DragState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
   const [themeApplied, setThemeApplied] = useState("");
   const [providerStatus, setProviderStatus] = useState<SBuildProviderStatus[]>([]);
   const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
@@ -1096,7 +1133,16 @@ export function App() {
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
-    if (isMobileViewport) setRightDrawerMobileOpen(true);
+  }
+
+  function openBlockDrawer(blockId: string) {
+    setSelectedBlockId(blockId);
+    setSelectedGalleryIndex(null);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
+    setRightDrawerMobileOpen(true);
+    setRightTab("properties");
+    setStatus("Edit drawer opened");
   }
 
   function selectGallerySlot(blockId: string, index: number) {
@@ -1107,7 +1153,17 @@ export function App() {
     setSelectedNavIndex(null);
     setRightTab("images");
     setStatus(`Selected Gallery image ${index + 1}`);
-    if (isMobileViewport) setRightDrawerMobileOpen(true);
+  }
+
+  function openGallerySlotDrawer(blockId: string, index: number) {
+    setSelectedBlockId(blockId);
+    setSelectedPart("image");
+    setSelectedGalleryIndex(index);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
+    setRightTab("images");
+    setRightDrawerMobileOpen(true);
+    setStatus(`Editing Gallery image ${index + 1}`);
   }
 
   function targetSummary(): string {
@@ -1821,30 +1877,62 @@ export function App() {
     setContextMenu({ visible: true, x: clampedX, y: clampedY, blockId });
   }
 
+  function startLongPress(blockId: string, x: number, y: number) {
+    longPressRef.current.fired = false;
+    longPressRef.current.startX = x;
+    longPressRef.current.startY = y;
+    longPressRef.current.timer = setTimeout(() => {
+      longPressRef.current.fired = true;
+      longPressRef.current.timer = null;
+      openBlockDrawer(blockId);
+    }, 500);
+  }
+
+  function cancelLongPress() {
+    if (longPressRef.current.timer) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current.timer = null;
+    }
+  }
+
   function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
     if (e.button !== 0) return;
-    const timer = setTimeout(() => {
-      openContextMenu(e, blockId);
-      setLongPressTimer(null);
-    }, 600);
-    setLongPressTimer(timer);
+    const target = e.target as HTMLElement;
+    if (isMobileViewport && target.closest('.gallery-slot')) {
+      return;
+    }
+    startLongPress(blockId, e.clientX, e.clientY);
   }
 
   function handleBlockPointerUp(e: React.PointerEvent, blockId: string, index: number) {
-    if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    cancelLongPress();
+    if (longPressRef.current.fired) {
+      longPressRef.current.fired = false;
+      return;
+    }
     const target = e.target as HTMLElement;
     if (isMobileViewport && target.closest('.gallery-slot')) {
       return;
     }
     if (isMobileViewport) {
-      selectBlock(blockId);
+      // Mobile single tap: select only, do not open drawer
+      setSelectedBlockId(blockId);
+      setSelectedGalleryIndex(null);
+      setSelectedSitePart(null);
+      setSelectedNavIndex(null);
       return;
     }
     if (!drag) selectBlock(blockId);
   }
 
   function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
-    if (longPressTimer) { clearTimeout(longPressTimer); setLongPressTimer(null); }
+    if (longPressRef.current.timer) {
+      const dx = Math.abs(e.clientX - longPressRef.current.startX);
+      const dy = Math.abs(e.clientY - longPressRef.current.startY);
+      if (dx > 12 || dy > 12) {
+        cancelLongPress();
+      }
+    }
     if (drag && drag.blockId === blockId) {
       // dragging
     }
@@ -2007,6 +2095,11 @@ export function App() {
             {themeApplied && ` · theme: ${themeApplied}`}
             {!leftCollapsed ? " · left panel open" : " · left panel collapsed"}
           </p>
+          {isMobileViewport && !previewMode && (
+            <p className="panel-status mobile-edit-hint">
+              <strong>Tip:</strong> Tap to select · Long-press or tap ⋯ to edit
+            </p>
+          )}
 
           <div
             ref={canvasRef}
@@ -2020,14 +2113,14 @@ export function App() {
             <nav className="canvas-nav">
               <strong
                 className={selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
-                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); if (isMobileViewport) setRightDrawerMobileOpen(true); setStatus("Editing site title"); } }}
+                onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("site-title"); setSelectedNavIndex(null); setRightTab("properties"); setStatus("Editing site title"); } }}
               >{project.site.siteName}</strong>
               <div className="nav-items">
                 {project.site.nav.map((item, ni) => (
                   <span
                     key={item.id}
                     className={selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
-                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); if (isMobileViewport) setRightDrawerMobileOpen(true); setStatus(`Editing nav link ${ni + 1}`); } }}
+                    onClick={(e) => { if (!previewMode) { e.stopPropagation(); setSelectedSitePart("nav"); setSelectedNavIndex(ni); setRightTab("properties"); setStatus(`Editing nav link ${ni + 1}`); } }}
                   >{item.label}</span>
                 ))}
               </div>
@@ -2047,7 +2140,7 @@ export function App() {
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
                         style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
-                        onClick={() => selectBlock(block.id)}
+                        onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
                         onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
@@ -2063,12 +2156,12 @@ export function App() {
                             <span className="block-friendly-label">{blockTypeLabels[block.type] || block.type}</span>
                             <span className="block-id-debug">{block.id.slice(0, 12)}</span>
                             <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
-                            <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
+                            <button className="context-btn" onClick={(e) => { e.stopPropagation(); if (isMobileViewport) { openBlockDrawer(block.id); } else { openContextMenu(e, block.id); } }} title="Menu">⋯</button>
                           </div>
                         )}
                         {renderTypedBlock(block, (field, value) => {
                           patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
-                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null)}
+                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, previewMode ? undefined : (index) => openGallerySlotDrawer(block.id, index))}
                         {selectedBlock?.id === block.id && !previewMode && (
                           <>
                             <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />

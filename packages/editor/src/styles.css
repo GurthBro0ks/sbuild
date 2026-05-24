@@ -888,13 +888,18 @@ button:disabled {
 .grab-handle:active { cursor: grabbing; }
 .context-btn {
   margin-left: auto;
-  padding: 2px 8px;
-  font-size: 16px;
+  padding: 6px 10px;
+  font-size: 18px;
   line-height: 1;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #f1f3f8;
   border: 1px solid #d4d8e4;
   color: var(--editor-text);
+  min-width: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ===== BLOCK IMAGES ===== */
@@ -1218,6 +1223,24 @@ button:disabled {
   font-size: 12px;
   color: var(--editor-muted);
   margin: 4px 0;
+}
+
+.mobile-edit-hint {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-edit-hint {
+    display: block;
+    font-size: 12px;
+    color: var(--editor-accent);
+    background: color-mix(in srgb, var(--editor-accent) 8%, transparent);
+    border: 1px dashed var(--editor-accent);
+    border-radius: 8px;
+    padding: 6px 8px;
+    margin: 4px 0 8px;
+    text-align: center;
+  }
 }
 
 /* ===== TERMINAL PRESET ANIMATION ===== */

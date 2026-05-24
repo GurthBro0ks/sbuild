@@ -112,16 +112,16 @@ test("mobile right drawer header and tabs are not clipped by overflow-hidden", (
 });
 
 test("gallery slot has mobile-safe pointer handler that stops parent block overwrite", () => {
-  assert.match(appSource, /onPointerUp=\{\(e\)\s*=>\s*\{\s*if\s*\(onImageSelect\)\s*\{\s*onImageSelect\(i\)/);
+  assert.match(appSource, /onPointerUp=\{\(e\)[\s\S]*if\s*\(onImageSelect\)[\s\S]*onImageSelect\(i\)/);
   assert.match(appSource, /target\.closest\('\.gallery-slot'\)/);
   assert.match(appSource, /if\s*\(isMobileViewport\s*&&\s*target\.closest\('\.gallery-slot'\)\)\s*\{\s*return;\s*\}/);
 });
 
-test("gallery slot selection opens images tab and right drawer on mobile", () => {
+test("gallery slot selection sets index and images tab without auto-opening drawer", () => {
   assert.match(appSource, /function selectGallerySlot/);
   assert.match(appSource, /setSelectedGalleryIndex\(index\)/);
   assert.match(appSource, /setRightTab\("images"\)/);
-  assert.match(appSource, /if\s*\(isMobileViewport\)\s*setRightDrawerMobileOpen\(true\)/);
+  assert.doesNotMatch(appSource, /function selectGallerySlot[\s\S]{0,120}if\s*\(isMobileViewport\)\s*setRightDrawerMobileOpen\(true\)/);
 });
 
 test("canvas frame background uses site variables not editor variables", () => {
@@ -148,7 +148,63 @@ test("mobile editor shell uses <=768px stacked layout and non-overlapping drawer
   assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*sticky/);
   assert.match(cssSource, /\.topbar-status[\s\S]*width:\s*100%/);
   assert.match(cssSource, /overflow-x:\s*hidden/);
-  assert.match(appSource, /if \(isMobileViewport\) \{\s*selectBlock\(blockId\);\s*return;\s*\}/);
-  assert.match(appSource, /setRightTab\("properties"\); if \(isMobileViewport\) setRightDrawerMobileOpen\(true\);/);
+  assert.match(appSource, /function openBlockDrawer/);
+  assert.match(appSource, /setRightDrawerMobileOpen\(true\)/);
+  assert.match(appSource, /function openGallerySlotDrawer/);
   assert.match(cssSource, /\.app\.mobile-shell \.right-drawer[\s\S]*position:\s*fixed/);
+});
+
+test("mobile single tap on block selects only and does not auto-open drawer", () => {
+  assert.match(appSource, /function selectBlock\(blockId: string\)/);
+  assert.doesNotMatch(appSource, /function selectBlock[\s\S]{0,80}setRightDrawerMobileOpen\(true\)/);
+  assert.match(appSource, /if \(isMobileViewport\) \{\s*\/\/ Mobile single tap: select only, do not open drawer/);
+  assert.match(appSource, /setSelectedBlockId\(blockId\)/);
+});
+
+test("mobile long press on block opens right drawer", () => {
+  assert.match(appSource, /function startLongPress/);
+  assert.match(appSource, /longPressRef\.current\.timer = setTimeout/);
+  assert.match(appSource, /openBlockDrawer\(blockId\)/);
+  assert.match(appSource, /500\)/);
+  assert.match(appSource, /function cancelLongPress/);
+  assert.match(appSource, /cancelLongPress/);
+});
+
+test("mobile ellipsis menu button opens right drawer", () => {
+  assert.match(appSource, /if \(isMobileViewport\) \{ openBlockDrawer\(block\.id\); \} else \{ openContextMenu/);
+  assert.match(cssSource, /\.context-btn \{/);
+  assert.match(cssSource, /min-width:\s*36px/);
+  assert.match(cssSource, /min-height:\s*36px/);
+});
+
+test("gallery slot single tap selects slot without opening drawer", () => {
+  assert.match(appSource, /function selectGallerySlot/);
+  assert.doesNotMatch(appSource, /function selectGallerySlot[\s\S]{0,120}setRightDrawerMobileOpen\(true\)/);
+  assert.match(appSource, /onSlotLongPress\?: \(index: number\)/);
+});
+
+test("gallery slot long press opens drawer with correct target", () => {
+  assert.match(appSource, /function openGallerySlotDrawer/);
+  assert.match(appSource, /setRightDrawerMobileOpen\(true\)/);
+  assert.match(appSource, /setRightTab\("images"\)/);
+  assert.match(appSource, /slotTimerRef\.current = setTimeout/);
+  assert.match(appSource, /onSlotLongPress\?\./);
+});
+
+test("desktop single click behavior remains unchanged", () => {
+  assert.match(appSource, /if \(!isMobileViewport\) selectBlock\(block\.id\)/);
+  assert.match(appSource, /if \(!drag\) selectBlock\(blockId\)/);
+});
+
+test("mobile edit hint is visible only on mobile", () => {
+  assert.match(appSource, /mobile-edit-hint/);
+  assert.match(appSource, /Tap to select · Long-press or tap/);
+  assert.match(cssSource, /\.mobile-edit-hint \{/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.mobile-edit-hint[\s\S]*display:\s*block/);
+});
+
+test("publish endpoint remains dry-run", () => {
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /\/api\/publish/);
+  assert.match(appSource, /dryRun/);
 });
