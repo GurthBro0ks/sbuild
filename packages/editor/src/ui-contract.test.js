@@ -27,7 +27,7 @@ test("crop-fit and modal layout expose safe visible targets", () => {
   assert.match(appSource, /Close Image Manager/);
   assert.match(cssSource, /\.image-action-stack/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*overflow-y: auto/);
+  assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y: auto/);
 });
 
 test("builder UI theme helper explains editor chrome versus website preview", () => {
@@ -44,20 +44,25 @@ test("style persistence updates selected block part and triggers dirty", () => {
   assert.match(appSource, /setDirty\(true\)/);
   assert.match(appSource, /saveProject/);
   assert.match(appSource, /\/api\/project.{0,40}PUT/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*overflow-y: auto/);
-  assert.match(cssSource, /\.compact-tabs[\s\S]*position: sticky/);
+  assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y: auto/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*overflow: hidden/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
   assert.match(cssSource, /\.image-action-stack button[\s\S]*width: 100%/);
 });
 
 test("right panel layout prevents content clipping", () => {
+  assert.match(appSource, /className="right-drawer-header"/);
+  assert.match(appSource, /className="right-drawer-content"/);
   assert.match(cssSource, /\.right-drawer[\s\S]*max-height: 100%/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*height: 100%/);
   assert.match(cssSource, /\.right-drawer[\s\S]*\bmin-width\b.*\d+px/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*overflow: hidden/);
+  assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y: auto/);
   assert.match(cssSource, /overflow-x: hidden/);
   assert.match(cssSource, /overscroll-behavior: contain/);
   assert.match(cssSource, /scrollbar-gutter: stable/);
   assert.match(cssSource, /\.panel[\s\S]*overflow-x: hidden/);
-  assert.match(cssSource, /\.compact-tabs[\s\S]*border-bottom/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*border-bottom/);
   assert.match(cssSource, /\.image-action-stack button[\s\S]*word-break: break-word/);
   assert.match(cssSource, /\.app[\s\S]*height: 100vh/);
   assert.match(cssSource, /\.app[\s\S]*overflow: hidden/);

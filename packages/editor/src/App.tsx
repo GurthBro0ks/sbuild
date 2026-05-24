@@ -2067,15 +2067,18 @@ export function App() {
         </main>
 
         <aside className="right-drawer">
-          <div className="tabs compact-tabs">
+          <div className="right-drawer-header">
+            <div className="tabs compact-tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
             <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
             <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
             <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
+            </div>
+            <p className="panel-status right-target-summary">{targetSummary()}</p>
           </div>
-          <p className="panel-status right-target-summary">{targetSummary()}</p>
+          <div className="right-drawer-content">
 
           {rightTab === "properties" && selectedBlock && (
             <div className="panel">
@@ -3077,6 +3080,7 @@ export function App() {
               </div>
             </div>
           )}
+          </div>
         </aside>
       </div>
 
