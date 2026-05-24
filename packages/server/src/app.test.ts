@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
+import { projectFile } from "./lib/paths.js";
 
 let baseUrl = "";
 let closeServer: (() => Promise<void>) | null = null;
@@ -279,4 +280,63 @@ test("uploaded image edit fallback black-white preserves original and handles sh
     const combined = `${editBody.message || ""} ${(editBody.warnings || []).join(" ")}`.toLowerCase();
     assert.ok(combined.includes("fallback") || combined.includes("sharp") || combined.includes("unavailable"));
   });
+});
+
+test("project save/load roundtrip preserves block part styles including transparent and gradient", async () => {
+  const originalRaw = await fs.readFile(projectFile, "utf8");
+  try {
+    // Load current project
+    const loadResponse = await fetch(`${baseUrl}/api/project`);
+    const loadBody = await loadResponse.json() as { ok: boolean; project: any };
+    assert.equal(loadBody.ok, true);
+
+    const project = loadBody.project;
+    const heroBlock = project.pages[0].blocks[0];
+    heroBlock.styles = heroBlock.styles || {};
+    heroBlock.styles.parts = {
+      container: {
+        backgroundColor: "transparent"
+      }
+    };
+
+    // Save with transparent background
+    const saveResponse = await fetch(`${baseUrl}/api/project`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project })
+    });
+    assert.equal(saveResponse.status, 200);
+
+    // Load back and verify transparent persisted
+    const reloadResponse = await fetch(`${baseUrl}/api/project`);
+    const reloadBody = await reloadResponse.json() as { ok: boolean; project: any };
+    assert.equal(reloadBody.ok, true);
+
+    const loadedHero = reloadBody.project.pages[0].blocks[0];
+    assert.equal(loadedHero.styles.parts.container.backgroundColor, "transparent");
+
+    // Now test gradient
+    heroBlock.styles.parts.container = {
+      backgroundColor: "linear-gradient(135deg, #ff6b6b, #feca57)",
+      gradientType: "linear",
+      gradientColors: ["#ff6b6b", "#feca57"],
+      gradientDirection: "135deg"
+    };
+
+    const saveGradientResponse = await fetch(`${baseUrl}/api/project`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project })
+    });
+    assert.equal(saveGradientResponse.status, 200);
+
+    const reloadGradientResponse = await fetch(`${baseUrl}/api/project`);
+    const reloadGradientBody = await reloadGradientResponse.json() as { ok: boolean; project: any };
+    const loadedGradientHero = reloadGradientBody.project.pages[0].blocks[0];
+    assert.equal(loadedGradientHero.styles.parts.container.backgroundColor, "linear-gradient(135deg, #ff6b6b, #feca57)");
+    assert.equal(loadedGradientHero.styles.parts.container.gradientType, "linear");
+    assert.deepEqual(loadedGradientHero.styles.parts.container.gradientColors, ["#ff6b6b", "#feca57"]);
+  } finally {
+    await fs.writeFile(projectFile, originalRaw, "utf8");
+  }
 });

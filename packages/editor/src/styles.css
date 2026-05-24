@@ -188,9 +188,17 @@ button:disabled {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-.right-drawer > * {
+.right-drawer .panel,
+.right-drawer .panel-status {
   padding-left: 16px;
   padding-right: 16px;
+  min-width: 0;
+}
+.right-drawer .compact-tabs {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.right-drawer > * {
   min-width: 0;
 }
 
@@ -459,11 +467,11 @@ button:disabled {
 .compact-tabs + * {
   margin-top: 8px;
 }
-.compact-tabs button {
+  .compact-tabs button {
   font-size: 12px;
   padding: 5px 8px;
   white-space: nowrap;
-  min-width: 48px;
+  min-width: 36px;
   flex: 1 1 auto;
 }
 
@@ -675,7 +683,8 @@ button:disabled {
   min-height: 70vh;
   border: 2px dashed var(--editor-border);
   border-radius: 18px;
-  background: var(--editor-panel-bg);
+  background: var(--sbuild-canvas-bg, var(--sbuild-surface, #f6f3e9));
+  color: var(--sbuild-text, #1f2a24);
   padding: 10px;
   /* Site theme variables are applied inline here */
 }

@@ -79,3 +79,14 @@ test("background mode controls expose type selector and mode-specific panels", (
   assert.match(appSource, /bgMode === "image"/);
   assert.match(appSource, /Transparent — content behind this block shows through/);
 });
+
+test("right drawer tabs have reduced padding and button min-width to prevent clipping", () => {
+  assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-left:\s*8px/);
+  assert.match(cssSource, /\.right-drawer \.compact-tabs[\s\S]*padding-right:\s*8px/);
+  assert.match(cssSource, /\.compact-tabs button[\s\S]*min-width:\s*36px/);
+});
+
+test("canvas frame background uses site variables not editor variables", () => {
+  assert.match(cssSource, /\.canvas-frame[\s\S]*background:\s*var\(--sbuild-canvas-bg/);
+  assert.doesNotMatch(cssSource, /\.canvas-frame\s*\{[^{}]*background:\s*var\(--editor-panel-bg\)[^{}]*\}/);
+});
