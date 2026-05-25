@@ -3351,7 +3351,7 @@ export function App() {
       {/* Context Menu */}
       {contextMenu?.visible && (
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
-          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("properties"); setContextMenu(null); }}>Edit Properties</button>
+          <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
           <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
           <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
           <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>

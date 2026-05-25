@@ -276,6 +276,26 @@ test("preview mode guards context menu", () => {
   assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
 });
 
+test("context menu Edit Properties opens right drawer via openBlockDrawer", () => {
+  // The Edit Properties button must call openBlockDrawer (not just selectBlock)
+  // so that mobile rightDrawerMobileOpen is set to true
+  assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\)/);
+  assert.doesNotMatch(appSource, /Edit Properties[\s\S]{0,60}selectBlock\(contextMenu\.blockId\)/);
+});
+
+test("context menu Edit Properties closes menu after action", () => {
+  // setContextMenu(null) appears inside the same onClick handler before the closing >Edit Properties
+  assert.match(appSource, /setContextMenu\(null\)[\s\S]{0,60}Edit Properties/);
+});
+
+test("mobile drawer open state and classes exist for context menu path", () => {
+  assert.match(appSource, /rightDrawerMobileOpen/);
+  assert.match(appSource, /mobile-open/);
+  assert.match(appSource, /mobile-closed/);
+  assert.match(cssSource, /\.right-drawer\.mobile-open[\s\S]*display:\s*flex/);
+  assert.match(cssSource, /\.right-drawer\.mobile-closed[\s\S]*display:\s*none/);
+});
+
 test("preview mode hides selection outlines via CSS", () => {
   assert.match(cssSource, /\.app\.preview \.selected-block/);
   assert.match(cssSource, /\.app\.preview \.selected-site-part/);
