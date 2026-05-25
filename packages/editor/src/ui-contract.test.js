@@ -170,8 +170,9 @@ test("mobile long press on block opens right drawer", () => {
   assert.match(appSource, /cancelLongPress/);
 });
 
-test("mobile ellipsis menu button opens right drawer", () => {
-  assert.match(appSource, /if \(isMobileViewport\) \{ openBlockDrawer\(block\.id\); \} else \{ openContextMenu/);
+test("mobile ellipsis menu button opens same context menu as desktop", () => {
+  assert.doesNotMatch(appSource, /if \(isMobileViewport\) \{ openBlockDrawer\(block\.id\); \} else \{ openContextMenu/);
+  assert.match(appSource, /openContextMenu\(e, block\.id\)/);
   assert.match(cssSource, /\.context-btn \{/);
   assert.match(cssSource, /min-width:\s*36px/);
   assert.match(cssSource, /min-height:\s*36px/);
@@ -302,4 +303,49 @@ test("cards block title and card text are contentEditable in edit mode", () => {
 
 test("gallery slots are guarded in preview mode", () => {
   assert.match(appSource, /if \(isPreview\) return;[\s\S]*onImageSelect/);
+});
+
+test("hours block title is contentEditable in edit mode", () => {
+  assert.match(appSource, /HoursBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("title", e\.currentTarget\.textContent/);
+});
+
+test("contact block title and fields are contentEditable in edit mode", () => {
+  assert.match(appSource, /ContactBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("phone", e\.currentTarget\.textContent/);
+  assert.match(appSource, /onText\("email", e\.currentTarget\.textContent/);
+  assert.match(appSource, /onText\("address", e\.currentTarget\.textContent/);
+});
+
+test("testimonial quote and author are contentEditable in edit mode", () => {
+  assert.match(appSource, /TestimonialBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("quote", e\.currentTarget\.textContent/);
+  assert.match(appSource, /onText\("author", e\.currentTarget\.textContent/);
+});
+
+test("map block address is contentEditable in edit mode", () => {
+  assert.match(appSource, /MapBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("address", e\.currentTarget\.textContent/);
+});
+
+test("gallery block title is contentEditable in edit mode", () => {
+  assert.match(appSource, /GalleryBlock[\s\S]*contentEditable=\{!isPreview\}[\s\S]*data\.title/);
+  assert.match(appSource, /onText\?\.\("title", e\.currentTarget\.textContent/);
+});
+
+test("marquee block text is contentEditable in edit mode", () => {
+  assert.match(appSource, /MarqueeBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("text", e\.currentTarget\.textContent/);
+});
+
+test("image block caption is contentEditable in edit mode", () => {
+  assert.match(appSource, /ImageBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("caption", e\.currentTarget\.textContent/);
+});
+
+test("all contentEditable blocks stop propagation on pointer events", () => {
+  const contentEditableMatches = appSource.match(/contentEditable=\{!isPreview\}/g);
+  assert.ok(contentEditableMatches && contentEditableMatches.length >= 8, `Expected at least 8 contentEditable elements, found ${contentEditableMatches?.length || 0}`);
+  assert.match(appSource, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
 });
