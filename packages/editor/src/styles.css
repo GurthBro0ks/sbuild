@@ -1538,7 +1538,7 @@ button:disabled {
     min-width: 0;
     width: auto;
     height: auto;
-    max-height: 72vh;
+    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px));
     position: fixed;
     left: 8px;
     right: 8px;
@@ -1547,11 +1547,6 @@ button:disabled {
     overflow: visible;
     z-index: 65;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
-  }
-
-  .right-drawer-header {
-    overflow: visible;
-    padding-top: 6px;
   }
 
   .right-drawer.mobile-closed {
@@ -1568,10 +1563,11 @@ button:disabled {
     z-index: 18;
     overflow: visible;
     padding-top: 6px;
+    flex-shrink: 0;
   }
 
   .right-drawer-content {
-    max-height: 62vh;
+    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px) - 90px);
     overflow-y: auto;
   }
 
@@ -1620,6 +1616,7 @@ button:disabled {
     left: 8px;
     right: 8px;
     bottom: 8px;
+    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px));
   }
   .row-grid {
     flex-wrap: wrap;

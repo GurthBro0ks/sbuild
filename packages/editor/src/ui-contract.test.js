@@ -687,3 +687,56 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
 test("site header context menu AI Assistant still exists", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
+
+test("mobile right drawer max-height accounts for fixed toolbar height", () => {
+  assert.match(cssSource, /\.right-drawer[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
+});
+
+test("mobile right drawer max-height includes safe-area-inset-top", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const drawerBlock = cssSource.substring(m768);
+  const rightDrawerIdx = drawerBlock.indexOf(".right-drawer {");
+  assert.ok(rightDrawerIdx > 0, "right-drawer block exists in mobile media query");
+  const blockEnd = drawerBlock.indexOf("}", drawerBlock.indexOf("max-height", rightDrawerIdx));
+  const blockSlice = drawerBlock.substring(rightDrawerIdx, blockEnd);
+  assert.ok(blockSlice.includes("safe-area-inset-top"), "right drawer max-height uses env(safe-area-inset-top)");
+});
+
+test("mobile right drawer content max-height respects toolbar offset", () => {
+  assert.match(cssSource, /\.right-drawer-content[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
+});
+
+test("mobile right drawer header is sticky and has flex-shrink 0", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768);
+  const headerIdx = section.indexOf(".right-drawer-header {");
+  assert.ok(headerIdx > 0, "right-drawer-header exists in mobile media query");
+  const headerBlock = section.substring(headerIdx, section.indexOf("}", headerIdx + 50) + 1);
+  assert.ok(headerBlock.includes("position: sticky"), "header is sticky");
+  assert.ok(headerBlock.includes("flex-shrink: 0"), "header has flex-shrink: 0");
+});
+
+test("tablet breakpoint mobile-shell right drawer max-height accounts for toolbar", () => {
+  const m1100 = cssSource.indexOf("@media (max-width: 1100px)");
+  const section = cssSource.substring(m1100);
+  const mobileDrawerIdx = section.indexOf(".app.mobile-shell .right-drawer");
+  assert.ok(mobileDrawerIdx > 0, "mobile-shell right-drawer rule exists at 1100px breakpoint");
+  const blockEnd = section.indexOf("}", mobileDrawerIdx + 40);
+  const blockSlice = section.substring(mobileDrawerIdx, blockEnd);
+  assert.ok(blockSlice.includes("--mobile-topbar-h"), "tablet breakpoint right drawer references toolbar height variable");
+});
+
+test("top toolbar remains position fixed on mobile", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*fixed/);
+});
+
+test("mobile right drawer does not use static positioning", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  const rightDrawerIdx = section.indexOf(".right-drawer {");
+  assert.ok(rightDrawerIdx > 0, "right-drawer exists in 768px media query");
+  const blockEnd = section.indexOf("}", section.indexOf("box-shadow", rightDrawerIdx));
+  const blockSlice = section.substring(rightDrawerIdx, blockEnd);
+  assert.ok(!blockSlice.includes("position: static"), "mobile right drawer is not static");
+  assert.ok(blockSlice.includes("position: fixed"), "mobile right drawer is fixed");
+});
