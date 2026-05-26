@@ -289,7 +289,7 @@ button:disabled {
   color: var(--editor-input-text);
 }
 
-.mobile-close-btn {
+.mobile-editor-x-close {
   display: none;
 }
 
@@ -1498,31 +1498,33 @@ button:disabled {
     display: flex;
     flex-direction: column;
     gap: 0;
+    padding-right: 48px;
   }
 
-  .mobile-close-btn {
-    display: flex;
+  .mobile-editor-x-close {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 100%;
-    padding: 10px 12px;
-    margin: 4px 8px 0 8px;
-    font-size: 14px;
-    font-weight: 600;
-    background: var(--editor-bg, #f8f9fa);
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 999px;
     border: 1px solid var(--editor-border);
-    border-radius: 8px;
+    background: var(--editor-panel-bg);
+    color: var(--editor-text);
+    font-size: 20px;
+    line-height: 1;
     cursor: pointer;
-    color: var(--editor-text, #333);
+    z-index: 20;
+    padding: 0;
   }
 
-  .mobile-close-btn:active {
-    opacity: 0.7;
-  }
-
-  .drawer-close-btn {
-    min-width: 72px;
-    flex: 0 0 auto;
+  .mobile-editor-x-close:active {
+    opacity: 0.6;
   }
 
   .canvas-area {
@@ -1600,6 +1602,10 @@ button:disabled {
     overflow: visible;
     padding-top: 6px;
     flex-shrink: 0;
+  }
+
+  .app.mobile-shell .right-drawer-header {
+    position: relative;
   }
 
   .right-drawer-content {

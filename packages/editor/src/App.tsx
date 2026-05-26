@@ -2472,10 +2472,10 @@ export function App() {
 
         <aside className={`right-drawer ${isMobileViewport ? (rightDrawerMobileOpen ? "mobile-open" : "mobile-closed") : ""}`}>
           <div className="right-drawer-header">
+            {isMobileViewport && (
+              <button className="mobile-editor-x-close" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">✕</button>
+            )}
             <div className="mobile-drawer-tab-row">
-              {isMobileViewport && (
-                <button className="drawer-close-btn mobile-close-btn" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">Close</button>
-              )}
               <div className="tabs compact-tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
             <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>

@@ -741,29 +741,38 @@ test("mobile right drawer does not use static positioning", () => {
   assert.ok(blockSlice.includes("position: fixed"), "mobile right drawer is fixed");
 });
 
-test("mobile right drawer has a visible mobile close control inside the drawer tab row", () => {
-  assert.match(appSource, /mobile-close-btn/);
+test("mobile right drawer has a compact X close button with correct aria", () => {
+  assert.match(appSource, /mobile-editor-x-close/);
   assert.match(appSource, /mobile-drawer-tab-row/);
   assert.match(appSource, /aria-label="Close editor drawer"/);
-  assert.match(cssSource, /\.mobile-close-btn[\s\S]*display:\s*none/);
+  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*display:\s*none/);
   const m768 = cssSource.indexOf("@media (max-width: 768px)");
   const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
-  assert.match(section, /\.mobile-close-btn[\s\S]*display:\s*flex/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*display:\s*inline-flex/);
 });
 
-test("mobile close control calls setRightDrawerMobileOpen false", () => {
-  const closeBtnMatch = appSource.match(/mobile-close-btn[\s\S]{0,200}onClick/);
-  assert.ok(closeBtnMatch, "mobile close btn has onClick");
-  const closeSection = appSource.substring(appSource.indexOf("mobile-close-btn") - 50, appSource.indexOf("mobile-close-btn") + 200);
+test("mobile X close button calls setRightDrawerMobileOpen false", () => {
+  const closeBtnMatch = appSource.match(/mobile-editor-x-close[\s\S]{0,200}onClick/);
+  assert.ok(closeBtnMatch, "mobile X close btn has onClick");
+  const closeSection = appSource.substring(appSource.indexOf("mobile-editor-x-close") - 50, appSource.indexOf("mobile-editor-x-close") + 300);
   assert.match(closeSection, /setRightDrawerMobileOpen\(false\)/);
 });
 
-test("mobile close control is not rendered on desktop", () => {
-  const closeBtnIdx = appSource.indexOf("mobile-close-btn");
-  assert.ok(closeBtnIdx > 0, "mobile-close-btn class exists");
+test("mobile X close button is not rendered on desktop", () => {
+  const closeBtnIdx = appSource.indexOf("mobile-editor-x-close");
+  assert.ok(closeBtnIdx > 0, "mobile-editor-x-close class exists");
   const surrounding = appSource.substring(Math.max(0, closeBtnIdx - 300), closeBtnIdx + 50);
-  assert.match(surrounding, /isMobileViewport\s*&&/, "mobile close button is gated by isMobileViewport");
-  assert.match(cssSource, /\.mobile-close-btn\s*\{[^}]*display:\s*none/, "base CSS hides mobile close button");
+  assert.match(surrounding, /isMobileViewport\s*&&/, "mobile X close button is gated by isMobileViewport");
+  assert.match(cssSource, /\.mobile-editor-x-close\s*\{[^}]*display:\s*none/, "base CSS hides mobile X close button");
+});
+
+test("mobile X close button has at least 44px tap target", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*width:\s*44px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*height:\s*44px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-width:\s*44px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-height:\s*44px/);
 });
 
 test("mobile right drawer tab row contains Props Style Resize Images AI Debug tabs", () => {
@@ -782,9 +791,9 @@ test("right drawer internal scroll remains intact on mobile", () => {
   assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y:\s*auto/);
 });
 
-test("desktop right drawer markup does not include mobile close button", () => {
-  const allCloseBtns = appSource.match(/mobile-close-btn/g);
-  assert.ok(allCloseBtns, "mobile-close-btn class is used");
-  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<button[^>]*mobile-close-btn/g);
-  assert.ok(allMobileGates, "every mobile-close-btn is gated by isMobileViewport");
+test("desktop right drawer markup does not include mobile X close button", () => {
+  const allCloseBtns = appSource.match(/mobile-editor-x-close/g);
+  assert.ok(allCloseBtns, "mobile-editor-x-close class is used");
+  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<button[^>]*mobile-editor-x-close/g);
+  assert.ok(allMobileGates, "every mobile-editor-x-close is gated by isMobileViewport");
 });
