@@ -70,6 +70,7 @@ html, body, #root { overflow-x: hidden; }
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 12px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
   background: var(--editor-panel-bg);
   border-bottom: 1px solid var(--editor-border);
   position: sticky;
@@ -1410,6 +1411,10 @@ button:disabled {
     align-items: flex-start;
     gap: 6px;
     padding: 8px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    position: sticky;
+    top: 0;
+    z-index: 80;
   }
 
   .topbar .logo {

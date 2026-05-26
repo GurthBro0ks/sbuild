@@ -582,3 +582,43 @@ test("top toolbar AI button uses openAiDrawer, not raw setRightTab", () => {
   assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,40}>AI<\/button>/);
   assert.doesNotMatch(appSource, /onClick=\{\(\) => setRightTab\("ai"\)\}>AI/);
 });
+
+test("top toolbar has sticky positioning with safe-area support", () => {
+  assert.match(cssSource, /\.topbar[\s\S]*position:\s*sticky/);
+  assert.match(cssSource, /\.topbar[\s\S]*top:\s*0/);
+  assert.match(cssSource, /\.topbar[\s\S]*env\(safe-area-inset-top/);
+  assert.match(cssSource, /\.topbar[\s\S]*z-index:\s*50/);
+});
+
+test("mobile topbar stays sticky with higher z-index and safe-area", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*sticky/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*z-index:\s*80/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*env\(safe-area-inset-top/);
+});
+
+test("context menu includes AI Assistant action for site header", () => {
+  assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*AI Assistant/);
+  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,80}AI Assistant/);
+});
+
+test("context menu AI action calls openAiDrawer not raw setRightTab", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)[\s\S]{0,60}AI Edit/);
+  assert.doesNotMatch(appSource, /setRightTab\("ai"\)[\s\S]{0,60}AI Edit/);
+});
+
+test("context menu AI action closes context menu after invocation", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)/);
+  assert.match(appSource, /openAiDrawer\(\);\s*setContextMenu\(null\)/);
+});
+
+test("context menu AI uses normalized computeAiTarget resolution", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]*computeAiTarget\(\)/);
+  assert.match(appSource, /function computeAiTarget[\s\S]*selectedSitePart/);
+  assert.match(appSource, /function computeAiTarget[\s\S]*lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+});
+
+test("preview mode guards AI opening from context menu", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]{0,300}if \(previewMode\)/);
+  assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
+  assert.match(appSource, /AI is not available in Preview mode/);
+});

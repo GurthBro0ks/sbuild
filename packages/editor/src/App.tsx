@@ -3504,6 +3504,7 @@ export function App() {
           {contextMenu.isSiteHeader ? (
             <>
               <button onClick={() => { openSiteHeaderDrawer("site-header"); setContextMenu(null); }}>Edit Properties</button>
+              <button onClick={() => { openAiDrawer(); setContextMenu(null); }}>AI Assistant</button>
               <button onClick={() => { resetBlockColorsToTheme(); setContextMenu(null); }}>Reset site header colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => setContextMenu(null)}>Close</button>
