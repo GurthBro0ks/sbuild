@@ -891,6 +891,23 @@ export function App() {
     }
   }, [isMobileViewport]);
 
+  const topbarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!isMobileViewport || !topbarRef.current) {
+      document.documentElement.style.removeProperty("--mobile-topbar-h");
+      return;
+    }
+    const el = topbarRef.current;
+    const update = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
+    };
+    update();
+    const obs = new ResizeObserver(update);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [isMobileViewport]);
+
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
     window.addEventListener("scroll", closeMenu, true);
@@ -2130,7 +2147,7 @@ export function App() {
 
   return (
     <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""}`}>
-      <header className="topbar">
+      <header ref={topbarRef} className="topbar">
         <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
         <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
@@ -2146,6 +2163,7 @@ export function App() {
           <strong>Status:</strong> {withSavedStatusText(status, dirty)} · {status}
         </div>
       </header>
+      <div className="topbar-mobile-spacer" />
 
         <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
         <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
@@ -3512,6 +3530,7 @@ export function App() {
           ) : (
             <>
               <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Assistant</button>
               <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
               <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
               <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>

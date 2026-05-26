@@ -590,9 +590,9 @@ test("top toolbar has sticky positioning with safe-area support", () => {
   assert.match(cssSource, /\.topbar[\s\S]*z-index:\s*50/);
 });
 
-test("mobile topbar stays sticky with higher z-index and safe-area", () => {
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*sticky/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*z-index:\s*80/);
+test("mobile topbar is fixed with higher z-index and safe-area", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*z-index:\s*90/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*env\(safe-area-inset-top/);
 });
 
@@ -621,4 +621,69 @@ test("preview mode guards AI opening from context menu", () => {
   assert.match(appSource, /function openAiDrawer[\s\S]{0,300}if \(previewMode\)/);
   assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
   assert.match(appSource, /AI is not available in Preview mode/);
+});
+
+test("block context menu includes AI Assistant after Edit Properties", () => {
+  assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)[\s\S]{0,200}Edit Properties[\s\S]{0,300}openAiDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)[\s\S]{0,80}AI Assistant/);
+});
+
+test("block context menu AI Assistant appears before Resize/Layout", () => {
+  const elseMarker = ") : (";
+  const headerIdx = appSource.indexOf("contextMenu.isSiteHeader ?");
+  const elseIdx = appSource.indexOf(elseMarker, headerIdx);
+  const closeIdx = appSource.indexOf("Close</button>", elseIdx);
+  const blockMenu = appSource.substring(elseIdx, closeIdx);
+  const editPropsIdx = blockMenu.indexOf("Edit Properties");
+  const aiAssistantIdx = blockMenu.indexOf("AI Assistant");
+  const resizeIdx = blockMenu.indexOf("Resize/Layout");
+  assert.ok(aiAssistantIdx > 0, "AI Assistant exists in block context menu");
+  assert.ok(editPropsIdx < aiAssistantIdx, "AI Assistant appears after Edit Properties");
+  assert.ok(aiAssistantIdx < resizeIdx, "AI Assistant appears before Resize/Layout");
+});
+
+test("block context menu AI Assistant calls openAiDrawer with exact block id", () => {
+  const elseMarker = ") : (";
+  const headerIdx = appSource.indexOf("contextMenu.isSiteHeader ?");
+  const elseIdx = appSource.indexOf(elseMarker, headerIdx);
+  const closeIdx = appSource.indexOf("Close</button>", elseIdx);
+  const blockMenu = appSource.substring(elseIdx, closeIdx);
+  const aiAssistantLine = blockMenu.substring(
+    blockMenu.lastIndexOf("openAiDrawer", blockMenu.indexOf("AI Assistant")),
+    blockMenu.indexOf("AI Assistant")
+  );
+  assert.ok(aiAssistantLine.includes("contextMenu.blockId"), "AI Assistant uses contextMenu.blockId");
+});
+
+test("block context menu AI Assistant closes context menu", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)[\s\S]{0,40}AI Assistant/);
+});
+
+test("mobile topbar spacer div exists for fixed toolbar offset", () => {
+  assert.match(appSource, /topbar-mobile-spacer/);
+  assert.match(cssSource, /\.topbar-mobile-spacer/);
+  assert.match(cssSource, /--mobile-topbar-h/);
+});
+
+test("mobile topbar hides when left drawer is open", () => {
+  assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open .topbar[\s\S]*display:\s*none/);
+  assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open .topbar-mobile-spacer[\s\S]*display:\s*none/);
+  assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open .left-drawer[\s\S]*top:/);
+});
+
+test("mobile canvas-controls sticky top accounts for fixed toolbar height", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.canvas-controls[\s\S]*--mobile-topbar-h/);
+});
+
+test("left drawer top on mobile accounts for fixed toolbar height", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.left-drawer[\s\S]*--mobile-topbar-h/);
+});
+
+test("topbar height is measured dynamically via ResizeObserver", () => {
+  assert.match(appSource, /topbarRef/);
+  assert.match(appSource, /ResizeObserver/);
+  assert.match(appSource, /--mobile-topbar-h/);
+});
+
+test("site header context menu AI Assistant still exists", () => {
+  assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
