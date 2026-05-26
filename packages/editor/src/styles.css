@@ -743,6 +743,13 @@ button:disabled {
   border: 1px solid var(--sbuild-border, #d5cfbe);
   border-radius: 10px;
   padding: 10px;
+  cursor: default;
+}
+.app:not(.preview) .canvas-nav {
+  min-height: 48px;
+}
+.app:not(.preview) .canvas-nav:hover {
+  border-color: var(--editor-accent, #2b6dff);
 }
 .canvas-nav strong {
   color: var(--sbuild-heading-color, var(--sbuild-text, #1f2a24));
@@ -753,6 +760,11 @@ button:disabled {
 .nav-items span {
   color: var(--sbuild-text, #1f2a24);
   cursor: default;
+}
+.canvas-nav.selected-site-part {
+  outline: 3px solid var(--editor-accent, #2b6dff);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 .canvas-nav .selected-site-part {
   outline: 3px solid var(--editor-accent, #2b6dff);
@@ -1278,6 +1290,10 @@ button:disabled {
 }
 .app.preview .selected-site-part {
   outline: none !important;
+}
+.app.preview .canvas-nav.selected-site-part {
+  outline: none !important;
+  cursor: default;
 }
 .app.preview .block-shell [contenteditable="true"],
 .app.preview .canvas-nav [contenteditable="true"] {

@@ -45,7 +45,7 @@ type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "abou
 type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
-type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string } | null;
+type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
 
@@ -1152,6 +1152,14 @@ export function App() {
     lastFocusedTextBlockId.current = blockId;
   }
 
+  function selectSiteHeaderContainer() {
+    setSelectedSitePart("site-header");
+    setSelectedNavIndex(null);
+    setSelectedBlockId("");
+    setSelectedGalleryIndex(null);
+    setStatus("Site header container selected");
+  }
+
   function activateBlockTextTarget(blockId: string, part?: string) {
     setSelectedBlockId(blockId);
     setSelectedGalleryIndex(null);
@@ -1237,6 +1245,7 @@ export function App() {
   }
 
   function targetSummary(): string {
+    if (selectedSitePart === "site-header") return "Target: Site header → Whole header";
     if (selectedSitePart === "site-title") return "Editing Site header → Site title";
     if (selectedSitePart === "nav" && selectedNavIndex !== null) return `Editing Site header → Nav link ${selectedNavIndex + 1}`;
     if (!selectedBlock) return "No image content target selected";
@@ -1533,7 +1542,7 @@ export function App() {
   }
 
   function renderCurrentTargetCard() {
-    const showSitePart = selectedSitePart === "site-title" || selectedSitePart === "nav";
+    const showSitePart = selectedSitePart === "site-title" || selectedSitePart === "nav" || selectedSitePart === "site-header";
     return (
       <div className="image-target-card">
         <strong>{targetSummary()}</strong>
@@ -1966,7 +1975,7 @@ export function App() {
     }
   }
 
-  function openSiteHeaderDrawer(sitePart: "site-title" | "nav", navIndex?: number) {
+  function openSiteHeaderDrawer(sitePart: "site-title" | "nav" | "site-header", navIndex?: number) {
     setSelectedSitePart(sitePart);
     if (navIndex !== undefined) setSelectedNavIndex(navIndex);
     else setSelectedNavIndex(null);
@@ -1974,10 +1983,26 @@ export function App() {
     setSelectedGalleryIndex(null);
     setRightDrawerMobileOpen(true);
     setRightTab("properties");
-    setStatus(sitePart === "site-title" ? "Editing site title" : `Editing nav link ${(navIndex ?? 0) + 1}`);
+    if (sitePart === "site-header") setStatus("Editing site header container");
+    else if (sitePart === "site-title") setStatus("Editing site title");
+    else setStatus(`Editing nav link ${(navIndex ?? 0) + 1}`);
   }
 
-  function startSiteHeaderLongPress(sitePart: "site-title" | "nav", x: number, y: number, navIndex?: number) {
+  function openSiteHeaderContextMenu(e: React.MouseEvent | React.TouchEvent) {
+    if (previewMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let x = 0, y = 0;
+    if ("clientX" in e) { x = e.clientX; y = e.clientY; }
+    else if ("touches" in e && e.touches.length > 0) { x = e.touches[0].clientX; y = e.touches[0].clientY; }
+    const menuWidth = 240;
+    const menuHeight = 280;
+    const clampedX = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, x));
+    const clampedY = Math.max(8, Math.min(window.innerHeight - menuHeight - 8, y));
+    setContextMenu({ visible: true, x: clampedX, y: clampedY, blockId: "", isSiteHeader: true });
+  }
+
+  function startSiteHeaderLongPress(sitePart: "site-title" | "nav" | "site-header", x: number, y: number, navIndex?: number) {
     siteHeaderLongPressRef.current.fired = false;
     siteHeaderLongPressRef.current.startX = x;
     siteHeaderLongPressRef.current.startY = y;
@@ -2214,7 +2239,39 @@ export function App() {
             onPointerUp={endPaint}
             onClick={() => { if (!previewMode) { setSelectedSitePart(null); setSelectedNavIndex(null); } }}
           >
-            <nav className="canvas-nav">
+            <nav
+              className={`canvas-nav ${!previewMode && selectedSitePart === "site-header" ? "selected-site-part" : ""}`}
+              onClick={(e) => {
+                if (previewMode) return;
+                if (e.target === e.currentTarget) {
+                  e.stopPropagation();
+                  selectSiteHeaderContainer();
+                }
+              }}
+              onPointerDown={(e) => {
+                if (previewMode || !isMobileViewport) return;
+                if (e.target === e.currentTarget) {
+                  startSiteHeaderLongPress("site-header", e.clientX, e.clientY);
+                }
+              }}
+              onPointerUp={(e) => {
+                if (previewMode || !isMobileViewport) return;
+                if (e.target === e.currentTarget) {
+                  cancelSiteHeaderLongPress();
+                  if (siteHeaderLongPressRef.current.fired) {
+                    siteHeaderLongPressRef.current.fired = false;
+                    return;
+                  }
+                }
+              }}
+              onPointerMove={(e) => {
+                if (!siteHeaderLongPressRef.current.timer) return;
+                const dx = Math.abs(e.clientX - siteHeaderLongPressRef.current.startX);
+                const dy = Math.abs(e.clientY - siteHeaderLongPressRef.current.startY);
+                if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
+              }}
+              onContextMenu={(e) => openSiteHeaderContextMenu(e)}
+            >
               <div className="site-header-left">
                 <strong
                   className={!previewMode && selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
@@ -2256,7 +2313,7 @@ export function App() {
                     className="site-header-edit-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openSiteHeaderDrawer("site-title");
+                      openSiteHeaderContextMenu(e);
                     }}
                     title="Edit site header"
                   >⋯</button>
@@ -2400,6 +2457,24 @@ export function App() {
           {rightTab === "properties" && (selectedBlock || selectedSitePart) && (
             <div className="panel">
               {selectedSitePart && (() => {
+                if (selectedSitePart === "site-header") return (
+                  <div className="site-header-edit">
+                    <h4>Editing Site Header Container</h4>
+                    <p className="hint">Style the whole site header container — background, padding, border.</p>
+                    <label>Site title
+                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
+                    </label>
+                    <h4 style={{ marginTop: 16 }}>Navigation Links</h4>
+                    {project.site.nav.map((item, i) => (
+                      <div key={item.id} className="nav-edit-row">
+                        <input value={item.label} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
+                        <input value={item.href} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
+                        <button onClick={() => removeNav(i)}>X</button>
+                      </div>
+                    ))}
+                    <button onClick={addNav} style={{ marginTop: 8 }}>Add Nav Link</button>
+                  </div>
+                );
                 if (selectedSitePart === "site-title") return (
                   <div className="site-header-edit">
                     <h4>Editing Site Header</h4>
@@ -3408,28 +3483,39 @@ export function App() {
       {/* Context Menu */}
       {contextMenu?.visible && (
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
-          <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
-          <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
-          <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
-          <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
-          <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
-          <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
-          <button onClick={() => { removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row</button>
-          <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
-          <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
-          <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
-          <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
-          <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
-          <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
-          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
-          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
-          <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
-          <button onClick={() => {
-            const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
-            if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));
-            setContextMenu(null);
-          }}>Copy Block JSON</button>
-          <button onClick={() => setContextMenu(null)}>Close</button>
+          {contextMenu.isSiteHeader ? (
+            <>
+              <button onClick={() => { openSiteHeaderDrawer("site-header"); setContextMenu(null); }}>Edit Properties</button>
+              <button onClick={() => { resetBlockColorsToTheme(); setContextMenu(null); }}>Reset site header colors to theme</button>
+              <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
+              <button onClick={() => setContextMenu(null)}>Close</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
+              <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
+              <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
+              <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
+              <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
+              <button onClick={() => { removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row</button>
+              <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
+              <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
+              <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
+              <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
+              <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
+              <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
+              <button onClick={() => {
+                const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
+                if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));
+                setContextMenu(null);
+              }}>Copy Block JSON</button>
+              <button onClick={() => setContextMenu(null)}>Close</button>
+            </>
+          )}
         </div>
       )}
 

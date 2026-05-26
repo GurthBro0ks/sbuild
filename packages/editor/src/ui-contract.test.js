@@ -219,7 +219,7 @@ test("mobile site title single tap edits directly without opening drawer", () =>
 test("mobile site title long press opens right drawer", () => {
   assert.match(appSource, /function startSiteHeaderLongPress/);
   assert.match(appSource, /siteHeaderLongPressRef\.current\.timer = setTimeout/);
-  assert.match(appSource, /openSiteHeaderDrawer\("site-title"\)/);
+  assert.match(appSource, /startSiteHeaderLongPress\("site-title"/);
   assert.match(appSource, /function cancelSiteHeaderLongPress/);
   assert.match(appSource, /cancelSiteHeaderLongPress/);
 });
@@ -235,9 +235,9 @@ test("mobile nav link long press opens right drawer", () => {
   assert.match(appSource, /openSiteHeaderDrawer\(sitePart, navIndex\)/);
 });
 
-test("mobile site header edit button opens drawer", () => {
+test("mobile site header edit button opens context menu", () => {
   assert.match(appSource, /site-header-edit-btn/);
-  assert.match(appSource, /openSiteHeaderDrawer\("site-title"\)/);
+  assert.match(appSource, /openSiteHeaderContextMenu\(e\)/);
   assert.match(cssSource, /\.site-header-edit-btn \{/);
   assert.match(cssSource, /min-width:\s*36px/);
   assert.match(cssSource, /min-height:\s*36px/);
@@ -446,4 +446,97 @@ test("selectBlock also updates lastFocusedTextBlockId", () => {
 
 test("preview useEffect resets lastFocusedTextBlockId", () => {
   assert.match(appSource, /if \(previewMode\)[\s\S]*lastFocusedTextBlockId\.current = \"\"/);
+});
+
+test("site header container has selectable target path with site-header part", () => {
+  assert.match(appSource, /function selectSiteHeaderContainer/);
+  assert.match(appSource, /setSelectedSitePart\("site-header"\)/);
+  assert.match(appSource, /"Target: Site header → Whole header"/);
+});
+
+test("site header container select clears block and gallery selection", () => {
+  assert.match(appSource, /function selectSiteHeaderContainer[\s\S]*setSelectedBlockId\(""\)/);
+  assert.match(appSource, /function selectSiteHeaderContainer[\s\S]*setSelectedGalleryIndex\(null\)/);
+});
+
+test("site header empty-area click selects container via nav onClick", () => {
+  assert.match(appSource, /className={`canvas-nav \${!previewMode && selectedSitePart === "site-header" \? "selected-site-part" : ""}`}/);
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*if \(e\.target === e\.currentTarget\)[\s\S]*selectSiteHeaderContainer\(\)/);
+});
+
+test("site title direct edit still works via contentEditable and onClick", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("site-title"\)/);
+  assert.match(appSource, /e\.stopPropagation\(\)[\s\S]*setSelectedSitePart\("site-title"\)/);
+});
+
+test("nav label direct edit still works via contentEditable and onClick", () => {
+  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("nav"\)/);
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedNavIndex\(ni\)/);
+});
+
+test("preview mode guards site header container selection in nav onClick", () => {
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*if \(previewMode\) return;[\s\S]*if \(e\.target === e\.currentTarget\)[\s\S]*selectSiteHeaderContainer/);
+});
+
+test("preview mode hides site header container outline via CSS", () => {
+  assert.match(cssSource, /\.app\.preview \.canvas-nav\.selected-site-part\s*\{[\s\S]*outline: none !important/);
+  assert.match(cssSource, /\.app\.preview \.canvas-nav\.selected-site-part\s*\{[\s\S]*cursor: default/);
+});
+
+test("mobile site header ellipsis button opens context menu for site header container", () => {
+  assert.match(appSource, /openSiteHeaderContextMenu\(e\)/);
+  assert.match(appSource, /onClick=\{\(e\)[\s\S]*openSiteHeaderContextMenu\(e\)/);
+});
+
+test("context menu for site header shows header-specific actions", () => {
+  assert.match(appSource, /contextMenu\.isSiteHeader/);
+  assert.match(appSource, /openSiteHeaderDrawer\("site-header"\)/);
+});
+
+test("context menu for site header includes Edit Properties and Reset colors actions", () => {
+  assert.match(appSource, /contextMenu\.isSiteHeader \? \(/);
+  assert.match(appSource, /openSiteHeaderDrawer\("site-header"\)[\s\S]*Edit Properties/);
+  assert.match(appSource, /Reset site header colors to theme/);
+  assert.match(appSource, /Reset all blocks to theme/);
+});
+
+test("openSiteHeaderDrawer accepts site-header part", () => {
+  assert.match(appSource, /function openSiteHeaderDrawer\(sitePart: "site-title" \| "nav" \| "site-header"/);
+  assert.match(appSource, /if \(sitePart === "site-header"\) setStatus\("Editing site header container"\)/);
+});
+
+test("properties tab renders for site header container", () => {
+  assert.match(appSource, /selectedSitePart === "site-header"\) return \(/);
+  assert.match(appSource, /Editing Site Header Container/);
+  assert.match(appSource, /Navigation Links[\s\S]*removeNav\(i\)/);
+});
+
+test("openAiDrawer does not fall back to stale target when site header is selected", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]*const freshId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+  assert.match(appSource, /editableBlocks\[\s*0\s*\]/);
+});
+
+test("canvas-nav has hover border color in edit mode", () => {
+  assert.match(cssSource, /\.app:not\(\.preview\) \.canvas-nav[\s\S]*:hover[\s\S]*border-color: var\(--editor-accent/);
+});
+
+test("selected-site-part CSS also applies to canvas-nav container", () => {
+  assert.match(cssSource, /\.canvas-nav\.selected-site-part\s*\{/);
+  assert.match(cssSource, /\.canvas-nav\.selected-site-part[\s\S]*outline: 3px solid var\(--editor-accent/);
+});
+
+test("openSiteHeaderContextMenu function exists and guards preview mode", () => {
+  assert.match(appSource, /function openSiteHeaderContextMenu[\s\S]*if \(previewMode\) return;/);
+  assert.match(appSource, /setContextMenu\(\{ visible: true, x: clampedX, y: clampedY, blockId: "", isSiteHeader: true \}\)/);
+});
+
+test("site header container long press opens drawer via startSiteHeaderLongPress", () => {
+  assert.match(appSource, /startSiteHeaderLongPress\("site-header"/);
+  assert.match(appSource, /startSiteHeaderLongPress\(sitePart: "site-title" \| "nav" \| "site-header"/);
+});
+
+test("canvas-nav has onContextMenu handler for site header", () => {
+  assert.match(appSource, /onContextMenu=\{\(e\) => openSiteHeaderContextMenu\(e\)\}/);
 });
