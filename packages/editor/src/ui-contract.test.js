@@ -104,10 +104,10 @@ test("right drawer chip/button rows allow wrap and visible focus space", () => {
   assert.match(cssSource, /\.tabs[\s\S]*padding-block:\s*3px/);
 });
 
-test("mobile right drawer header and tabs are not clipped by overflow-hidden", () => {
+test("mobile right drawer header and tabs are not clipped", () => {
   assert.doesNotMatch(cssSource, /\.right-drawer-header\s*\{[^{}]*min-height:\s*0[^{}]*\}/);
   assert.match(cssSource, /\.right-drawer-header[\s\S]*overflow:\s*visible/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.right-drawer[\s\S]*overflow:\s*visible/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*flex-shrink:\s*0/);
   assert.match(cssSource, /\.right-drawer-header[\s\S]*padding-top:\s*6px/);
 });
 
@@ -688,35 +688,47 @@ test("site header context menu AI Assistant still exists", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
 
-test("mobile right drawer max-height accounts for fixed toolbar height", () => {
-  assert.match(cssSource, /\.right-drawer[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
-});
-
-test("mobile right drawer max-height includes safe-area-inset-top", () => {
+test("mobile right drawer top offset accounts for fixed toolbar height", () => {
   const m768 = cssSource.indexOf("@media (max-width: 768px)");
-  const drawerBlock = cssSource.substring(m768);
-  const rightDrawerIdx = drawerBlock.indexOf(".right-drawer {");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  const rightDrawerIdx = section.indexOf(".right-drawer {");
   assert.ok(rightDrawerIdx > 0, "right-drawer block exists in mobile media query");
-  const blockEnd = drawerBlock.indexOf("}", drawerBlock.indexOf("max-height", rightDrawerIdx));
-  const blockSlice = drawerBlock.substring(rightDrawerIdx, blockEnd);
-  assert.ok(blockSlice.includes("safe-area-inset-top"), "right drawer max-height uses env(safe-area-inset-top)");
+  const blockEnd = section.indexOf("}", section.indexOf("box-shadow", rightDrawerIdx));
+  const blockSlice = section.substring(rightDrawerIdx, blockEnd);
+  assert.ok(blockSlice.includes("top: calc(var(--mobile-topbar-h"), "right drawer top references --mobile-topbar-h");
+  assert.ok(blockSlice.includes("env(safe-area-inset-top"), "right drawer top includes safe-area-inset-top");
 });
 
-test("mobile right drawer content max-height respects toolbar offset", () => {
-  assert.match(cssSource, /\.right-drawer-content[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
+test("mobile right drawer shell uses overflow hidden", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  const rightDrawerIdx = section.indexOf(".right-drawer {");
+  assert.ok(rightDrawerIdx > 0, "right-drawer block exists in mobile media query");
+  const blockEnd = section.indexOf("}", section.indexOf("box-shadow", rightDrawerIdx));
+  const blockSlice = section.substring(rightDrawerIdx, blockEnd);
+  assert.ok(blockSlice.includes("overflow: hidden"), "mobile right drawer shell has overflow: hidden");
 });
 
-test("mobile right drawer header is sticky and has flex-shrink 0", () => {
+test("mobile right drawer content uses overflow-y auto for internal scroll", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  const contentIdx = section.indexOf(".right-drawer-content {");
+  assert.ok(contentIdx > 0, "right-drawer-content exists in mobile media query");
+  const contentBlock = section.substring(contentIdx, section.indexOf("}", contentIdx + 30) + 1);
+  assert.ok(contentBlock.includes("overflow-y: auto"), "right drawer content has overflow-y auto");
+  assert.ok(contentBlock.includes("min-height: 0"), "right drawer content has min-height 0");
+});
+
+test("mobile right drawer header has flex-shrink 0 and is non-scrolling", () => {
   const m768 = cssSource.indexOf("@media (max-width: 768px)");
   const section = cssSource.substring(m768);
   const headerIdx = section.indexOf(".right-drawer-header {");
   assert.ok(headerIdx > 0, "right-drawer-header exists in mobile media query");
   const headerBlock = section.substring(headerIdx, section.indexOf("}", headerIdx + 50) + 1);
-  assert.ok(headerBlock.includes("position: sticky"), "header is sticky");
   assert.ok(headerBlock.includes("flex-shrink: 0"), "header has flex-shrink: 0");
 });
 
-test("tablet breakpoint mobile-shell right drawer max-height accounts for toolbar", () => {
+test("tablet breakpoint mobile-shell right drawer top accounts for toolbar", () => {
   const m1100 = cssSource.indexOf("@media (max-width: 1100px)");
   const section = cssSource.substring(m1100);
   const mobileDrawerIdx = section.indexOf(".app.mobile-shell .right-drawer");
@@ -724,6 +736,8 @@ test("tablet breakpoint mobile-shell right drawer max-height accounts for toolba
   const blockEnd = section.indexOf("}", mobileDrawerIdx + 40);
   const blockSlice = section.substring(mobileDrawerIdx, blockEnd);
   assert.ok(blockSlice.includes("--mobile-topbar-h"), "tablet breakpoint right drawer references toolbar height variable");
+  assert.ok(blockSlice.includes("top: calc("), "tablet breakpoint right drawer uses explicit top offset");
+  assert.ok(blockSlice.includes("overflow: hidden"), "tablet breakpoint right drawer uses overflow hidden");
 });
 
 test("top toolbar remains position fixed on mobile", () => {
@@ -743,7 +757,7 @@ test("mobile right drawer does not use static positioning", () => {
 
 test("mobile right drawer has a compact X close button with correct aria", () => {
   assert.match(appSource, /mobile-editor-x-close/);
-  assert.match(appSource, /mobile-drawer-tab-row/);
+  assert.match(appSource, /right-drawer-mobile-header/);
   assert.match(appSource, /aria-label="Close editor drawer"/);
   assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*display:\s*none/);
   const m768 = cssSource.indexOf("@media (max-width: 768px)");
@@ -776,8 +790,8 @@ test("mobile X close button has at least 44px tap target", () => {
 });
 
 test("mobile right drawer tab row contains Props Style Resize Images AI Debug tabs", () => {
-  const tabRowIdx = appSource.indexOf("mobile-drawer-tab-row");
-  assert.ok(tabRowIdx > 0, "mobile-drawer-tab-row exists");
+  const tabRowIdx = appSource.indexOf("right-drawer-tabs");
+  assert.ok(tabRowIdx > 0, "right-drawer-tabs exists");
   const tabSection = appSource.substring(tabRowIdx, tabRowIdx + 1200);
   assert.match(tabSection, /Props/);
   assert.match(tabSection, /Style/);
@@ -794,6 +808,57 @@ test("right drawer internal scroll remains intact on mobile", () => {
 test("desktop right drawer markup does not include mobile X close button", () => {
   const allCloseBtns = appSource.match(/mobile-editor-x-close/g);
   assert.ok(allCloseBtns, "mobile-editor-x-close class is used");
-  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<button[^>]*mobile-editor-x-close/g);
-  assert.ok(allMobileGates, "every mobile-editor-x-close is gated by isMobileViewport");
+  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<div[^>]*right-drawer-mobile-header/g);
+  assert.ok(allMobileGates, "every right-drawer-mobile-header is gated by isMobileViewport");
+});
+
+test("mobile right drawer has right-drawer-mobile-header section with title and X", () => {
+  assert.match(appSource, /right-drawer-mobile-header/);
+  assert.match(appSource, /right-drawer-mobile-title/);
+  const headerIdx = appSource.indexOf("right-drawer-mobile-header");
+  const headerSection = appSource.substring(headerIdx, headerIdx + 500);
+  assert.match(headerSection, /right-drawer-mobile-title/, "mobile header has title span");
+  assert.match(headerSection, /mobile-editor-x-close/, "mobile header has X close button");
+  assert.match(headerSection, /aria-label="Close editor drawer"/, "X button has correct aria label");
+});
+
+test("mobile X close button is in right-drawer-mobile-header, not in target row", () => {
+  const closeIdx = appSource.indexOf("mobile-editor-x-close");
+  assert.ok(closeIdx > 0, "mobile-editor-x-close exists");
+  const beforeClose = appSource.substring(Math.max(0, closeIdx - 200), closeIdx + 50);
+  assert.match(beforeClose, /right-drawer-mobile-header/, "X close button is inside right-drawer-mobile-header");
+  const targetIdx = appSource.indexOf("right-target-summary");
+  assert.ok(targetIdx > 0, "right-target-summary exists");
+  assert.ok(closeIdx < targetIdx, "X close button appears before target row in markup");
+});
+
+test("mobile right drawer CSS uses top offset referencing mobile-topbar-h", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  assert.match(section, /\.right-drawer\s*\{[^}]*top:\s*calc\(var\(--mobile-topbar-h/);
+});
+
+test("mobile right drawer shell overflow hidden in 768px media query", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  const rightDrawerIdx = section.indexOf(".right-drawer {");
+  assert.ok(rightDrawerIdx > 0);
+  const blockEnd = section.indexOf("}", section.indexOf("box-shadow", rightDrawerIdx));
+  const blockSlice = section.substring(rightDrawerIdx, blockEnd);
+  assert.ok(blockSlice.includes("overflow: hidden"), "768px right drawer has overflow: hidden");
+});
+
+test("mobile right drawer has CSS for right-drawer-mobile-header", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  assert.match(section, /\.right-drawer-mobile-header/);
+  assert.match(section, /\.right-drawer-mobile-title/);
+});
+
+test("AI Assistant context menu calls openAiDrawer with blockId", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)/);
+});
+
+test("Edit Properties context menu opens right drawer", () => {
+  assert.match(appSource, /contextMenu[\s\S]*Edit Properties[\s\S]*openBlockDrawer|openBlockDrawer[\s\S]*Edit Properties/);
 });

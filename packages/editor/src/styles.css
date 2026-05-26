@@ -1494,20 +1494,31 @@ button:disabled {
     padding: 8px;
   }
 
-  .mobile-drawer-tab-row {
+  .right-drawer-mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 8px 0;
+    flex-shrink: 0;
+  }
+
+  .right-drawer-mobile-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--editor-text);
+    flex-shrink: 0;
+  }
+
+  .right-drawer-tabs {
     display: flex;
     flex-direction: column;
     gap: 0;
-    padding-right: 48px;
   }
 
   .mobile-editor-x-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    position: absolute;
-    top: 6px;
-    right: 8px;
     width: 44px;
     height: 44px;
     min-width: 44px;
@@ -1521,6 +1532,7 @@ button:disabled {
     cursor: pointer;
     z-index: 20;
     padding: 0;
+    flex-shrink: 0;
   }
 
   .mobile-editor-x-close:active {
@@ -1576,13 +1588,14 @@ button:disabled {
     min-width: 0;
     width: auto;
     height: auto;
-    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px));
+    max-height: none;
     position: fixed;
+    top: calc(var(--mobile-topbar-h, 110px) + env(safe-area-inset-top, 0px) + 8px);
     left: 8px;
     right: 8px;
     bottom: 8px;
     order: 3;
-    overflow: visible;
+    overflow: hidden;
     z-index: 65;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
   }
@@ -1596,21 +1609,16 @@ button:disabled {
   }
 
   .right-drawer-header {
-    position: sticky;
-    top: 0;
-    z-index: 18;
+    flex-shrink: 0;
     overflow: visible;
     padding-top: 6px;
-    flex-shrink: 0;
-  }
-
-  .app.mobile-shell .right-drawer-header {
-    position: relative;
   }
 
   .right-drawer-content {
-    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px) - 110px);
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .right-drawer .compact-tabs button {
@@ -1662,10 +1670,12 @@ button:disabled {
   }
   .app.mobile-shell .right-drawer {
     position: fixed;
+    top: calc(var(--mobile-topbar-h, 110px) + env(safe-area-inset-top, 0px) + 8px);
     left: 8px;
     right: 8px;
     bottom: 8px;
-    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px));
+    max-height: none;
+    overflow: hidden;
   }
   .row-grid {
     flex-wrap: wrap;
