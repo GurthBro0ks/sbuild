@@ -2141,6 +2141,1023 @@ export function App() {
     }
   }
 
+  function renderRightDrawerBody() {
+    if (!project || !selectedPage) return null;
+    return <>
+          {rightTab === "properties" && (selectedBlock || selectedSitePart) && (
+            <div className="panel">
+              {selectedSitePart && (() => {
+                if (selectedSitePart === "site-header") return (
+                  <div className="site-header-edit">
+                    <h4>Editing Site Header Container</h4>
+                    <p className="hint">Style the whole site header container — background, padding, border.</p>
+                    <label>Site title
+                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
+                    </label>
+                    <h4 style={{ marginTop: 16 }}>Navigation Links</h4>
+                    {project.site.nav.map((item, i) => (
+                      <div key={item.id} className="nav-edit-row">
+                        <input value={item.label} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
+                        <input value={item.href} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
+                        <button onClick={() => removeNav(i)}>X</button>
+                      </div>
+                    ))}
+                    <button onClick={addNav} style={{ marginTop: 8 }}>Add Nav Link</button>
+                  </div>
+                );
+                if (selectedSitePart === "site-title") return (
+                  <div className="site-header-edit">
+                    <h4>Editing Site Header</h4>
+                    <label>Site title
+                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
+                    </label>
+                  </div>
+                );
+                if (selectedSitePart === "nav" && selectedNavIndex !== null && selectedNavIndex >= 0 && selectedNavIndex < project.site.nav.length) {
+                  const navItem = project.site.nav[selectedNavIndex];
+                  return (
+                    <div className="site-header-edit">
+                      <h4>Editing Site Header → Nav link {selectedNavIndex + 1}</h4>
+                      <label>Nav label
+                        <input value={navItem.label} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-label"); }} />
+                      </label>
+                      <label>Nav href/anchor
+                        <input value={navItem.href} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-href"); }} />
+                      </label>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {selectedBlock && (
+              <>
+              <h3>Block Fields</h3>
+              <div className="button-row">
+                <button className={propertiesTab === "fields" ? "selected" : ""} onClick={() => setPropertiesTab("fields")}>Fields</button>
+                <button className={propertiesTab === "resize" ? "selected" : ""} onClick={() => setPropertiesTab("resize")}>Resize</button>
+              </div>
+              <p className="panel-status">
+                <strong>Properties debug:</strong> {selectedBlock.type} · {selectedBlock.id}
+              </p>
+
+              {propertiesTab === "fields" && <>
+              {selectedBlock.type === "hero" && (
+                <>
+                  <label>Heading <input value={(selectedBlock.data as HeroBlockData).heading || ""} onChange={(e) => patchSelectedBlockData({ heading: e.target.value })} /></label>
+                  <label>Subheading <input value={(selectedBlock.data as HeroBlockData).subheading || ""} onChange={(e) => patchSelectedBlockData({ subheading: e.target.value })} /></label>
+                  <label>CTA Label <input value={(selectedBlock.data as HeroBlockData).ctaLabel || ""} onChange={(e) => patchSelectedBlockData({ ctaLabel: e.target.value })} /></label>
+                  <label>CTA Link <input value={(selectedBlock.data as HeroBlockData).ctaHref || ""} onChange={(e) => patchSelectedBlockData({ ctaHref: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "text" && (
+                <>
+                  <label>Title <input value={(selectedBlock.data as TextBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  <label>Body <textarea rows={4} value={(selectedBlock.data as TextBlockData).body || ""} onChange={(e) => patchSelectedBlockData({ body: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "image" && (
+                <>
+                  <label>Image Path <input value={(selectedBlock.data as ImageBlockData).src || ""} onChange={(e) => patchSelectedBlockData({ src: e.target.value })} /></label>
+                  <label>Alt Text <input value={(selectedBlock.data as ImageBlockData).alt || ""} onChange={(e) => patchSelectedBlockData({ alt: e.target.value })} /></label>
+                  <label>Caption <input value={(selectedBlock.data as ImageBlockData).caption || ""} onChange={(e) => patchSelectedBlockData({ caption: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "cards" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as CardsBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as CardsBlockData).cards.map((card, i) => (
+                    <div key={card.id} className="nested-row">
+                      <label>Card {i + 1} Title <input value={card.title} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], title: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
+                      <label>Card {i + 1} Body <input value={card.body} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], body: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "hours" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as HoursBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as HoursBlockData).rows.map((row, i) => (
+                    <div key={`${row.day}-${i}`} className="nested-row">
+                      <label>Day <input value={row.day} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], day: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
+                      <label>Open <input value={row.open} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], open: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
+                      <label>Close <input value={row.close} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], close: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "gallery" && (
+                <>
+                  <label>Section Title <input value={(selectedBlock.data as GalleryBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  {(selectedBlock.data as GalleryBlockData).images.map((img, i) => (
+                    <div key={img.id} className="nested-row">
+                      <label>Image {i + 1} Path <input value={img.src || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], src: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
+                      <label>Image {i + 1} Alt <input value={img.alt || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], alt: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
+                    </div>
+                  ))}
+                </>
+              )}
+              {selectedBlock.type === "contact" && (
+                <>
+                  <label>Title <input value={(selectedBlock.data as ContactBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
+                  <label>Phone <input value={(selectedBlock.data as ContactBlockData).phone || ""} onChange={(e) => patchSelectedBlockData({ phone: e.target.value })} /></label>
+                  <label>Email <input value={(selectedBlock.data as ContactBlockData).email || ""} onChange={(e) => patchSelectedBlockData({ email: e.target.value })} /></label>
+                  <label>Address <input value={(selectedBlock.data as ContactBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "testimonial" && (
+                <>
+                  <label>Quote <textarea rows={3} value={(selectedBlock.data as TestimonialBlockData).quote || ""} onChange={(e) => patchSelectedBlockData({ quote: e.target.value })} /></label>
+                  <label>Author <input value={(selectedBlock.data as TestimonialBlockData).author || ""} onChange={(e) => patchSelectedBlockData({ author: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "map" && (
+                <>
+                  <label>Address <input value={(selectedBlock.data as MapBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
+                  <label>Embed URL <input value={(selectedBlock.data as MapBlockData).embedUrl || ""} onChange={(e) => patchSelectedBlockData({ embedUrl: e.target.value })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "marquee" && (
+                <label>Marquee Text <input value={(selectedBlock.data as MarqueeBlockData).text || ""} onChange={(e) => patchSelectedBlockData({ text: e.target.value })} /></label>
+              )}
+              {selectedBlock.type === "spacer" && (
+                <label>Spacer Height <input type="number" value={(selectedBlock.data as SpacerBlockData).height || 36} onChange={(e) => patchSelectedBlockData({ height: Number(e.target.value) })} /></label>
+              )}
+              {selectedBlock.type === "divider" && (
+                <>
+                  <label>Divider Style
+                    <select value={(selectedBlock.data as DividerBlockData).style || "solid"} onChange={(e) => patchSelectedBlockData({ style: e.target.value as DividerStyle })}>
+                      {DIVIDER_STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <label>Thickness <input type="number" value={(selectedBlock.data as DividerBlockData).thickness || 2} onChange={(e) => patchSelectedBlockData({ thickness: Number(e.target.value) })} /></label>
+                  <label>Color <input type="color" value={(selectedBlock.data as DividerBlockData).color || "#cccccc"} onChange={(e) => patchSelectedBlockData({ color: e.target.value })} /></label>
+                  <label>Width % <input type="range" min={10} max={100} value={(selectedBlock.data as DividerBlockData).widthPercent || 100} onChange={(e) => patchSelectedBlockData({ widthPercent: Number(e.target.value) })} /></label>
+                  <label>Alignment
+                    <select value={(selectedBlock.data as DividerBlockData).alignment || "center"} onChange={(e) => patchSelectedBlockData({ alignment: e.target.value as "left" | "center" | "right" })}>
+                      <option value="left">left</option>
+                      <option value="center">center</option>
+                      <option value="right">right</option>
+                    </select>
+                  </label>
+                  <label>Margin Top <input type="number" value={(selectedBlock.data as DividerBlockData).marginTop || 16} onChange={(e) => patchSelectedBlockData({ marginTop: Number(e.target.value) })} /></label>
+                  <label>Margin Bottom <input type="number" value={(selectedBlock.data as DividerBlockData).marginBottom || 16} onChange={(e) => patchSelectedBlockData({ marginBottom: Number(e.target.value) })} /></label>
+                  <label>Label <input value={(selectedBlock.data as DividerBlockData).label || ""} onChange={(e) => patchSelectedBlockData({ label: e.target.value })} placeholder="Optional label text" /></label>
+                  <label>Glow Intensity <input type="range" min={1} max={30} value={(selectedBlock.data as DividerBlockData).glowIntensity || 8} onChange={(e) => patchSelectedBlockData({ glowIntensity: Number(e.target.value) })} /></label>
+                </>
+              )}
+              {selectedBlock.type === "html" && (
+                <label>HTML <textarea rows={6} value={(selectedBlock.data as HtmlBlockData).html || ""} onChange={(e) => patchSelectedBlockData({ html: e.target.value })} /></label>
+              )}
+
+              <h3>Block Styles</h3>
+              <label>Background <input type="color" value={selectedBlock.styles?.backgroundColor || "#ffffff"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: e.target.value } }))} /></label>
+              <label>Background Image URL
+                <input value={selectedBlock.styles?.backgroundImage || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: e.target.value } }))} placeholder="/project/images/example.png" />
+              </label>
+              <label>Background Fit
+                <select value={selectedBlock.styles?.backgroundSize || "cover"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundSize: e.target.value as "cover" | "contain" | "fill" } }))}>
+                  <option value="cover">cover</option>
+                  <option value="contain">contain</option>
+                  <option value="fill">fill</option>
+                </select>
+              </label>
+              <label>Text Color <input type="color" value={selectedBlock.styles?.textColor || "#222222"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textColor: e.target.value } }))} /></label>
+              <label>Font Family
+                <input value={selectedBlock.styles?.fontFamily || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontFamily: e.target.value } }))} placeholder="e.g. Poppins" />
+              </label>
+              <label>Font Size <input type="number" value={selectedBlock.styles?.fontSize || 18} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontSize: Number(e.target.value) } }))} /></label>
+              <label>Font Weight <input type="number" value={selectedBlock.styles?.fontWeight || 500} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontWeight: Number(e.target.value) } }))} /></label>
+              <label>Text Align
+                <select value={selectedBlock.styles?.textAlign || "left"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textAlign: e.target.value as "left" | "center" | "right" } }))}>
+                  <option value="left">left</option>
+                  <option value="center">center</option>
+                  <option value="right">right</option>
+                </select>
+              </label>
+              <label>Padding <input type="number" value={selectedBlock.styles?.padding || 16} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), padding: Number(e.target.value) } }))} /></label>
+              <label>Margin <input type="number" value={selectedBlock.styles?.margin || 8} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), margin: Number(e.target.value) } }))} /></label>
+              <label>Border Radius <input type="number" value={selectedBlock.styles?.borderRadius || 12} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), borderRadius: Number(e.target.value) } }))} /></label>
+              <label>Shadow
+                <input value={selectedBlock.styles?.shadow || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), shadow: e.target.value } }))} placeholder="0 4px 12px rgba(0,0,0,.15)" />
+              </label>
+
+              </>}
+
+              <div ref={layoutSectionRef} tabIndex={-1} className={`layout-section ${layoutHighlight ? "layout-highlight" : ""}`}>
+              <h3>Layout</h3>
+              <p className="panel-status">Quick Resize</p>
+              <div className="button-row compact">
+                {QUICK_WIDTHS.map((mode) => <button key={mode} className={(selectedBlock.styles?.layout?.widthPercent || 100) === WIDTH_PRESETS[mode] ? "selected" : ""} onClick={() => applyQuickWidth(mode)}>{mode === "half" ? "Half" : mode === "third" ? "Third" : mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              </div>
+              <div className="button-row compact">
+                {QUICK_HEIGHTS.map((mode) => <button key={mode} className={(mode === "auto" && !selectedBlock.styles?.layout?.minHeightPx) || (mode === "short" && selectedBlock.styles?.layout?.minHeightPx === 140) || (mode === "medium" && selectedBlock.styles?.layout?.minHeightPx === 240) || (mode === "tall" && selectedBlock.styles?.layout?.minHeightPx === 380) ? "selected" : ""} onClick={() => applyQuickHeight(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
+              </div>
+              <div className="button-row compact">
+                {ASPECT_RATIOS.map((ratio) => <button key={ratio} className={(selectedBlock.styles?.layout?.aspectRatio || "free") === ratio ? "selected" : ""} onClick={() => applyQuickAspect(ratio)}>{ratio === "free" ? "Free" : ratio === "1:1" ? "Square" : ratio}</button>)}
+              </div>
+              <h4>Row</h4>
+              <p className="panel-status">Current row: {selectedBlock.styles?.layout?.rowId ? shortRowId(selectedBlock.styles.layout.rowId) : "Single"}. Select a block, click Join next block, then set both to 50%.</p>
+              <div className="button-row compact">
+                <button onClick={() => placeWithPrevious()}>Join previous block</button>
+                <button onClick={() => placeWithNext()}>Join next block</button>
+                <button onClick={() => startNewRow()}>Start new row</button>
+                <button onClick={() => removeFromRow()}>Leave row</button>
+              </div>
+              <label>Column Width
+                <select value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: "custom", widthPercent: Number(e.target.value) } } }))}>
+                  <option value={25}>25%</option>
+                  <option value={33}>33%</option>
+                  <option value={50}>50%</option>
+                  <option value={66}>66%</option>
+                  <option value={75}>75%</option>
+                  <option value={100}>100%</option>
+                </select>
+              </label>
+              <label>Width Mode
+                <select value={selectedBlock.styles?.layout?.widthMode || "full"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["widthMode"] } } }))}>
+                  <option value="full">full</option>
+                  <option value="wide">wide (75%)</option>
+                  <option value="medium">half (50%)</option>
+                  <option value="narrow">narrow (25%)</option>
+                  <option value="custom">custom %</option>
+                </select>
+              </label>
+              {selectedBlock.styles?.layout?.widthMode === "custom" && (
+                <label>Width % <input type="range" min={10} max={100} value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthPercent: Number(e.target.value) } } }))} /></label>
+              )}
+              <label>Max Width (px) <input type="number" value={selectedBlock.styles?.layout?.maxWidthPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), maxWidthPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 800" /></label>
+              <label>Min Height (px) <input type="number" value={selectedBlock.styles?.layout?.minHeightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), minHeightPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 200" /></label>
+              <label>Height Mode
+                <select value={selectedBlock.styles?.layout?.heightMode || "auto"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["heightMode"] } } }))}>
+                  <option value="auto">auto</option>
+                  <option value="fixed">fixed</option>
+                  <option value="aspect">aspect ratio</option>
+                </select>
+              </label>
+              {selectedBlock.styles?.layout?.heightMode === "fixed" && (
+                <label>Height (px) <input type="number" value={selectedBlock.styles?.layout?.heightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightPx: e.target.value ? Number(e.target.value) : undefined } } }))} /></label>
+              )}
+              <label>Aspect Ratio
+                <select value={selectedBlock.styles?.layout?.aspectRatio || "free"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: e.target.value } } }))}>
+                  {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label>Align Self
+                <select value={selectedBlock.styles?.layout?.alignSelf || "stretch"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), alignSelf: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["alignSelf"] } } }))}>
+                  <option value="left">left</option>
+                  <option value="center">center</option>
+                  <option value="right">right</option>
+                  <option value="stretch">stretch</option>
+                </select>
+              </label>
+              {resizeStatus && <p className="panel-status">{resizeStatus}</p>}
+              </div>
+
+              <h4>Effects</h4>
+              <div className="effect-list">
+                {EFFECTS.map((effect) => {
+                  const has = (selectedBlock.styles?.effects || []).includes(effect);
+                  return (
+                    <label key={effect}>
+                      <input type="checkbox" checked={has} onChange={(e) => { const current = new Set(selectedBlock.styles?.effects || []); if (e.target.checked) current.add(effect); else current.delete(effect); patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), effects: [...current] } })); }} />
+                      {effect}
+                    </label>
+                  );
+                })}
+              </div>
+              </>
+              )}
+            </div>
+          )}
+
+          {rightTab === "style" && selectedBlock && (
+            <div className="panel style-panel">
+              <div className="style-selected-summary">
+                <div className="style-selected-badge">
+                  Editing: {friendlySelectedLabel()}
+                </div>
+                <div className="style-debug">
+                  Block: {selectedBlock.type} · {selectedBlock.id} · Part: {String(selectedPart)}
+                </div>
+              </div>
+
+              <div className="style-section">
+                <h4>Edit Part</h4>
+                <div className="button-row compact part-selector">
+                  {(["container", "heading", "body", "button", "card", "cardHeading", "cardBody", "image"] as Array<keyof BlockPartStyles>).map((part) => (
+                    <button
+                      key={part}
+                      className={selectedPart === part ? "selected" : ""}
+                      onClick={() => setSelectedPart(part)}
+                      title={partLabels[part]}
+                    >
+                      {partLabels[part]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="style-section">
+                <h4>Visual Effects</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Background style:</span>
+                  {Object.entries(BACKGROUND_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
+                      title={`${preset.label}: ${preset.description}`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
+                  >None</button>
+                </div>
+                {(() => {
+                  const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
+                  const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
+                  return preset ? <p className="preset-description"><strong>{preset.label}:</strong> {preset.description}</p> : null;
+                })()}
+                <p className="hint">Preset descriptions shown when selected.</p>
+                <div className="preset-row">
+                  <span className="preset-label">Border style:</span>
+                  {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Shadow style:</span>
+                  {Object.entries(SHADOW_STYLE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ shadowStyle: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ shadowStyle: undefined })}
+                  >Default</button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Text effect:</span>
+                  {Object.entries(TEXT_EFFECT_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.textEffect === key ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ textEffect: key as any })}
+                      title={preset.label}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textEffect ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textEffect: undefined })}
+                  >None</button>
+                </div>
+                {selectedPart === "button" && (
+                  <div className="preset-row">
+                    <span className="preset-label">Button style:</span>
+                    {Object.entries(BUTTON_STYLE_PRESETS).map(([key, preset]) => (
+                      <button
+                        key={key}
+                        className={selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle === key ? "selected" : ""}
+                        onClick={() => updateSelectedPartStyle({ buttonStyle: key as any })}
+                        title={preset.label}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      className={!selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ buttonStyle: undefined })}
+                    >Default</button>
+                  </div>
+                )}
+              </div>
+
+
+              <div className="style-section">
+                <h4>Quick</h4>
+                <div className="button-row compact">
+                  <button onClick={() => updateSelectedPartStyle({ fontWeight: (selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? 400 : 700 })}>
+                    {(selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? "Unbold" : "Bold"}
+                  </button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "left" })}>Left</button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "center" })}>Center</button>
+                  <button onClick={() => updateSelectedPartStyle({ textAlign: "right" })}>Right</button>
+                  <button onClick={() => {
+                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
+                    updateSelectedPartStyle({ fontSize: Math.max(10, current - 2) });
+                  }}>Smaller</button>
+                  <button onClick={() => {
+                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
+                    updateSelectedPartStyle({ fontSize: current + 2 });
+                  }}>Bigger</button>
+                  <button onClick={() => resetSelectedPartToTheme()}>Reset part</button>
+                </div>
+              </div>
+
+              <div className="style-section">
+                <h4>Text</h4>
+                <label>Font
+                  <select
+                    value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""}
+                    onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })}
+                  >
+                    <option value="">Use theme font</option>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+                <div className="preset-row">
+                  <span className="preset-label">Size:</span>
+                  {Object.entries(SIZE_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ fontSize: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize !== undefined &&
+                      !Object.values(SIZE_PRESETS).includes(selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 0) ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ fontSize: 18 })}
+                  >
+                    Custom
+                  </button>
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Weight:</span>
+                  {Object.entries(WEIGHT_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ fontWeight: val })}
+                      title={`${name} (${val})`}
+                    >
+                      {name} <small>({val})</small>
+                    </button>
+                  ))}
+                </div>
+                {selectedBlock.styles?.parts?.[selectedPart]?.fontWeight !== undefined && (
+                  <p className="hint">Applied weight: {selectedBlock.styles.parts[selectedPart].fontWeight}. Not all fonts show every weight distinctly.</p>
+                )}
+                <div className="preset-row">
+                  <span className="preset-label">Color:</span>
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textColor ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textColor: undefined })}
+                    title="Use theme color"
+                  >Theme</button>
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ textColor: "transparent" })}
+                    title="Transparent text"
+                  >
+                    <span className="checkerboard-swatch" />
+                  </button>
+                  {selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" && (
+                    <span className="hint" style={{ color: "#c44" }}>Transparent text may disappear.</span>
+                  )}
+                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.textColor || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} className="color-input-inline" />
+                </div>
+              </div>
+
+              <div className="style-section">
+                <h4>Background</h4>
+                {(() => {
+                  const part = selectedBlock.styles?.parts?.[selectedPart];
+                  const bgValue = part?.backgroundColor;
+                  const bgImage = part?.backgroundImage;
+                  let bgMode: "theme" | "solid" | "gradient" | "image" | "transparent" = "theme";
+                  if (bgImage) bgMode = "image";
+                  else if (bgValue === "transparent") bgMode = "transparent";
+                  else if (bgValue?.includes("gradient")) bgMode = "gradient";
+                  else if (bgValue) bgMode = "solid";
+
+                  return (
+                    <>
+                      <div className="preset-row">
+                        <span className="preset-label">Type:</span>
+                        <button
+                          className={bgMode === "theme" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: undefined, backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Theme</button>
+                        <button
+                          className={bgMode === "solid" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: "#ffffff", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Solid</button>
+                        <button
+                          className={bgMode === "gradient" ? "selected" : ""}
+                          onClick={() => {
+                            const preset = GRADIENT_PRESETS["Sunset"];
+                            applyGradientToPart(preset.colors, preset.direction, preset.type);
+                          }}
+                        >Gradient</button>
+                        <button
+                          className={bgMode === "image" ? "selected" : ""}
+                          onClick={() => openImageManager("part-bg")}
+                        >Image</button>
+                        <button
+                          className={bgMode === "transparent" ? "selected" : ""}
+                          onClick={() => updateSelectedPartStyle({ backgroundColor: "transparent", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
+                        >Transparent</button>
+                      </div>
+
+                      {bgMode === "solid" && (
+                        <label>Custom Color
+                          <input type="color" value={bgValue || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
+                        </label>
+                      )}
+
+                      {bgMode === "transparent" && (
+                        <div className="preset-row" style={{ alignItems: "center", gap: 8 }}>
+                          <span className="checkerboard-swatch" />
+                          <span className="hint">Transparent — content behind this block shows through.</span>
+                        </div>
+                      )}
+
+                      {bgMode === "gradient" && (() => {
+                        const grad = readGradientFromPart(part);
+                        const hasThird = grad.colors.length >= 3;
+                        return (
+                          <div className="gradient-builder">
+                            <div className="preset-row">
+                              <span className="preset-label">Preset:</span>
+                              {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => {
+                                const match = grad.colors.length === preset.colors.length && grad.colors.every((c, i) => c.toLowerCase() === preset.colors[i].toLowerCase());
+                                return (
+                                  <button
+                                    key={name}
+                                    className={match ? "selected" : ""}
+                                    onClick={() => applyGradientToPart(preset.colors, preset.direction, preset.type)}
+                                  >
+                                    {name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="preset-row">
+                              {grad.colors.map((c, i) => (
+                                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <span className="preset-label">Color {i + 1}:</span>
+                                  <input
+                                    type="color"
+                                    value={c}
+                                    onChange={(e) => {
+                                      const next = [...grad.colors];
+                                      next[i] = e.target.value;
+                                      applyGradientToPart(next, grad.direction, grad.type);
+                                    }}
+                                    className="color-input-inline"
+                                  />
+                                </span>
+                              ))}
+                              {!hasThird && (
+                                <button onClick={() => applyGradientToPart([...grad.colors, "#ffffff"], grad.direction, grad.type)}>+ Add 3rd</button>
+                              )}
+                              {hasThird && (
+                                <button onClick={() => applyGradientToPart(grad.colors.slice(0, 2), grad.direction, grad.type)}>− 2 colors</button>
+                              )}
+                            </div>
+                            <div className="preset-row">
+                              <span className="preset-label">Direction:</span>
+                              {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => {
+                                const isRadial = val.startsWith("circle");
+                                const selected = grad.direction === val && (grad.type === "radial") === isRadial;
+                                return (
+                                  <button
+                                    key={name}
+                                    className={selected ? "selected" : ""}
+                                    onClick={() => applyGradientToPart(grad.colors, val, isRadial ? "radial" : "linear")}
+                                  >
+                                    {name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="gradient-preview" style={{ background: part?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
+                          </div>
+                        );
+                      })()}
+
+                      {bgMode === "image" && (
+                        <div>
+                          <p className="hint">Image: {bgImage?.slice(0, 60)}...</p>
+                          <div className="button-row compact">
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "cover" })}>Cover</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "contain" })}>Contain</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "fill" })}>Stretch</button>
+                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "repeat" })}>Tile</button>
+                          </div>
+                          <label>Overlay opacity
+                            <input type="range" min={0} max={100} value={Math.round((part?.opacity || 1) * 100)} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) / 100 })} />
+                          </label>
+                          <button onClick={() => openImageManager("part-bg")}>Change image</button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="style-section">
+                <h4>Box & Spacing</h4>
+                <div className="preset-row">
+                  <span className="preset-label">Padding:</span>
+                  {Object.entries(PADDING_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.padding === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ padding: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Margin:</span>
+                  {Object.entries(MARGIN_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.margin === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ margin: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Border:</span>
+                  {Object.entries(BORDER_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderWidth: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Radius:</span>
+                  {Object.entries(RADIUS_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ borderRadius: val })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="preset-row">
+                  <span className="preset-label">Shadow:</span>
+                  {Object.entries(SHADOW_PRESETS).map(([name, val]) => (
+                    <button
+                      key={name}
+                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadow === val ? "selected" : ""}
+                      onClick={() => updateSelectedPartStyle({ shadow: val || undefined })}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="preset-row">
+                  <span className="preset-label">Border color:</span>
+                  <button
+                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderColor ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderColor: undefined })}
+                    title="Use theme border"
+                  >Theme</button>
+                  <button
+                    className={selectedBlock.styles?.parts?.[selectedPart]?.borderColor === "transparent" ? "selected" : ""}
+                    onClick={() => updateSelectedPartStyle({ borderColor: "transparent" })}
+                    title="Transparent border"
+                  >
+                    <span className="checkerboard-swatch" />
+                  </button>
+                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.borderColor || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} className="color-input-inline" />
+                </div>
+              </div>
+
+              <div className="style-section">
+                <button className="accordion-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
+                  Advanced {advancedOpen ? "▲" : "▼"}
+                </button>
+                {advancedOpen && (
+                  <div className="advanced-fields">
+                    <label>Background color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor as string) || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} /></label>
+                    <label>Text color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.textColor as string) || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} /></label>
+                    <label>Font family <input value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""} onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })} placeholder="Use theme font when empty" /></label>
+                    <label>Font size <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontSize || ""} onChange={(e) => updateSelectedPartStyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Font weight <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || ""} onChange={(e) => updateSelectedPartStyle({ fontWeight: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Padding <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.padding ?? ""} onChange={(e) => updateSelectedPartStyle({ padding: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Margin <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.margin ?? ""} onChange={(e) => updateSelectedPartStyle({ margin: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Border color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.borderColor as string) || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} /></label>
+                    <label>Border width <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth ?? ""} onChange={(e) => updateSelectedPartStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Border radius <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius ?? ""} onChange={(e) => updateSelectedPartStyle({ borderRadius: e.target.value ? Number(e.target.value) : undefined })} /></label>
+                    <label>Shadow <input value={selectedBlock.styles?.parts?.[selectedPart]?.shadow || ""} onChange={(e) => updateSelectedPartStyle({ shadow: e.target.value || undefined })} placeholder="0 8px 24px rgba(0,0,0,.2)" /></label>
+                    <label>Background image URL <input value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage || ""} onChange={(e) => updateSelectedPartStyle({ backgroundImage: e.target.value || undefined })} placeholder="/project/images/example.png" /></label>
+                    <label>Background fit
+                      <select value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundFit || "cover"} onChange={(e) => updateSelectedPartStyle({ backgroundFit: e.target.value as PartStyle["backgroundFit"] })}>
+                        <option value="cover">cover</option>
+                        <option value="contain">contain</option>
+                        <option value="fill">fill</option>
+                        <option value="repeat">repeat</option>
+                      </select>
+                    </label>
+                    <label>Opacity <input type="number" min={0} max={1} step={0.1} value={selectedBlock.styles?.parts?.[selectedPart]?.opacity ?? 1} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) })} /></label>
+                  </div>
+                )}
+              </div>
+
+              <div className="style-section global-style-section">
+                <h4>Global Site Style</h4>
+                <label>Theme
+                  <select value={selectedThemeName} onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedThemeName(next);
+                    const idx = themePresets.findIndex((t) => t.name === next);
+                    if (idx >= 0) applyTheme(idx);
+                  }}>
+                    {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
+                  </select>
+                </label>
+                <div className="button-row compact">
+                  <button onClick={() => {
+                    if (window.confirm("Reset block colors/fonts to the selected theme? Custom block colors may be replaced.")) {
+                      applyThemeToAllBlocks();
+                    }
+                  }}>Reset blocks to this theme</button>
+                  <button onClick={() => resetBlockColorsToTheme()}>Reset selected block colors</button>
+                </div>
+                <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
+                <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
+                <label>Block Background <input type="color" value={project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("blockBackground", e.target.value)} /></label>
+                <label>Card Background <input type="color" value={project.globalStyles.colors.cardBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("cardBackground", e.target.value)} /></label>
+                <label>Heading Color <input type="color" value={project.globalStyles.colors.headingColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("headingColor", e.target.value)} /></label>
+                <label>Body Text Color <input type="color" value={project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("bodyTextColor", e.target.value)} /></label>
+                <label>Accent Color <input type="color" value={project.globalStyles.colors.accentColor || project.globalStyles.colors.accent} onChange={(e) => updateGlobalColor("accentColor", e.target.value)} /></label>
+                <label>Heading Font
+                  <select value={project.globalStyles.headingFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: e.target.value } }); setDirty(true); }}>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+                <label>Body Font
+                  <select value={project.globalStyles.bodyFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, bodyFont: e.target.value } }); setDirty(true); }}>
+                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="button-row compact">
+                <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy style</button>
+                <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style</button>
+              </div>
+            </div>
+          )}
+
+          {rightTab === "images" && (
+            <div className="panel image-manager-panel">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Image Manager</h3>
+              <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
+            </div>
+              <p className="panel-status">Upload, manage, and apply images</p>
+
+              <div className="image-manager-upload">
+                <label>Upload image
+                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
+                </label>
+                {uploadingImage && <span className="hint">Uploading...</span>}
+                {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
+              </div>
+
+              <div className="image-manager-folder">
+                <h4>Project Photo Folder</h4>
+                <label>Folder path
+                  <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
+                </label>
+                <p className="hint">Photos uploaded here. Default: project/images</p>
+                <div className="button-row compact">
+                  <button onClick={() => void savePhotoFolder()}>Save folder</button>
+                  <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+                </div>
+              </div>
+
+              <div className="image-manager-gallery">
+                <h4>Project Images ({uploadedImages.length})</h4>
+                {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
+                <div className="image-grid">
+                  {uploadedImages.map((img) => (
+                    <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
+                      <img
+                        src={img.url}
+                        alt={img.name}
+                        loading="lazy"
+                        onError={(e) => {
+                          setBrokenImages((prev) => new Set(prev).add(img.url));
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                      {brokenImages.has(img.url) && (
+                        <div className="image-fallback">
+                          <div className="image-fallback-icon">🖼️</div>
+                          <div className="image-fallback-name">{img.name}</div>
+                        </div>
+                      )}
+                      <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {renderImageManagerActions(false)}
+            </div>
+          )}
+
+          {rightTab === "ai" && (
+            <div className="panel">
+              <h3>AI Chat</h3>
+              <p className="panel-status">
+                <strong>AI panel:</strong> {(() => { const t = computeAiTarget(); if (t.kind === "site-header") return "site header"; if (t.kind === "block") return `block ${t.label}`; return "none"; })()}
+              </p>
+              <div className="quick-actions">
+                <button onClick={() => void quickRewrite("rewrite")}>Rewrite</button>
+                <button onClick={() => void quickRewrite("shorten")}>Shorten</button>
+                <button onClick={() => void quickRewrite("lengthen")}>Lengthen</button>
+                <button onClick={() => void quickRewrite("tone")}>Tone</button>
+              </div>
+              <div className="chat-log">
+                {chatHistory.map((msg, i) => (
+                  <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
+                ))}
+              </div>
+              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" />
+              <button onClick={() => void chat()}>Send</button>
+
+              <h3>Image Generator</h3>
+              <label>
+                Prompt
+                <textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} rows={3} placeholder="e.g. aerial view of a catfish farm at golden hour" />
+              </label>
+              <label>
+                Optional Provider Size Override
+                <select value={providerSizeOverride} onChange={(e) => setProviderSizeOverride(e.target.value)}>
+                  <option value="">Auto (recommended)</option>
+                  <option value="1024x1024">1024 x 1024</option>
+                  <option value="1024x1536">1024 x 1536</option>
+                  <option value="1536x1024">1536 x 1024</option>
+                </select>
+              </label>
+              <button onClick={() => void generateImage()}>Generate image for this block ({blockTypeForTarget(selectedBlock)})</button>
+              {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
+              {imageSizeDecision && (
+                <div className="image-debug">
+                  <p><strong>Target block:</strong> {blockTypeForTarget(selectedBlock)}</p>
+                  <p><strong>Provider size:</strong> {imageSizeDecision.providerSize}</p>
+                  <p><strong>Final output:</strong> {imageSizeDecision.outputWidth} x {imageSizeDecision.outputHeight}</p>
+                  <p><strong>Crop mode:</strong> {imageSizeDecision.cropMode}</p>
+                  {imageSizeDecision.warnings.length > 0 && <p><strong>Warnings:</strong> {imageSizeDecision.warnings.join(" | ")}</p>}
+                </div>
+              )}
+              {lastGeneratedImage && <img src={lastGeneratedImage} alt="Last generated" className="block-image" />}
+
+              <h3>Edit Uploaded Photo</h3>
+              <label>
+                Upload source photo
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
+              </label>
+              <label>
+                Source uploaded image
+                <select value={selectedUploadImage} onChange={(e) => setSelectedUploadImage(e.target.value)}>
+                  {uploadedImages.length === 0 ? <option value="">No uploaded images</option> : uploadedImages.map((img) => <option key={img.url} value={img.url}>{img.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Edit type
+                <select value={photoEditType} onChange={(e) => setPhotoEditType(e.target.value)}>
+                  <option value="enhance">Enhance photo</option>
+                  <option value="black-white">Black &amp; white</option>
+                  <option value="color-pop">Color pop</option>
+                  <option value="cleanup">Clean up</option>
+                  <option value="crop-fit">Crop/fit to selected block</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>
+                Instruction
+                <textarea value={photoEditInstruction} onChange={(e) => setPhotoEditInstruction(e.target.value)} rows={3} placeholder="Optional instruction for edit." />
+              </label>
+              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>{uploadingImage ? "Uploading..." : "Apply photo edit"}</button>
+              {photoEditStatus && <p><strong>Photo edit status:</strong> {photoEditStatus}</p>}
+              {lastEditedImage && <img src={lastEditedImage} alt="Last edited" className="block-image" />}
+            </div>
+          )}
+
+          {rightTab === "status" && (
+            <div className="panel">
+              <h3>Status</h3>
+              <p className="panel-status">
+                <strong>Status panel:</strong> save state {withSavedStatusText(status, dirty)}
+              </p>
+              <p><strong>API:</strong> {status}</p>
+              <p><strong>Selected Block:</strong> {selectedBlock?.id || "none"}</p>
+              <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
+              <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
+              <p><strong>Project source:</strong> {loadedProjectSource}</p>
+              {loadedProjectUpdatedAt && <p><strong>Loaded project mtime:</strong> {new Date(loadedProjectUpdatedAt).toLocaleString()}</p>}
+              {lastLoadedAt && <p><strong>Last loaded:</strong> {new Date(lastLoadedAt).toLocaleString()}</p>}
+              {lastSavedAt && <p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p>}
+              {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
+              <p><strong>Last action:</strong> {lastAction}</p>
+              {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
+              {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
+              <p><strong>Publish:</strong> dry-run (live disabled)</p>
+
+              <h4>Provider Status</h4>
+              {providerStatus.length === 0 && <p>Loading providers...</p>}
+              {providerStatus.map((p) => (
+                <div key={p.name} className={`provider-card provider-${p.status}`}>
+                  <strong>{p.name}</strong>
+                  <span className="provider-badge">{p.status}</span>
+                  <p>{p.message}</p>
+                </div>
+              ))}
+
+              <h4>Image API Keys</h4>
+              <p className="hint">Keys are stored locally, not in project.json.</p>
+              <label>Image Generation API Key
+                <input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." />
+              </label>
+              <label>Image Analysis API Key
+                <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
+              </label>
+              <div className="button-row">
+                <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
+                <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
+                <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
+              </div>
+              {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
+
+              <h4>Navigation Editor</h4>
+              {project.site.nav.map((item, i) => (
+                <div key={item.id} className="nav-edit-row">
+                  <input value={item.label} onChange={(e) => updateNav(i, { label: e.target.value })} />
+                  <input value={item.href} onChange={(e) => updateNav(i, { href: e.target.value })} />
+                  <button onClick={() => moveNav(i, "up")}>↑</button>
+                  <button onClick={() => moveNav(i, "down")}>↓</button>
+                  <button onClick={() => removeNav(i)}>X</button>
+                </div>
+              ))}
+              <button onClick={addNav}>Add Nav Item</button>
+
+              <h4>Deploy Settings</h4>
+              <label>Method
+                <select value={project.deploy.method} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, method: e.target.value as SBuildProject["deploy"]["method"] } }); setDirty(true); }}>
+                  <option value="dry-run">dry-run</option>
+                  <option value="local-web-root">local-web-root</option>
+                  <option value="git">git</option>
+                </select>
+              </label>
+              <label>Web Root
+                <input value={project.deploy.webRoot} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, webRoot: e.target.value } }); setDirty(true); }} />
+              </label>
+              <label>GitHub Repo URL
+                <input value={project.deploy.githubRepo || ""} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, githubRepo: e.target.value } }); setDirty(true); }} placeholder="https://github.com/org/repo" />
+              </label>
+              <label>Token Placeholder <input value="" placeholder="not stored in prototype" readOnly /></label>
+              <div className="button-row">
+                <button onClick={async () => setStatus(JSON.stringify(await fetchJson("/api/backup", { method: "POST", body: "{}" })))}>Backup</button>
+                <button onClick={async () => setStatus("Use /api/restore with backup path")}>Restore</button>
+              </div>
+            </div>
+          )}
+    </>;
+  }
+
   if (!project || !selectedPage) {
     return <div className="loading">Loading sBuild...</div>;
   }
@@ -2470,11 +3487,9 @@ export function App() {
           )}
         </main>
 
-        <aside className={`right-drawer ${isMobileViewport ? (rightDrawerMobileOpen ? "mobile-open" : "mobile-closed") : ""}`}>
+        {!isMobileViewport && (
+        <aside className="right-drawer">
           <div className="right-drawer-header">
-            {isMobileViewport && (
-              <button className="mobile-editor-x-close" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">✕</button>
-            )}
             <div className="mobile-drawer-tab-row">
               <div className="tabs compact-tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
@@ -2488,1032 +3503,38 @@ export function App() {
             <p className="panel-status right-target-summary">{targetSummary()}</p>
           </div>
           <div className="right-drawer-content">
-
-          {rightTab === "properties" && (selectedBlock || selectedSitePart) && (
-            <div className="panel">
-              {selectedSitePart && (() => {
-                if (selectedSitePart === "site-header") return (
-                  <div className="site-header-edit">
-                    <h4>Editing Site Header Container</h4>
-                    <p className="hint">Style the whole site header container — background, padding, border.</p>
-                    <label>Site title
-                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
-                    </label>
-                    <h4 style={{ marginTop: 16 }}>Navigation Links</h4>
-                    {project.site.nav.map((item, i) => (
-                      <div key={item.id} className="nav-edit-row">
-                        <input value={item.label} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
-                        <input value={item.href} onChange={(e) => { const nav = [...project.site.nav]; nav[i] = { ...nav[i], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }} />
-                        <button onClick={() => removeNav(i)}>X</button>
-                      </div>
-                    ))}
-                    <button onClick={addNav} style={{ marginTop: 8 }}>Add Nav Link</button>
-                  </div>
-                );
-                if (selectedSitePart === "site-title") return (
-                  <div className="site-header-edit">
-                    <h4>Editing Site Header</h4>
-                    <label>Site title
-                      <input value={project.site.siteName} onChange={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.target.value } }); setDirty(true); setLastAction("edit-site-title"); }} />
-                    </label>
-                  </div>
-                );
-                if (selectedSitePart === "nav" && selectedNavIndex !== null && selectedNavIndex >= 0 && selectedNavIndex < project.site.nav.length) {
-                  const navItem = project.site.nav[selectedNavIndex];
-                  return (
-                    <div className="site-header-edit">
-                      <h4>Editing Site Header → Nav link {selectedNavIndex + 1}</h4>
-                      <label>Nav label
-                        <input value={navItem.label} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], label: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-label"); }} />
-                      </label>
-                      <label>Nav href/anchor
-                        <input value={navItem.href} onChange={(e) => { const nav = [...project.site.nav]; nav[selectedNavIndex] = { ...nav[selectedNavIndex], href: e.target.value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); setLastAction("edit-nav-href"); }} />
-                      </label>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              {selectedBlock && (
-              <>
-              <h3>Block Fields</h3>
-              <div className="button-row">
-                <button className={propertiesTab === "fields" ? "selected" : ""} onClick={() => setPropertiesTab("fields")}>Fields</button>
-                <button className={propertiesTab === "resize" ? "selected" : ""} onClick={() => setPropertiesTab("resize")}>Resize</button>
-              </div>
-              <p className="panel-status">
-                <strong>Properties debug:</strong> {selectedBlock.type} · {selectedBlock.id}
-              </p>
-
-              {propertiesTab === "fields" && <>
-              {/* Block-specific fields */}
-              {selectedBlock.type === "hero" && (
-                <>
-                  <label>Heading <input value={(selectedBlock.data as HeroBlockData).heading || ""} onChange={(e) => patchSelectedBlockData({ heading: e.target.value })} /></label>
-                  <label>Subheading <input value={(selectedBlock.data as HeroBlockData).subheading || ""} onChange={(e) => patchSelectedBlockData({ subheading: e.target.value })} /></label>
-                  <label>CTA Label <input value={(selectedBlock.data as HeroBlockData).ctaLabel || ""} onChange={(e) => patchSelectedBlockData({ ctaLabel: e.target.value })} /></label>
-                  <label>CTA Link <input value={(selectedBlock.data as HeroBlockData).ctaHref || ""} onChange={(e) => patchSelectedBlockData({ ctaHref: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "text" && (
-                <>
-                  <label>Title <input value={(selectedBlock.data as TextBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
-                  <label>Body <textarea rows={4} value={(selectedBlock.data as TextBlockData).body || ""} onChange={(e) => patchSelectedBlockData({ body: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "image" && (
-                <>
-                  <label>Image Path <input value={(selectedBlock.data as ImageBlockData).src || ""} onChange={(e) => patchSelectedBlockData({ src: e.target.value })} /></label>
-                  <label>Alt Text <input value={(selectedBlock.data as ImageBlockData).alt || ""} onChange={(e) => patchSelectedBlockData({ alt: e.target.value })} /></label>
-                  <label>Caption <input value={(selectedBlock.data as ImageBlockData).caption || ""} onChange={(e) => patchSelectedBlockData({ caption: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "cards" && (
-                <>
-                  <label>Section Title <input value={(selectedBlock.data as CardsBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
-                  {(selectedBlock.data as CardsBlockData).cards.map((card, i) => (
-                    <div key={card.id} className="nested-row">
-                      <label>Card {i + 1} Title <input value={card.title} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], title: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
-                      <label>Card {i + 1} Body <input value={card.body} onChange={(e) => { const cards = [...(selectedBlock.data as CardsBlockData).cards]; cards[i] = { ...cards[i], body: e.target.value }; patchSelectedBlockData({ cards }); }} /></label>
-                    </div>
-                  ))}
-                </>
-              )}
-              {selectedBlock.type === "hours" && (
-                <>
-                  <label>Section Title <input value={(selectedBlock.data as HoursBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
-                  {(selectedBlock.data as HoursBlockData).rows.map((row, i) => (
-                    <div key={`${row.day}-${i}`} className="nested-row">
-                      <label>Day <input value={row.day} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], day: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
-                      <label>Open <input value={row.open} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], open: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
-                      <label>Close <input value={row.close} onChange={(e) => { const rows = [...(selectedBlock.data as HoursBlockData).rows]; rows[i] = { ...rows[i], close: e.target.value }; patchSelectedBlockData({ rows }); }} /></label>
-                    </div>
-                  ))}
-                </>
-              )}
-              {selectedBlock.type === "gallery" && (
-                <>
-                  <label>Section Title <input value={(selectedBlock.data as GalleryBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
-                  {(selectedBlock.data as GalleryBlockData).images.map((img, i) => (
-                    <div key={img.id} className="nested-row">
-                      <label>Image {i + 1} Path <input value={img.src || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], src: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
-                      <label>Image {i + 1} Alt <input value={img.alt || ""} onChange={(e) => { const images = [...(selectedBlock.data as GalleryBlockData).images]; images[i] = { ...images[i], alt: e.target.value }; patchSelectedBlockData({ images }); }} /></label>
-                    </div>
-                  ))}
-                </>
-              )}
-              {selectedBlock.type === "contact" && (
-                <>
-                  <label>Title <input value={(selectedBlock.data as ContactBlockData).title || ""} onChange={(e) => patchSelectedBlockData({ title: e.target.value })} /></label>
-                  <label>Phone <input value={(selectedBlock.data as ContactBlockData).phone || ""} onChange={(e) => patchSelectedBlockData({ phone: e.target.value })} /></label>
-                  <label>Email <input value={(selectedBlock.data as ContactBlockData).email || ""} onChange={(e) => patchSelectedBlockData({ email: e.target.value })} /></label>
-                  <label>Address <input value={(selectedBlock.data as ContactBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "testimonial" && (
-                <>
-                  <label>Quote <textarea rows={3} value={(selectedBlock.data as TestimonialBlockData).quote || ""} onChange={(e) => patchSelectedBlockData({ quote: e.target.value })} /></label>
-                  <label>Author <input value={(selectedBlock.data as TestimonialBlockData).author || ""} onChange={(e) => patchSelectedBlockData({ author: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "map" && (
-                <>
-                  <label>Address <input value={(selectedBlock.data as MapBlockData).address || ""} onChange={(e) => patchSelectedBlockData({ address: e.target.value })} /></label>
-                  <label>Embed URL <input value={(selectedBlock.data as MapBlockData).embedUrl || ""} onChange={(e) => patchSelectedBlockData({ embedUrl: e.target.value })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "marquee" && (
-                <label>Marquee Text <input value={(selectedBlock.data as MarqueeBlockData).text || ""} onChange={(e) => patchSelectedBlockData({ text: e.target.value })} /></label>
-              )}
-              {selectedBlock.type === "spacer" && (
-                <label>Spacer Height <input type="number" value={(selectedBlock.data as SpacerBlockData).height || 36} onChange={(e) => patchSelectedBlockData({ height: Number(e.target.value) })} /></label>
-              )}
-              {selectedBlock.type === "divider" && (
-                <>
-                  <label>Divider Style
-                    <select value={(selectedBlock.data as DividerBlockData).style || "solid"} onChange={(e) => patchSelectedBlockData({ style: e.target.value as DividerStyle })}>
-                      {DIVIDER_STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </label>
-                  <label>Thickness <input type="number" value={(selectedBlock.data as DividerBlockData).thickness || 2} onChange={(e) => patchSelectedBlockData({ thickness: Number(e.target.value) })} /></label>
-                  <label>Color <input type="color" value={(selectedBlock.data as DividerBlockData).color || "#cccccc"} onChange={(e) => patchSelectedBlockData({ color: e.target.value })} /></label>
-                  <label>Width % <input type="range" min={10} max={100} value={(selectedBlock.data as DividerBlockData).widthPercent || 100} onChange={(e) => patchSelectedBlockData({ widthPercent: Number(e.target.value) })} /></label>
-                  <label>Alignment
-                    <select value={(selectedBlock.data as DividerBlockData).alignment || "center"} onChange={(e) => patchSelectedBlockData({ alignment: e.target.value as "left" | "center" | "right" })}>
-                      <option value="left">left</option>
-                      <option value="center">center</option>
-                      <option value="right">right</option>
-                    </select>
-                  </label>
-                  <label>Margin Top <input type="number" value={(selectedBlock.data as DividerBlockData).marginTop || 16} onChange={(e) => patchSelectedBlockData({ marginTop: Number(e.target.value) })} /></label>
-                  <label>Margin Bottom <input type="number" value={(selectedBlock.data as DividerBlockData).marginBottom || 16} onChange={(e) => patchSelectedBlockData({ marginBottom: Number(e.target.value) })} /></label>
-                  <label>Label <input value={(selectedBlock.data as DividerBlockData).label || ""} onChange={(e) => patchSelectedBlockData({ label: e.target.value })} placeholder="Optional label text" /></label>
-                  <label>Glow Intensity <input type="range" min={1} max={30} value={(selectedBlock.data as DividerBlockData).glowIntensity || 8} onChange={(e) => patchSelectedBlockData({ glowIntensity: Number(e.target.value) })} /></label>
-                </>
-              )}
-              {selectedBlock.type === "html" && (
-                <label>HTML <textarea rows={6} value={(selectedBlock.data as HtmlBlockData).html || ""} onChange={(e) => patchSelectedBlockData({ html: e.target.value })} /></label>
-              )}
-
-              <h3>Block Styles</h3>
-              <label>Background <input type="color" value={selectedBlock.styles?.backgroundColor || "#ffffff"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundColor: e.target.value } }))} /></label>
-              <label>Background Image URL
-                <input value={selectedBlock.styles?.backgroundImage || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: e.target.value } }))} placeholder="/project/images/example.png" />
-              </label>
-              <label>Background Fit
-                <select value={selectedBlock.styles?.backgroundSize || "cover"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundSize: e.target.value as "cover" | "contain" | "fill" } }))}>
-                  <option value="cover">cover</option>
-                  <option value="contain">contain</option>
-                  <option value="fill">fill</option>
-                </select>
-              </label>
-              <label>Text Color <input type="color" value={selectedBlock.styles?.textColor || "#222222"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textColor: e.target.value } }))} /></label>
-              <label>Font Family
-                <input value={selectedBlock.styles?.fontFamily || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontFamily: e.target.value } }))} placeholder="e.g. Poppins" />
-              </label>
-              <label>Font Size <input type="number" value={selectedBlock.styles?.fontSize || 18} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontSize: Number(e.target.value) } }))} /></label>
-              <label>Font Weight <input type="number" value={selectedBlock.styles?.fontWeight || 500} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), fontWeight: Number(e.target.value) } }))} /></label>
-              <label>Text Align
-                <select value={selectedBlock.styles?.textAlign || "left"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), textAlign: e.target.value as "left" | "center" | "right" } }))}>
-                  <option value="left">left</option>
-                  <option value="center">center</option>
-                  <option value="right">right</option>
-                </select>
-              </label>
-              <label>Padding <input type="number" value={selectedBlock.styles?.padding || 16} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), padding: Number(e.target.value) } }))} /></label>
-              <label>Margin <input type="number" value={selectedBlock.styles?.margin || 8} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), margin: Number(e.target.value) } }))} /></label>
-              <label>Border Radius <input type="number" value={selectedBlock.styles?.borderRadius || 12} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), borderRadius: Number(e.target.value) } }))} /></label>
-              <label>Shadow
-                <input value={selectedBlock.styles?.shadow || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), shadow: e.target.value } }))} placeholder="0 4px 12px rgba(0,0,0,.15)" />
-              </label>
-
-              </>}
-
-              <div ref={layoutSectionRef} tabIndex={-1} className={`layout-section ${layoutHighlight ? "layout-highlight" : ""}`}>
-              <h3>Layout</h3>
-              <p className="panel-status">Quick Resize</p>
-              <div className="button-row compact">
-                {QUICK_WIDTHS.map((mode) => <button key={mode} className={(selectedBlock.styles?.layout?.widthPercent || 100) === WIDTH_PRESETS[mode] ? "selected" : ""} onClick={() => applyQuickWidth(mode)}>{mode === "half" ? "Half" : mode === "third" ? "Third" : mode[0].toUpperCase() + mode.slice(1)}</button>)}
-              </div>
-              <div className="button-row compact">
-                {QUICK_HEIGHTS.map((mode) => <button key={mode} className={(mode === "auto" && !selectedBlock.styles?.layout?.minHeightPx) || (mode === "short" && selectedBlock.styles?.layout?.minHeightPx === 140) || (mode === "medium" && selectedBlock.styles?.layout?.minHeightPx === 240) || (mode === "tall" && selectedBlock.styles?.layout?.minHeightPx === 380) ? "selected" : ""} onClick={() => applyQuickHeight(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}
-              </div>
-              <div className="button-row compact">
-                {ASPECT_RATIOS.map((ratio) => <button key={ratio} className={(selectedBlock.styles?.layout?.aspectRatio || "free") === ratio ? "selected" : ""} onClick={() => applyQuickAspect(ratio)}>{ratio === "free" ? "Free" : ratio === "1:1" ? "Square" : ratio}</button>)}
-              </div>
-              <h4>Row</h4>
-              <p className="panel-status">Current row: {selectedBlock.styles?.layout?.rowId ? shortRowId(selectedBlock.styles.layout.rowId) : "Single"}. Select a block, click Join next block, then set both to 50%.</p>
-              <div className="button-row compact">
-                <button onClick={() => placeWithPrevious()}>Join previous block</button>
-                <button onClick={() => placeWithNext()}>Join next block</button>
-                <button onClick={() => startNewRow()}>Start new row</button>
-                <button onClick={() => removeFromRow()}>Leave row</button>
-              </div>
-              <label>Column Width
-                <select value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: "custom", widthPercent: Number(e.target.value) } } }))}>
-                  <option value={25}>25%</option>
-                  <option value={33}>33%</option>
-                  <option value={50}>50%</option>
-                  <option value={66}>66%</option>
-                  <option value={75}>75%</option>
-                  <option value={100}>100%</option>
-                </select>
-              </label>
-              <label>Width Mode
-                <select value={selectedBlock.styles?.layout?.widthMode || "full"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["widthMode"] } } }))}>
-                  <option value="full">full</option>
-                  <option value="wide">wide (75%)</option>
-                  <option value="medium">half (50%)</option>
-                  <option value="narrow">narrow (25%)</option>
-                  <option value="custom">custom %</option>
-                </select>
-              </label>
-              {selectedBlock.styles?.layout?.widthMode === "custom" && (
-                <label>Width % <input type="range" min={10} max={100} value={selectedBlock.styles?.layout?.widthPercent || 100} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), widthPercent: Number(e.target.value) } } }))} /></label>
-              )}
-              <label>Max Width (px) <input type="number" value={selectedBlock.styles?.layout?.maxWidthPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), maxWidthPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 800" /></label>
-              <label>Min Height (px) <input type="number" value={selectedBlock.styles?.layout?.minHeightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), minHeightPx: e.target.value ? Number(e.target.value) : undefined } } }))} placeholder="e.g. 200" /></label>
-              <label>Height Mode
-                <select value={selectedBlock.styles?.layout?.heightMode || "auto"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightMode: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["heightMode"] } } }))}>
-                  <option value="auto">auto</option>
-                  <option value="fixed">fixed</option>
-                  <option value="aspect">aspect ratio</option>
-                </select>
-              </label>
-              {selectedBlock.styles?.layout?.heightMode === "fixed" && (
-                <label>Height (px) <input type="number" value={selectedBlock.styles?.layout?.heightPx || ""} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), heightPx: e.target.value ? Number(e.target.value) : undefined } } }))} /></label>
-              )}
-              <label>Aspect Ratio
-                <select value={selectedBlock.styles?.layout?.aspectRatio || "free"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), aspectRatio: e.target.value } } }))}>
-                  {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </label>
-              <label>Align Self
-                <select value={selectedBlock.styles?.layout?.alignSelf || "stretch"} onChange={(e) => patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), layout: { ...(b.styles?.layout || {}), alignSelf: e.target.value as NonNullable<NonNullable<Block["styles"]>["layout"]>["alignSelf"] } } }))}>
-                  <option value="left">left</option>
-                  <option value="center">center</option>
-                  <option value="right">right</option>
-                  <option value="stretch">stretch</option>
-                </select>
-              </label>
-              {resizeStatus && <p className="panel-status">{resizeStatus}</p>}
-              </div>
-
-              <h4>Effects</h4>
-              <div className="effect-list">
-                {EFFECTS.map((effect) => {
-                  const has = (selectedBlock.styles?.effects || []).includes(effect);
-                  return (
-                    <label key={effect}>
-                      <input type="checkbox" checked={has} onChange={(e) => { const current = new Set(selectedBlock.styles?.effects || []); if (e.target.checked) current.add(effect); else current.delete(effect); patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), effects: [...current] } })); }} />
-                      {effect}
-                    </label>
-                  );
-                })}
-              </div>
-              </>
-              )}
-            </div>
-          )}
-
-          {rightTab === "style" && selectedBlock && (
-            <div className="panel style-panel">
-              {/* Selected block summary — sticky */}
-              <div className="style-selected-summary">
-                <div className="style-selected-badge">
-                  Editing: {friendlySelectedLabel()}
-                </div>
-                <div className="style-debug">
-                  Block: {selectedBlock.type} · {selectedBlock.id} · Part: {String(selectedPart)}
-                </div>
-              </div>
-
-              {/* Quick part selector */}
-              <div className="style-section">
-                <h4>Edit Part</h4>
-                <div className="button-row compact part-selector">
-                  {(["container", "heading", "body", "button", "card", "cardHeading", "cardBody", "image"] as Array<keyof BlockPartStyles>).map((part) => (
-                    <button
-                      key={part}
-                      className={selectedPart === part ? "selected" : ""}
-                      onClick={() => setSelectedPart(part)}
-                      title={partLabels[part]}
-                    >
-                      {partLabels[part]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Visual effect presets */}
-              <div className="style-section">
-                <h4>Visual Effects</h4>
-                <div className="preset-row">
-                  <span className="preset-label">Background style:</span>
-                  {Object.entries(BACKGROUND_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ backgroundStyle: key as any })}
-                      title={`${preset.label}: ${preset.description}`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ backgroundStyle: undefined })}
-                  >None</button>
-                </div>
-                {(() => {
-                  const selectedBg = selectedBlock.styles?.parts?.[selectedPart]?.backgroundStyle;
-                  const preset = selectedBg ? BACKGROUND_STYLE_PRESETS[selectedBg] : null;
-                  return preset ? <p className="preset-description"><strong>{preset.label}:</strong> {preset.description}</p> : null;
-                })()}
-                <p className="hint">Preset descriptions shown when selected.</p>
-                <div className="preset-row">
-                  <span className="preset-label">Border style:</span>
-                  {Object.entries(BORDER_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ borderStyle: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ borderStyle: undefined })}
-                  >Default</button>
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Shadow style:</span>
-                  {Object.entries(SHADOW_STYLE_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ shadowStyle: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.shadowStyle ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ shadowStyle: undefined })}
-                  >Default</button>
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Text effect:</span>
-                  {Object.entries(TEXT_EFFECT_PRESETS).map(([key, preset]) => (
-                    <button
-                      key={key}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.textEffect === key ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ textEffect: key as any })}
-                      title={preset.label}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textEffect ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ textEffect: undefined })}
-                  >None</button>
-                </div>
-                {selectedPart === "button" && (
-                  <div className="preset-row">
-                    <span className="preset-label">Button style:</span>
-                    {Object.entries(BUTTON_STYLE_PRESETS).map(([key, preset]) => (
-                      <button
-                        key={key}
-                        className={selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle === key ? "selected" : ""}
-                        onClick={() => updateSelectedPartStyle({ buttonStyle: key as any })}
-                        title={preset.label}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                    <button
-                      className={!selectedBlock.styles?.parts?.[selectedPart]?.buttonStyle ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ buttonStyle: undefined })}
-                    >Default</button>
-                  </div>
-                )}
-              </div>
-
-
-              {/* Quick toolbar */}
-              <div className="style-section">
-                <h4>Quick</h4>
-                <div className="button-row compact">
-                  <button onClick={() => updateSelectedPartStyle({ fontWeight: (selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? 400 : 700 })}>
-                    {(selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || 400) >= 700 ? "Unbold" : "Bold"}
-                  </button>
-                  <button onClick={() => updateSelectedPartStyle({ textAlign: "left" })}>Left</button>
-                  <button onClick={() => updateSelectedPartStyle({ textAlign: "center" })}>Center</button>
-                  <button onClick={() => updateSelectedPartStyle({ textAlign: "right" })}>Right</button>
-                  <button onClick={() => {
-                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
-                    updateSelectedPartStyle({ fontSize: Math.max(10, current - 2) });
-                  }}>Smaller</button>
-                  <button onClick={() => {
-                    const current = selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 18;
-                    updateSelectedPartStyle({ fontSize: current + 2 });
-                  }}>Bigger</button>
-                  <button onClick={() => resetSelectedPartToTheme()}>Reset part</button>
-                </div>
-              </div>
-
-              {/* Text section */}
-              <div className="style-section">
-                <h4>Text</h4>
-                <label>Font
-                  <select
-                    value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""}
-                    onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })}
-                  >
-                    <option value="">Use theme font</option>
-                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
-                  </select>
-                </label>
-                <div className="preset-row">
-                  <span className="preset-label">Size:</span>
-                  {Object.entries(SIZE_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ fontSize: val })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                  <button
-                    className={selectedBlock.styles?.parts?.[selectedPart]?.fontSize !== undefined &&
-                      !Object.values(SIZE_PRESETS).includes(selectedBlock.styles?.parts?.[selectedPart]?.fontSize || 0) ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ fontSize: 18 })}
-                  >
-                    Custom
-                  </button>
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Weight:</span>
-                  {Object.entries(WEIGHT_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ fontWeight: val })}
-                      title={`${name} (${val})`}
-                    >
-                      {name} <small>({val})</small>
-                    </button>
-                  ))}
-                </div>
-                {selectedBlock.styles?.parts?.[selectedPart]?.fontWeight !== undefined && (
-                  <p className="hint">Applied weight: {selectedBlock.styles.parts[selectedPart].fontWeight}. Not all fonts show every weight distinctly.</p>
-                )}
-                <div className="preset-row">
-                  <span className="preset-label">Color:</span>
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.textColor ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ textColor: undefined })}
-                    title="Use theme color"
-                  >Theme</button>
-                  <button
-                    className={selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ textColor: "transparent" })}
-                    title="Transparent text"
-                  >
-                    <span className="checkerboard-swatch" />
-                  </button>
-                  {selectedBlock.styles?.parts?.[selectedPart]?.textColor === "transparent" && (
-                    <span className="hint" style={{ color: "#c44" }}>Transparent text may disappear.</span>
-                  )}
-                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.textColor || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} className="color-input-inline" />
-                </div>
-              </div>
-
-              {/* Background section */}
-              <div className="style-section">
-                <h4>Background</h4>
-                {(() => {
-                  const part = selectedBlock.styles?.parts?.[selectedPart];
-                  const bgValue = part?.backgroundColor;
-                  const bgImage = part?.backgroundImage;
-                  let bgMode: "theme" | "solid" | "gradient" | "image" | "transparent" = "theme";
-                  if (bgImage) bgMode = "image";
-                  else if (bgValue === "transparent") bgMode = "transparent";
-                  else if (bgValue?.includes("gradient")) bgMode = "gradient";
-                  else if (bgValue) bgMode = "solid";
-
-                  return (
-                    <>
-                      <div className="preset-row">
-                        <span className="preset-label">Type:</span>
-                        <button
-                          className={bgMode === "theme" ? "selected" : ""}
-                          onClick={() => updateSelectedPartStyle({ backgroundColor: undefined, backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
-                        >Theme</button>
-                        <button
-                          className={bgMode === "solid" ? "selected" : ""}
-                          onClick={() => updateSelectedPartStyle({ backgroundColor: "#ffffff", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
-                        >Solid</button>
-                        <button
-                          className={bgMode === "gradient" ? "selected" : ""}
-                          onClick={() => {
-                            const preset = GRADIENT_PRESETS["Sunset"];
-                            applyGradientToPart(preset.colors, preset.direction, preset.type);
-                          }}
-                        >Gradient</button>
-                        <button
-                          className={bgMode === "image" ? "selected" : ""}
-                          onClick={() => openImageManager("part-bg")}
-                        >Image</button>
-                        <button
-                          className={bgMode === "transparent" ? "selected" : ""}
-                          onClick={() => updateSelectedPartStyle({ backgroundColor: "transparent", backgroundImage: undefined, gradientType: undefined, gradientColors: undefined, gradientDirection: undefined })}
-                        >Transparent</button>
-                      </div>
-
-                      {bgMode === "solid" && (
-                        <label>Custom Color
-                          <input type="color" value={bgValue || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} />
-                        </label>
-                      )}
-
-                      {bgMode === "transparent" && (
-                        <div className="preset-row" style={{ alignItems: "center", gap: 8 }}>
-                          <span className="checkerboard-swatch" />
-                          <span className="hint">Transparent — content behind this block shows through.</span>
-                        </div>
-                      )}
-
-                      {bgMode === "gradient" && (() => {
-                        const grad = readGradientFromPart(part);
-                        const hasThird = grad.colors.length >= 3;
-                        return (
-                          <div className="gradient-builder">
-                            <div className="preset-row">
-                              <span className="preset-label">Preset:</span>
-                              {Object.entries(GRADIENT_PRESETS).map(([name, preset]) => {
-                                const match = grad.colors.length === preset.colors.length && grad.colors.every((c, i) => c.toLowerCase() === preset.colors[i].toLowerCase());
-                                return (
-                                  <button
-                                    key={name}
-                                    className={match ? "selected" : ""}
-                                    onClick={() => applyGradientToPart(preset.colors, preset.direction, preset.type)}
-                                  >
-                                    {name}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="preset-row">
-                              {grad.colors.map((c, i) => (
-                                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                  <span className="preset-label">Color {i + 1}:</span>
-                                  <input
-                                    type="color"
-                                    value={c}
-                                    onChange={(e) => {
-                                      const next = [...grad.colors];
-                                      next[i] = e.target.value;
-                                      applyGradientToPart(next, grad.direction, grad.type);
-                                    }}
-                                    className="color-input-inline"
-                                  />
-                                </span>
-                              ))}
-                              {!hasThird && (
-                                <button onClick={() => applyGradientToPart([...grad.colors, "#ffffff"], grad.direction, grad.type)}>+ Add 3rd</button>
-                              )}
-                              {hasThird && (
-                                <button onClick={() => applyGradientToPart(grad.colors.slice(0, 2), grad.direction, grad.type)}>− 2 colors</button>
-                              )}
-                            </div>
-                            <div className="preset-row">
-                              <span className="preset-label">Direction:</span>
-                              {Object.entries(GRADIENT_DIRECTIONS).map(([name, val]) => {
-                                const isRadial = val.startsWith("circle");
-                                const selected = grad.direction === val && (grad.type === "radial") === isRadial;
-                                return (
-                                  <button
-                                    key={name}
-                                    className={selected ? "selected" : ""}
-                                    onClick={() => applyGradientToPart(grad.colors, val, isRadial ? "radial" : "linear")}
-                                  >
-                                    {name}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="gradient-preview" style={{ background: part?.backgroundColor || "", height: 40, borderRadius: 8, margin: "8px 0" }} />
-                          </div>
-                        );
-                      })()}
-
-                      {bgMode === "image" && (
-                        <div>
-                          <p className="hint">Image: {bgImage?.slice(0, 60)}...</p>
-                          <div className="button-row compact">
-                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "cover" })}>Cover</button>
-                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "contain" })}>Contain</button>
-                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "fill" })}>Stretch</button>
-                            <button onClick={() => updateSelectedPartStyle({ backgroundFit: "repeat" })}>Tile</button>
-                          </div>
-                          <label>Overlay opacity
-                            <input type="range" min={0} max={100} value={Math.round((part?.opacity || 1) * 100)} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) / 100 })} />
-                          </label>
-                          <button onClick={() => openImageManager("part-bg")}>Change image</button>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Box/spacing section */}
-              <div className="style-section">
-                <h4>Box & Spacing</h4>
-                <div className="preset-row">
-                  <span className="preset-label">Padding:</span>
-                  {Object.entries(PADDING_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.padding === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ padding: val })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Margin:</span>
-                  {Object.entries(MARGIN_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.margin === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ margin: val })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Border:</span>
-                  {Object.entries(BORDER_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ borderWidth: val })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Radius:</span>
-                  {Object.entries(RADIUS_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ borderRadius: val })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="preset-row">
-                  <span className="preset-label">Shadow:</span>
-                  {Object.entries(SHADOW_PRESETS).map(([name, val]) => (
-                    <button
-                      key={name}
-                      className={selectedBlock.styles?.parts?.[selectedPart]?.shadow === val ? "selected" : ""}
-                      onClick={() => updateSelectedPartStyle({ shadow: val || undefined })}
-                    >
-                      {name}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Border color mode */}
-                <div className="preset-row">
-                  <span className="preset-label">Border color:</span>
-                  <button
-                    className={!selectedBlock.styles?.parts?.[selectedPart]?.borderColor ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ borderColor: undefined })}
-                    title="Use theme border"
-                  >Theme</button>
-                  <button
-                    className={selectedBlock.styles?.parts?.[selectedPart]?.borderColor === "transparent" ? "selected" : ""}
-                    onClick={() => updateSelectedPartStyle({ borderColor: "transparent" })}
-                    title="Transparent border"
-                  >
-                    <span className="checkerboard-swatch" />
-                  </button>
-                  <input type="color" value={selectedBlock.styles?.parts?.[selectedPart]?.borderColor || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} className="color-input-inline" />
-                </div>
-              </div>
-
-              {/* Advanced accordion */}
-              <div className="style-section">
-                <button className="accordion-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
-                  Advanced {advancedOpen ? "▲" : "▼"}
-                </button>
-                {advancedOpen && (
-                  <div className="advanced-fields">
-                    <label>Background color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.backgroundColor as string) || "#ffffff"} onChange={(e) => updateSelectedPartStyle({ backgroundColor: e.target.value })} /></label>
-                    <label>Text color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.textColor as string) || "#222222"} onChange={(e) => updateSelectedPartStyle({ textColor: e.target.value })} /></label>
-                    <label>Font family <input value={selectedBlock.styles?.parts?.[selectedPart]?.fontFamily || ""} onChange={(e) => updateSelectedPartStyle({ fontFamily: e.target.value || undefined })} placeholder="Use theme font when empty" /></label>
-                    <label>Font size <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontSize || ""} onChange={(e) => updateSelectedPartStyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Font weight <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.fontWeight || ""} onChange={(e) => updateSelectedPartStyle({ fontWeight: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Padding <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.padding ?? ""} onChange={(e) => updateSelectedPartStyle({ padding: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Margin <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.margin ?? ""} onChange={(e) => updateSelectedPartStyle({ margin: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Border color <input type="color" value={(selectedBlock.styles?.parts?.[selectedPart]?.borderColor as string) || "#d5cfbe"} onChange={(e) => updateSelectedPartStyle({ borderColor: e.target.value })} /></label>
-                    <label>Border width <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderWidth ?? ""} onChange={(e) => updateSelectedPartStyle({ borderWidth: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Border radius <input type="number" value={selectedBlock.styles?.parts?.[selectedPart]?.borderRadius ?? ""} onChange={(e) => updateSelectedPartStyle({ borderRadius: e.target.value ? Number(e.target.value) : undefined })} /></label>
-                    <label>Shadow <input value={selectedBlock.styles?.parts?.[selectedPart]?.shadow || ""} onChange={(e) => updateSelectedPartStyle({ shadow: e.target.value || undefined })} placeholder="0 8px 24px rgba(0,0,0,.2)" /></label>
-                    <label>Background image URL <input value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundImage || ""} onChange={(e) => updateSelectedPartStyle({ backgroundImage: e.target.value || undefined })} placeholder="/project/images/example.png" /></label>
-                    <label>Background fit
-                      <select value={selectedBlock.styles?.parts?.[selectedPart]?.backgroundFit || "cover"} onChange={(e) => updateSelectedPartStyle({ backgroundFit: e.target.value as PartStyle["backgroundFit"] })}>
-                        <option value="cover">cover</option>
-                        <option value="contain">contain</option>
-                        <option value="fill">fill</option>
-                        <option value="repeat">repeat</option>
-                      </select>
-                    </label>
-                    <label>Opacity <input type="number" min={0} max={1} step={0.1} value={selectedBlock.styles?.parts?.[selectedPart]?.opacity ?? 1} onChange={(e) => updateSelectedPartStyle({ opacity: Number(e.target.value) })} /></label>
-                  </div>
-                )}
-              </div>
-
-              {/* Global style section (clearly separated) */}
-              <div className="style-section global-style-section">
-                <h4>Global Site Style</h4>
-                <label>Theme
-                  <select value={selectedThemeName} onChange={(e) => {
-                    const next = e.target.value;
-                    setSelectedThemeName(next);
-                    const idx = themePresets.findIndex((t) => t.name === next);
-                    if (idx >= 0) applyTheme(idx);
-                  }}>
-                    {themePresets.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
-                  </select>
-                </label>
-                <div className="button-row compact">
-                  <button onClick={() => {
-                    if (window.confirm("Reset block colors/fonts to the selected theme? Custom block colors may be replaced.")) {
-                      applyThemeToAllBlocks();
-                    }
-                  }}>Reset blocks to this theme</button>
-                  <button onClick={() => resetBlockColorsToTheme()}>Reset selected block colors</button>
-                </div>
-                <label>Page Background <input type="color" value={project.globalStyles.colors.pageBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("pageBackground", e.target.value)} /></label>
-                <label>Canvas Background <input type="color" value={project.globalStyles.colors.canvasBackground || project.globalStyles.colors.bg} onChange={(e) => updateGlobalColor("canvasBackground", e.target.value)} /></label>
-                <label>Block Background <input type="color" value={project.globalStyles.colors.blockBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("blockBackground", e.target.value)} /></label>
-                <label>Card Background <input type="color" value={project.globalStyles.colors.cardBackground || project.globalStyles.colors.surface} onChange={(e) => updateGlobalColor("cardBackground", e.target.value)} /></label>
-                <label>Heading Color <input type="color" value={project.globalStyles.colors.headingColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("headingColor", e.target.value)} /></label>
-                <label>Body Text Color <input type="color" value={project.globalStyles.colors.bodyTextColor || project.globalStyles.colors.text} onChange={(e) => updateGlobalColor("bodyTextColor", e.target.value)} /></label>
-                <label>Accent Color <input type="color" value={project.globalStyles.colors.accentColor || project.globalStyles.colors.accent} onChange={(e) => updateGlobalColor("accentColor", e.target.value)} /></label>
-                <label>Heading Font
-                  <select value={project.globalStyles.headingFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, headingFont: e.target.value } }); setDirty(true); }}>
-                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
-                  </select>
-                </label>
-                <label>Body Font
-                  <select value={project.globalStyles.bodyFont} onChange={(e) => { setProject({ ...project, globalStyles: { ...project.globalStyles, bodyFont: e.target.value } }); setDirty(true); }}>
-                    {fonts.map((f) => <option key={f.family} value={f.family}>{f.family}</option>)}
-                  </select>
-                </label>
-              </div>
-
-              <div className="button-row compact">
-                <button onClick={() => setCopiedBlockStyle(selectedBlock.styles || null)}>Copy style</button>
-                <button onClick={() => { if (copiedBlockStyle) patchSelectedBlock((b) => ({ ...b, styles: { ...copiedBlockStyle } })); }}>Paste style</button>
-              </div>
-            </div>
-          )}
-
-          {rightTab === "images" && (
-            <div className="panel image-manager-panel">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Image Manager</h3>
-              <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
-            </div>
-              <p className="panel-status">Upload, manage, and apply images</p>
-
-              <div className="image-manager-upload">
-                <label>Upload image
-                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
-                </label>
-                {uploadingImage && <span className="hint">Uploading...</span>}
-                {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
-              </div>
-
-              <div className="image-manager-folder">
-                <h4>Project Photo Folder</h4>
-                <label>Folder path
-                  <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
-                </label>
-                <p className="hint">Photos uploaded here. Default: project/images</p>
-                <div className="button-row compact">
-                  <button onClick={() => void savePhotoFolder()}>Save folder</button>
-                  <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
-                </div>
-              </div>
-
-              <div className="image-manager-gallery">
-                <h4>Project Images ({uploadedImages.length})</h4>
-                {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
-                <div className="image-grid">
-                  {uploadedImages.map((img) => (
-                    <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
-                      <img
-                        src={img.url}
-                        alt={img.name}
-                        loading="lazy"
-                        onError={(e) => {
-                          setBrokenImages((prev) => new Set(prev).add(img.url));
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                      {brokenImages.has(img.url) && (
-                        <div className="image-fallback">
-                          <div className="image-fallback-icon">🖼️</div>
-                          <div className="image-fallback-name">{img.name}</div>
-                        </div>
-                      )}
-                      <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {renderImageManagerActions(false)}
-            </div>
-          )}
-
-          {rightTab === "ai" && (
-            <div className="panel">
-              <h3>AI Chat</h3>
-              <p className="panel-status">
-                <strong>AI panel:</strong> {(() => { const t = computeAiTarget(); if (t.kind === "site-header") return "site header"; if (t.kind === "block") return `block ${t.label}`; return "none"; })()}
-              </p>
-              <div className="quick-actions">
-                <button onClick={() => void quickRewrite("rewrite")}>Rewrite</button>
-                <button onClick={() => void quickRewrite("shorten")}>Shorten</button>
-                <button onClick={() => void quickRewrite("lengthen")}>Lengthen</button>
-                <button onClick={() => void quickRewrite("tone")}>Tone</button>
-              </div>
-              <div className="chat-log">
-                {chatHistory.map((msg, i) => (
-                  <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
-                ))}
-              </div>
-              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" />
-              <button onClick={() => void chat()}>Send</button>
-
-              <h3>Image Generator</h3>
-              <label>
-                Prompt
-                <textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} rows={3} placeholder="e.g. aerial view of a catfish farm at golden hour" />
-              </label>
-              <label>
-                Optional Provider Size Override
-                <select value={providerSizeOverride} onChange={(e) => setProviderSizeOverride(e.target.value)}>
-                  <option value="">Auto (recommended)</option>
-                  <option value="1024x1024">1024 x 1024</option>
-                  <option value="1024x1536">1024 x 1536</option>
-                  <option value="1536x1024">1536 x 1024</option>
-                </select>
-              </label>
-              <button onClick={() => void generateImage()}>Generate image for this block ({blockTypeForTarget(selectedBlock)})</button>
-              {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
-              {imageSizeDecision && (
-                <div className="image-debug">
-                  <p><strong>Target block:</strong> {blockTypeForTarget(selectedBlock)}</p>
-                  <p><strong>Provider size:</strong> {imageSizeDecision.providerSize}</p>
-                  <p><strong>Final output:</strong> {imageSizeDecision.outputWidth} x {imageSizeDecision.outputHeight}</p>
-                  <p><strong>Crop mode:</strong> {imageSizeDecision.cropMode}</p>
-                  {imageSizeDecision.warnings.length > 0 && <p><strong>Warnings:</strong> {imageSizeDecision.warnings.join(" | ")}</p>}
-                </div>
-              )}
-              {lastGeneratedImage && <img src={lastGeneratedImage} alt="Last generated" className="block-image" />}
-
-              <h3>Edit Uploaded Photo</h3>
-              <label>
-                Upload source photo
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
-              </label>
-              <label>
-                Source uploaded image
-                <select value={selectedUploadImage} onChange={(e) => setSelectedUploadImage(e.target.value)}>
-                  {uploadedImages.length === 0 ? <option value="">No uploaded images</option> : uploadedImages.map((img) => <option key={img.url} value={img.url}>{img.name}</option>)}
-                </select>
-              </label>
-              <label>
-                Edit type
-                <select value={photoEditType} onChange={(e) => setPhotoEditType(e.target.value)}>
-                  <option value="enhance">Enhance photo</option>
-                  <option value="black-white">Black &amp; white</option>
-                  <option value="color-pop">Color pop</option>
-                  <option value="cleanup">Clean up</option>
-                  <option value="crop-fit">Crop/fit to selected block</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              <label>
-                Instruction
-                <textarea value={photoEditInstruction} onChange={(e) => setPhotoEditInstruction(e.target.value)} rows={3} placeholder="Optional instruction for edit." />
-              </label>
-              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>{uploadingImage ? "Uploading..." : "Apply photo edit"}</button>
-              {photoEditStatus && <p><strong>Photo edit status:</strong> {photoEditStatus}</p>}
-              {lastEditedImage && <img src={lastEditedImage} alt="Last edited" className="block-image" />}
-            </div>
-          )}
-
-          {rightTab === "status" && (
-            <div className="panel">
-              <h3>Status</h3>
-              <p className="panel-status">
-                <strong>Status panel:</strong> save state {withSavedStatusText(status, dirty)}
-              </p>
-              <p><strong>API:</strong> {status}</p>
-              <p><strong>Selected Block:</strong> {selectedBlock?.id || "none"}</p>
-              <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
-              <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
-              <p><strong>Project source:</strong> {loadedProjectSource}</p>
-              {loadedProjectUpdatedAt && <p><strong>Loaded project mtime:</strong> {new Date(loadedProjectUpdatedAt).toLocaleString()}</p>}
-              {lastLoadedAt && <p><strong>Last loaded:</strong> {new Date(lastLoadedAt).toLocaleString()}</p>}
-              {lastSavedAt && <p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p>}
-              {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
-              <p><strong>Last action:</strong> {lastAction}</p>
-              {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
-              {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
-              <p><strong>Publish:</strong> dry-run (live disabled)</p>
-
-              <h4>Provider Status</h4>
-              {providerStatus.length === 0 && <p>Loading providers...</p>}
-              {providerStatus.map((p) => (
-                <div key={p.name} className={`provider-card provider-${p.status}`}>
-                  <strong>{p.name}</strong>
-                  <span className="provider-badge">{p.status}</span>
-                  <p>{p.message}</p>
-                </div>
-              ))}
-
-              <h4>Image API Keys</h4>
-              <p className="hint">Keys are stored locally, not in project.json.</p>
-              <label>Image Generation API Key
-                <input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." />
-              </label>
-              <label>Image Analysis API Key
-                <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
-              </label>
-              <div className="button-row">
-                <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
-                <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
-                <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
-              </div>
-              {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
-
-              <h4>Navigation Editor</h4>
-              {project.site.nav.map((item, i) => (
-                <div key={item.id} className="nav-edit-row">
-                  <input value={item.label} onChange={(e) => updateNav(i, { label: e.target.value })} />
-                  <input value={item.href} onChange={(e) => updateNav(i, { href: e.target.value })} />
-                  <button onClick={() => moveNav(i, "up")}>↑</button>
-                  <button onClick={() => moveNav(i, "down")}>↓</button>
-                  <button onClick={() => removeNav(i)}>X</button>
-                </div>
-              ))}
-              <button onClick={addNav}>Add Nav Item</button>
-
-              <h4>Deploy Settings</h4>
-              <label>Method
-                <select value={project.deploy.method} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, method: e.target.value as SBuildProject["deploy"]["method"] } }); setDirty(true); }}>
-                  <option value="dry-run">dry-run</option>
-                  <option value="local-web-root">local-web-root</option>
-                  <option value="git">git</option>
-                </select>
-              </label>
-              <label>Web Root
-                <input value={project.deploy.webRoot} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, webRoot: e.target.value } }); setDirty(true); }} />
-              </label>
-              <label>GitHub Repo URL
-                <input value={project.deploy.githubRepo || ""} onChange={(e) => { setProject({ ...project, deploy: { ...project.deploy, githubRepo: e.target.value } }); setDirty(true); }} placeholder="https://github.com/org/repo" />
-              </label>
-              <label>Token Placeholder <input value="" placeholder="not stored in prototype" readOnly /></label>
-              <div className="button-row">
-                <button onClick={async () => setStatus(JSON.stringify(await fetchJson("/api/backup", { method: "POST", body: "{}" })))}>Backup</button>
-                <button onClick={async () => setStatus("Use /api/restore with backup path")}>Restore</button>
-              </div>
-            </div>
-          )}
+            {renderRightDrawerBody()}
           </div>
         </aside>
+        )}
       </div>
+
+      {isMobileViewport && (
+        <div className={`mobile-editor-overlay ${rightDrawerMobileOpen ? "open" : ""}`}>
+          <section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">
+            <div className="mobile-editor-sheet-header">
+              <h2>Edit block</h2>
+              <button className="mobile-editor-x-close" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">✕</button>
+            </div>
+            <div className="mobile-editor-sheet-tabs">
+              <div className="tabs compact-tabs">
+                <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
+                <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
+                <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
+                <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
+                <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
+                <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
+              </div>
+            </div>
+            <div className="mobile-editor-sheet-target">
+              <p className="panel-status right-target-summary">{targetSummary()}</p>
+            </div>
+            <div className="mobile-editor-sheet-body">
+              {renderRightDrawerBody()}
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Context Menu */}
       {contextMenu?.visible && (

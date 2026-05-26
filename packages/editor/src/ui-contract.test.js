@@ -105,10 +105,10 @@ test("right drawer chip/button rows allow wrap and visible focus space", () => {
 });
 
 test("mobile right drawer header and tabs are not clipped by overflow-hidden", () => {
-  assert.doesNotMatch(cssSource, /\.right-drawer-header\s*\{[^{}]*min-height:\s*0[^{}]*\}/);
-  assert.match(cssSource, /\.right-drawer-header[\s\S]*overflow:\s*visible/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.right-drawer[\s\S]*overflow:\s*visible/);
-  assert.match(cssSource, /\.right-drawer-header[\s\S]*padding-top:\s*6px/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*overflow:\s*hidden/);
+  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*flex-shrink:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-sheet-tabs[\s\S]*flex-shrink:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-sheet-target[\s\S]*flex-shrink:\s*0/);
 });
 
 test("gallery slot has mobile-safe pointer handler that stops parent block overwrite", () => {
@@ -129,29 +129,26 @@ test("canvas frame background uses site variables not editor variables", () => {
   assert.doesNotMatch(cssSource, /\.canvas-frame\s*\{[^{}]*background:\s*var\(--editor-panel-bg\)[^{}]*\}/);
 });
 
-test("mobile editor shell uses <=768px stacked layout and non-overlapping drawers", () => {
+test("mobile editor shell uses <=768px stacked layout and mobile overlay", () => {
   assert.match(appSource, /isMobileViewport/);
   assert.match(appSource, /mobile-shell/);
   assert.match(appSource, /rightDrawerMobileOpen/);
-  assert.match(appSource, /mobile-open/);
-  assert.match(appSource, /mobile-closed/);
+  assert.match(appSource, /mobile-editor-overlay/);
+  assert.match(appSource, /mobile-editor-sheet/);
   assert.match(appSource, /mobile-drawer-toolbar/);
   assert.match(appSource, /drawer-close-btn/);
   assert.match(cssSource, /@media \(max-width: 768px\)/);
   assert.match(cssSource, /\.workspace,\n\s*\.workspace\.left-collapsed[\s\S]*grid-template-columns:\s*1fr/);
   assert.match(cssSource, /\.left-drawer[\s\S]*position:\s*fixed/);
   assert.match(cssSource, /\.left-drawer\.collapsed[\s\S]*display:\s*none/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*min-width:\s*0/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /\.right-drawer\.mobile-closed[\s\S]*display:\s*none/);
-  assert.match(cssSource, /\.right-drawer\.mobile-open[\s\S]*display:\s*flex/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*position:\s*fixed/);
   assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*sticky/);
   assert.match(cssSource, /\.topbar-status[\s\S]*width:\s*100%/);
   assert.match(cssSource, /overflow-x:\s*hidden/);
   assert.match(appSource, /function openBlockDrawer/);
   assert.match(appSource, /setRightDrawerMobileOpen\(true\)/);
   assert.match(appSource, /function openGallerySlotDrawer/);
-  assert.match(cssSource, /\.app\.mobile-shell \.right-drawer[\s\S]*position:\s*fixed/);
 });
 
 test("mobile single tap on block selects only and does not auto-open drawer", () => {
@@ -288,12 +285,12 @@ test("context menu Edit Properties closes menu after action", () => {
   assert.match(appSource, /setContextMenu\(null\)[\s\S]{0,60}Edit Properties/);
 });
 
-test("mobile drawer open state and classes exist for context menu path", () => {
+test("mobile drawer open state and overlay exist for context menu path", () => {
   assert.match(appSource, /rightDrawerMobileOpen/);
-  assert.match(appSource, /mobile-open/);
-  assert.match(appSource, /mobile-closed/);
-  assert.match(cssSource, /\.right-drawer\.mobile-open[\s\S]*display:\s*flex/);
-  assert.match(cssSource, /\.right-drawer\.mobile-closed[\s\S]*display:\s*none/);
+  assert.match(appSource, /mobile-editor-overlay/);
+  assert.match(appSource, /mobile-editor-sheet/);
+  assert.match(cssSource, /\.mobile-editor-overlay\.open/);
+  assert.match(cssSource, /\.mobile-editor-overlay:not\(\.open\) \.mobile-editor-sheet[\s\S]*display:\s*none/);
 });
 
 test("preview mode hides selection outlines via CSS", () => {
@@ -688,81 +685,59 @@ test("site header context menu AI Assistant still exists", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
 
-test("mobile right drawer max-height accounts for fixed toolbar height", () => {
-  assert.match(cssSource, /\.right-drawer[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
+test("mobile editor overlay top references --mobile-toolbar-h", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-toolbar-h/);
 });
 
-test("mobile right drawer max-height includes safe-area-inset-top", () => {
-  const m768 = cssSource.indexOf("@media (max-width: 768px)");
-  const drawerBlock = cssSource.substring(m768);
-  const rightDrawerIdx = drawerBlock.indexOf(".right-drawer {");
-  assert.ok(rightDrawerIdx > 0, "right-drawer block exists in mobile media query");
-  const blockEnd = drawerBlock.indexOf("}", drawerBlock.indexOf("max-height", rightDrawerIdx));
-  const blockSlice = drawerBlock.substring(rightDrawerIdx, blockEnd);
-  assert.ok(blockSlice.includes("safe-area-inset-top"), "right drawer max-height uses env(safe-area-inset-top)");
+test("mobile editor sheet top includes safe-area-inset-top", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*env\(safe-area-inset-top/);
 });
 
-test("mobile right drawer content max-height respects toolbar offset", () => {
-  assert.match(cssSource, /\.right-drawer-content[\s\S]*max-height:[\s]*calc\(100dvh - var\(--mobile-topbar-h/);
+test("mobile editor sheet body uses overflow-y auto and min-height 0", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-y:\s*auto/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
 });
 
-test("mobile right drawer header is sticky and has flex-shrink 0", () => {
-  const m768 = cssSource.indexOf("@media (max-width: 768px)");
-  const section = cssSource.substring(m768);
-  const headerIdx = section.indexOf(".right-drawer-header {");
-  assert.ok(headerIdx > 0, "right-drawer-header exists in mobile media query");
-  const headerBlock = section.substring(headerIdx, section.indexOf("}", headerIdx + 50) + 1);
-  assert.ok(headerBlock.includes("position: sticky"), "header is sticky");
-  assert.ok(headerBlock.includes("flex-shrink: 0"), "header has flex-shrink: 0");
+test("mobile editor sheet uses grid-template-rows with header/tabs/target/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\)/);
 });
 
-test("tablet breakpoint mobile-shell right drawer max-height accounts for toolbar", () => {
-  const m1100 = cssSource.indexOf("@media (max-width: 1100px)");
-  const section = cssSource.substring(m1100);
-  const mobileDrawerIdx = section.indexOf(".app.mobile-shell .right-drawer");
-  assert.ok(mobileDrawerIdx > 0, "mobile-shell right-drawer rule exists at 1100px breakpoint");
-  const blockEnd = section.indexOf("}", mobileDrawerIdx + 40);
-  const blockSlice = section.substring(mobileDrawerIdx, blockEnd);
-  assert.ok(blockSlice.includes("--mobile-topbar-h"), "tablet breakpoint right drawer references toolbar height variable");
+test("mobile editor overlay uses position fixed and covers viewport", () => {
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*left:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*right:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*top:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*bottom:\s*0/);
 });
 
 test("top toolbar remains position fixed on mobile", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*fixed/);
 });
 
-test("mobile right drawer does not use static positioning", () => {
-  const m768 = cssSource.indexOf("@media (max-width: 768px)");
-  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
-  const rightDrawerIdx = section.indexOf(".right-drawer {");
-  assert.ok(rightDrawerIdx > 0, "right-drawer exists in 768px media query");
-  const blockEnd = section.indexOf("}", section.indexOf("box-shadow", rightDrawerIdx));
-  const blockSlice = section.substring(rightDrawerIdx, blockEnd);
-  assert.ok(!blockSlice.includes("position: static"), "mobile right drawer is not static");
-  assert.ok(blockSlice.includes("position: fixed"), "mobile right drawer is fixed");
+test("mobile editor sheet is fixed positioned in 768px breakpoint", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.mobile-editor-sheet[\s\S]*position:\s*fixed/);
 });
 
-test("mobile right drawer has a compact X close button with correct aria", () => {
+test("mobile editor sheet has header with X close button and aria-label", () => {
+  assert.match(appSource, /mobile-editor-sheet-header/);
   assert.match(appSource, /mobile-editor-x-close/);
-  assert.match(appSource, /mobile-drawer-tab-row/);
   assert.match(appSource, /aria-label="Close editor drawer"/);
   assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*display:\s*none/);
-  const m768 = cssSource.indexOf("@media (max-width: 768px)");
-  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
-  assert.match(section, /\.mobile-editor-x-close[\s\S]*display:\s*inline-flex/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.mobile-editor-x-close[\s\S]*display:\s*inline-flex/);
 });
 
 test("mobile X close button calls setRightDrawerMobileOpen false", () => {
-  const closeBtnMatch = appSource.match(/mobile-editor-x-close[\s\S]{0,200}onClick/);
-  assert.ok(closeBtnMatch, "mobile X close btn has onClick");
-  const closeSection = appSource.substring(appSource.indexOf("mobile-editor-x-close") - 50, appSource.indexOf("mobile-editor-x-close") + 300);
+  const closeBtnIdx = appSource.indexOf("mobile-editor-x-close");
+  assert.ok(closeBtnIdx > 0, "mobile-editor-x-close class exists");
+  const closeSection = appSource.substring(closeBtnIdx, closeBtnIdx + 300);
   assert.match(closeSection, /setRightDrawerMobileOpen\(false\)/);
 });
 
-test("mobile X close button is not rendered on desktop", () => {
+test("mobile X close button is inside mobile-editor-sheet-header gated by isMobileViewport", () => {
   const closeBtnIdx = appSource.indexOf("mobile-editor-x-close");
   assert.ok(closeBtnIdx > 0, "mobile-editor-x-close class exists");
-  const surrounding = appSource.substring(Math.max(0, closeBtnIdx - 300), closeBtnIdx + 50);
-  assert.match(surrounding, /isMobileViewport\s*&&/, "mobile X close button is gated by isMobileViewport");
+  const surrounding = appSource.substring(Math.max(0, closeBtnIdx - 500), closeBtnIdx + 50);
+  assert.match(surrounding, /isMobileViewport/, "mobile X close button is inside isMobileViewport-gated overlay");
   assert.match(cssSource, /\.mobile-editor-x-close\s*\{[^}]*display:\s*none/, "base CSS hides mobile X close button");
 });
 
@@ -776,8 +751,8 @@ test("mobile X close button has at least 44px tap target", () => {
 });
 
 test("mobile right drawer tab row contains Props Style Resize Images AI Debug tabs", () => {
-  const tabRowIdx = appSource.indexOf("mobile-drawer-tab-row");
-  assert.ok(tabRowIdx > 0, "mobile-drawer-tab-row exists");
+  const tabRowIdx = appSource.indexOf("mobile-editor-sheet-tabs");
+  assert.ok(tabRowIdx > 0, "mobile-editor-sheet-tabs exists");
   const tabSection = appSource.substring(tabRowIdx, tabRowIdx + 1200);
   assert.match(tabSection, /Props/);
   assert.match(tabSection, /Style/);
@@ -787,13 +762,105 @@ test("mobile right drawer tab row contains Props Style Resize Images AI Debug ta
   assert.match(tabSection, /Debug/);
 });
 
-test("right drawer internal scroll remains intact on mobile", () => {
+test("right drawer internal scroll remains intact on mobile via sheet body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-y:\s*auto/);
   assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y:\s*auto/);
 });
 
-test("desktop right drawer markup does not include mobile X close button", () => {
-  const allCloseBtns = appSource.match(/mobile-editor-x-close/g);
-  assert.ok(allCloseBtns, "mobile-editor-x-close class is used");
-  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<button[^>]*mobile-editor-x-close/g);
-  assert.ok(allMobileGates, "every mobile-editor-x-close is gated by isMobileViewport");
+test("desktop right drawer does not render when mobile viewport", () => {
+  assert.match(appSource, /\{!isMobileViewport && \(/);
+  assert.match(appSource, /<aside className="right-drawer">/);
+  const overlayIdx = appSource.indexOf("mobile-editor-overlay");
+  assert.ok(overlayIdx > 0, "mobile-editor-overlay exists for mobile-only rendering");
+});
+
+test("mobile editor overlay exists as top-level mobile-only structure", () => {
+  assert.match(appSource, /mobile-editor-overlay/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*display:\s*none/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.mobile-editor-overlay[\s\S]*display:\s*block/);
+});
+
+test("mobile overlay sheet is not nested inside workspace/canvas/right-drawer", () => {
+  const overlayIdx = appSource.indexOf("mobile-editor-overlay");
+  assert.ok(overlayIdx > 0, "mobile-editor-overlay exists");
+  const workspaceClose = appSource.lastIndexOf("</div>", overlayIdx);
+  const workspaceDiv = appSource.substring(Math.max(0, workspaceClose - 100), overlayIdx);
+  assert.ok(!workspaceDiv.includes("workspace"), "mobile-editor-overlay is not inside workspace div");
+});
+
+test("sheet header exists and contains mobile-editor-x-close", () => {
+  assert.match(appSource, /mobile-editor-sheet-header[\s\S]{0,500}mobile-editor-x-close/);
+});
+
+test("X has aria-label Close editor drawer", () => {
+  assert.match(appSource, /aria-label="Close editor drawer"/);
+});
+
+test("tabs row exists with Props Style Resize Images AI Debug", () => {
+  const sheetTabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
+  assert.ok(sheetTabsIdx > 0, "mobile-editor-sheet-tabs exists");
+  const tabSection = appSource.substring(sheetTabsIdx, sheetTabsIdx + 1500);
+  assert.match(tabSection, /Props/);
+  assert.match(tabSection, /Style/);
+  assert.match(tabSection, /Resize/);
+  assert.match(tabSection, /Images/);
+  assert.match(tabSection, />AI<\/button>/);
+  assert.match(tabSection, /Debug/);
+});
+
+test("target row exists outside the scrollable body", () => {
+  assert.match(appSource, /mobile-editor-sheet-target/);
+  const targetIdx = appSource.indexOf("mobile-editor-sheet-target");
+  const bodyIdx = appSource.indexOf("mobile-editor-sheet-body", targetIdx);
+  assert.ok(bodyIdx > targetIdx, "target row comes before body in DOM");
+});
+
+test("body/content row uses a dedicated scroll container", () => {
+  assert.match(appSource, /mobile-editor-sheet-body/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-y:\s*auto/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*-webkit-overflow-scrolling:\s*touch/);
+});
+
+test("CSS for mobile overlay uses position fixed and top references --mobile-toolbar-h", () => {
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-toolbar-h/);
+});
+
+test("CSS sheet uses grid-template-rows with header/tabs/target/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\)/);
+});
+
+test("body uses overflow-y auto and min-height 0", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-y:\s*auto/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
+});
+
+test("header/tabs/target are not inside the scrolling body", () => {
+  const headerIdx = appSource.indexOf("mobile-editor-sheet-header");
+  const tabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
+  const targetIdx = appSource.indexOf("mobile-editor-sheet-target");
+  const bodyIdx = appSource.indexOf("mobile-editor-sheet-body");
+  assert.ok(headerIdx < bodyIdx, "header comes before body in DOM");
+  assert.ok(tabsIdx < bodyIdx, "tabs come before body in DOM");
+  assert.ok(targetIdx < bodyIdx, "target comes before body in DOM");
+});
+
+test("context menu Edit Properties calls the same open drawer path", () => {
+  assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\)[\s\S]{0,60}Edit Properties/);
+});
+
+test("context menu AI Assistant calls openAiDrawer with contextMenu.blockId", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)[\s\S]{0,80}AI Assistant/);
+});
+
+test("preview mode remains read-only", () => {
+  assert.match(appSource, /if \(previewMode\) return;/);
+  assert.match(appSource, /AI is not available in Preview mode/);
+});
+
+test("publish remains dry-run", () => {
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /\/api\/publish/);
+  assert.match(appSource, /dryRun/);
 });
