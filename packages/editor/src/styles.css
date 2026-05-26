@@ -289,6 +289,16 @@ button:disabled {
   color: var(--editor-input-text);
 }
 
+.mobile-close-btn {
+  display: none;
+}
+
+.mobile-drawer-tab-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 /* Drawer buttons */
 .left-drawer button,
 .right-drawer button,
@@ -1484,6 +1494,32 @@ button:disabled {
     padding: 8px;
   }
 
+  .mobile-drawer-tab-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .mobile-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 100%;
+    padding: 10px 12px;
+    margin: 4px 8px 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--editor-bg, #f8f9fa);
+    border: 1px solid var(--editor-border);
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--editor-text, #333);
+  }
+
+  .mobile-close-btn:active {
+    opacity: 0.7;
+  }
+
   .drawer-close-btn {
     min-width: 72px;
     flex: 0 0 auto;
@@ -1567,7 +1603,7 @@ button:disabled {
   }
 
   .right-drawer-content {
-    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px) - 90px);
+    max-height: calc(100dvh - var(--mobile-topbar-h, 110px) - 16px - env(safe-area-inset-top, 0px) - 110px);
     overflow-y: auto;
   }
 
@@ -1578,6 +1614,13 @@ button:disabled {
     padding: 7px 8px;
     min-height: 36px;
     line-height: 1.3;
+  }
+
+  .right-drawer .right-target-summary {
+    font-size: 11px;
+    padding: 4px 12px 6px;
+    margin: 0;
+    line-height: 1.2;
   }
 
   .topbar-mobile-spacer {

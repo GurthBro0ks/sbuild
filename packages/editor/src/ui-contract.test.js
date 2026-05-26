@@ -740,3 +740,51 @@ test("mobile right drawer does not use static positioning", () => {
   assert.ok(!blockSlice.includes("position: static"), "mobile right drawer is not static");
   assert.ok(blockSlice.includes("position: fixed"), "mobile right drawer is fixed");
 });
+
+test("mobile right drawer has a visible mobile close control inside the drawer tab row", () => {
+  assert.match(appSource, /mobile-close-btn/);
+  assert.match(appSource, /mobile-drawer-tab-row/);
+  assert.match(appSource, /aria-label="Close editor drawer"/);
+  assert.match(cssSource, /\.mobile-close-btn[\s\S]*display:\s*none/);
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
+  assert.match(section, /\.mobile-close-btn[\s\S]*display:\s*flex/);
+});
+
+test("mobile close control calls setRightDrawerMobileOpen false", () => {
+  const closeBtnMatch = appSource.match(/mobile-close-btn[\s\S]{0,200}onClick/);
+  assert.ok(closeBtnMatch, "mobile close btn has onClick");
+  const closeSection = appSource.substring(appSource.indexOf("mobile-close-btn") - 50, appSource.indexOf("mobile-close-btn") + 200);
+  assert.match(closeSection, /setRightDrawerMobileOpen\(false\)/);
+});
+
+test("mobile close control is not rendered on desktop", () => {
+  const closeBtnIdx = appSource.indexOf("mobile-close-btn");
+  assert.ok(closeBtnIdx > 0, "mobile-close-btn class exists");
+  const surrounding = appSource.substring(Math.max(0, closeBtnIdx - 300), closeBtnIdx + 50);
+  assert.match(surrounding, /isMobileViewport\s*&&/, "mobile close button is gated by isMobileViewport");
+  assert.match(cssSource, /\.mobile-close-btn\s*\{[^}]*display:\s*none/, "base CSS hides mobile close button");
+});
+
+test("mobile right drawer tab row contains Props Style Resize Images AI Debug tabs", () => {
+  const tabRowIdx = appSource.indexOf("mobile-drawer-tab-row");
+  assert.ok(tabRowIdx > 0, "mobile-drawer-tab-row exists");
+  const tabSection = appSource.substring(tabRowIdx, tabRowIdx + 1200);
+  assert.match(tabSection, /Props/);
+  assert.match(tabSection, /Style/);
+  assert.match(tabSection, /Resize/);
+  assert.match(tabSection, /Images/);
+  assert.match(tabSection, /\bAI\b/);
+  assert.match(tabSection, /Debug/);
+});
+
+test("right drawer internal scroll remains intact on mobile", () => {
+  assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y:\s*auto/);
+});
+
+test("desktop right drawer markup does not include mobile close button", () => {
+  const allCloseBtns = appSource.match(/mobile-close-btn/g);
+  assert.ok(allCloseBtns, "mobile-close-btn class is used");
+  const allMobileGates = appSource.match(/isMobileViewport\s*&&\s*\(\s*\n?\s*<button[^>]*mobile-close-btn/g);
+  assert.ok(allMobileGates, "every mobile-close-btn is gated by isMobileViewport");
+});

@@ -2472,19 +2472,18 @@ export function App() {
 
         <aside className={`right-drawer ${isMobileViewport ? (rightDrawerMobileOpen ? "mobile-open" : "mobile-closed") : ""}`}>
           <div className="right-drawer-header">
-            {isMobileViewport && (
-              <div className="mobile-drawer-toolbar">
-                <strong>Edit block</strong>
-                <button className="drawer-close-btn" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close right panel">Close</button>
-              </div>
-            )}
-            <div className="tabs compact-tabs">
+            <div className="mobile-drawer-tab-row">
+              {isMobileViewport && (
+                <button className="drawer-close-btn mobile-close-btn" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">Close</button>
+              )}
+              <div className="tabs compact-tabs">
             <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
             <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
             <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
             <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
             <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
             <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
+              </div>
             </div>
             <p className="panel-status right-target-summary">{targetSummary()}</p>
           </div>
