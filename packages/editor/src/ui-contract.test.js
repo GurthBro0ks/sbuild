@@ -384,8 +384,8 @@ test("openAiDrawer sets right tab to AI", () => {
   assert.match(appSource, /function openAiDrawer[\s\S]*setRightTab\("ai"\)/);
 });
 
-test("openAiDrawer falls back to first editable block when none selected", () => {
-  assert.match(appSource, /editableBlocks\[\s*0\s*\]/);
+test("computeAiTarget falls back to first editable block when none selected", () => {
+  assert.match(appSource, /function computeAiTarget[\s\S]*editableBlocks\[\s*0\s*\]/);
   assert.match(appSource, /!\["spacer", "divider", "html"\]/);
   assert.match(appSource, /Select a block to use AI/);
 });
@@ -408,14 +408,14 @@ test("lastFocusedTextBlockId useRef exists", () => {
   assert.match(appSource, /lastFocusedTextBlockId = useRef<string>\(""\)/);
 });
 
-test("openAiDrawer prefers lastFocusedTextBlockId over selectedBlockId", () => {
-  assert.match(appSource, /function openAiDrawer[\s\S]*lastFocusedTextBlockId\.current \|\| selectedBlockId/);
-  assert.match(appSource, /const freshId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+test("computeAiTarget prefers lastFocusedTextBlockId over selectedBlockId", () => {
+  assert.match(appSource, /function computeAiTarget[\s\S]*const targetId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+  assert.match(appSource, /lastFocusedTextBlockId\.current \|\| selectedBlockId/);
 });
 
-test("openAiDrawer syncs freshId into state when stale", () => {
-  assert.match(appSource, /if \(freshId !== selectedBlockId\)/);
-  assert.match(appSource, /setSelectedBlockId\(freshId\)/);
+test("openAiDrawer syncs target.blockId into state when stale", () => {
+  assert.match(appSource, /if \(target\.blockId !== selectedBlockId\)/);
+  assert.match(appSource, /setSelectedBlockId\(target\.blockId\)/);
 });
 
 test("block components accept onActivateTarget prop", () => {
@@ -514,8 +514,8 @@ test("properties tab renders for site header container", () => {
 });
 
 test("openAiDrawer does not fall back to stale target when site header is selected", () => {
-  assert.match(appSource, /function openAiDrawer[\s\S]*const freshId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
-  assert.match(appSource, /editableBlocks\[\s*0\s*\]/);
+  assert.match(appSource, /function computeAiTarget[\s\S]*selectedSitePart/);
+  assert.match(appSource, /selectedSitePart && siteHeaderParts\.has\(selectedSitePart\)/);
 });
 
 test("canvas-nav has hover border color in edit mode", () => {
@@ -539,4 +539,46 @@ test("site header container long press opens drawer via startSiteHeaderLongPress
 
 test("canvas-nav has onContextMenu handler for site header", () => {
   assert.match(appSource, /onContextMenu=\{\(e\) => openSiteHeaderContextMenu\(e\)\}/);
+});
+
+// AI target resolution tests
+test("computeAiTarget function exists and checks selectedSitePart first", () => {
+  assert.match(appSource, /function computeAiTarget/);
+  assert.match(appSource, /siteHeaderParts\.has\(selectedSitePart\)/);
+  assert.match(appSource, /kind: "site-header"/);
+});
+
+test("AI panel label renders site header when site part selected", () => {
+  assert.match(appSource, /computeAiTarget\(\)/);
+  assert.match(appSource, /AI panel: site header/);
+});
+
+test("openAiDrawer accepts targetBlockId parameter for context menu invocation", () => {
+  assert.match(appSource, /function openAiDrawer\(targetBlockId\?: string\)/);
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)/);
+});
+
+test("computeAiTarget checks lastFocusedTextBlockId before selectedBlockId", () => {
+  assert.match(appSource, /const targetId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+});
+
+test("computeAiTarget fallback excludes spacer, divider, html blocks", () => {
+  assert.match(appSource, /function computeAiTarget[\s\S]*!\["spacer", "divider", "html"\]/);
+});
+
+test("computeAiTarget excludes spacer/divider/html in block-specific check too", () => {
+  assert.match(appSource, /block && !\["spacer", "divider", "html"\]\.includes\(block\.type\)/);
+});
+
+test("AI target and style selectedPart are independent concepts", () => {
+  // selectedPart is for style, not used in computeAiTarget. Limit scope to first 800 chars of function.
+  assert.doesNotMatch(appSource, /function computeAiTarget[\s\S]{0,800}selectedPart/);
+  // computeAiTarget uses selectedSitePart, not selectedPart
+  assert.match(appSource, /function computeAiTarget[\s\S]{0,800}selectedSitePart/);
+});
+
+test("top toolbar AI button uses openAiDrawer, not raw setRightTab", () => {
+  // Already tested above, but double-check the button calls openAiDrawer, not setRightTab("ai") directly
+  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,40}>AI<\/button>/);
+  assert.doesNotMatch(appSource, /onClick=\{\(\) => setRightTab\("ai"\)\}>AI/);
 });

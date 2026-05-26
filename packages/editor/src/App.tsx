@@ -1200,48 +1200,66 @@ export function App() {
     setStatus(`Editing Gallery image ${index + 1}`);
   }
 
-  function openAiDrawer() {
+  function computeAiTarget(): { kind: "site-header" | "block" | "none"; blockId?: string; blockType?: string; label: string } {
+    const siteHeaderParts = new Set(["site-title", "nav", "site-header"]);
+    if (selectedSitePart && siteHeaderParts.has(selectedSitePart)) {
+      return { kind: "site-header", label: "site header" };
+    }
+    const targetId = lastFocusedTextBlockId.current || selectedBlockId;
+    if (targetId) {
+      const block = selectedPage?.blocks.find((b) => b.id === targetId);
+      if (block && !["spacer", "divider", "html"].includes(block.type)) {
+        return { kind: "block", blockId: block.id, blockType: block.type, label: `${blockTypeLabels[block.type] || block.type} · ${block.id}` };
+      }
+    }
+    const editableBlocks = selectedPage?.blocks.filter((b) => !["spacer", "divider", "html"].includes(b.type)) || [];
+    if (editableBlocks.length > 0) {
+      const target = editableBlocks[0];
+      return { kind: "block", blockId: target.id, blockType: target.type, label: `${blockTypeLabels[target.type] || target.type} · ${target.id}` };
+    }
+    return { kind: "none", label: "none" };
+  }
+
+  function openAiDrawer(targetBlockId?: string) {
     if (previewMode) {
       setStatus("AI is not available in Preview mode");
       return;
     }
 
-    const freshId = lastFocusedTextBlockId.current || selectedBlockId;
+    setRightTab("ai");
+    setRightDrawerMobileOpen(true);
 
-    if (freshId) {
-      if (freshId !== selectedBlockId) {
-        setSelectedBlockId(freshId);
+    if (targetBlockId) {
+      const block = selectedPage?.blocks.find((b) => b.id === targetBlockId);
+      if (block) {
+        if (targetBlockId !== selectedBlockId) {
+          setSelectedBlockId(targetBlockId);
+          setSelectedGalleryIndex(null);
+          setSelectedSitePart(null);
+          setSelectedNavIndex(null);
+        }
+        const label = `${blockTypeLabels[block.type] || block.type} · ${block.id}`;
+        setStatus(`AI panel: block ${label}`);
+        return;
+      }
+    }
+
+    const target = computeAiTarget();
+    if (target.kind === "site-header") {
+      setStatus("AI panel: site header");
+      return;
+    }
+    if (target.kind === "block" && target.blockId) {
+      if (target.blockId !== selectedBlockId) {
+        setSelectedBlockId(target.blockId);
         setSelectedGalleryIndex(null);
         setSelectedSitePart(null);
         setSelectedNavIndex(null);
       }
-      setRightTab("ai");
-      setRightDrawerMobileOpen(true);
-      const block = selectedPage?.blocks.find((b) => b.id === freshId);
-      const label = block ? (blockTypeLabels[block.type] || block.type) : "block";
-      setStatus(`AI panel opened for ${label}`);
+      setStatus(`AI panel: block ${target.label}`);
       return;
     }
-
-    const editableBlocks = selectedPage?.blocks.filter(
-      (b) => !["spacer", "divider", "html"].includes(b.type)
-    ) || [];
-
-    if (editableBlocks.length > 0) {
-      const target = editableBlocks[0];
-      setSelectedBlockId(target.id);
-      setSelectedGalleryIndex(null);
-      setSelectedSitePart(null);
-      setSelectedNavIndex(null);
-      setRightTab("ai");
-      setRightDrawerMobileOpen(true);
-      const label = blockTypeLabels[target.type] || target.type;
-      setStatus(`AI panel opened for ${label}`);
-    } else {
-      setRightTab("ai");
-      setRightDrawerMobileOpen(true);
-      setStatus("Select a block to use AI");
-    }
+    setStatus("Select a block to use AI");
   }
 
   function targetSummary(): string {
@@ -3323,7 +3341,7 @@ export function App() {
             <div className="panel">
               <h3>AI Chat</h3>
               <p className="panel-status">
-                <strong>AI panel:</strong> block {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"}
+                <strong>AI panel:</strong> {(() => { const t = computeAiTarget(); if (t.kind === "site-header") return "site header"; if (t.kind === "block") return `block ${t.label}`; return "none"; })()}
               </p>
               <div className="quick-actions">
                 <button onClick={() => void quickRewrite("rewrite")}>Rewrite</button>
@@ -3505,9 +3523,9 @@ export function App() {
               <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
               <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
               <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>AI Edit</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Generate Image</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); setRightTab("ai"); setContextMenu(null); }}>Edit Photo</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>
               <button onClick={() => {
                 const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
                 if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));
