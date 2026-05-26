@@ -302,7 +302,7 @@ test("preview mode hides selection outlines via CSS", () => {
 });
 
 test("edit mode supports direct text editing with stopPropagation on contentEditable", () => {
-  assert.match(appSource, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{ onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\); \}\}/);
   assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
 });
 
@@ -366,6 +366,84 @@ test("image block caption is contentEditable in edit mode", () => {
 test("all contentEditable blocks stop propagation on pointer events", () => {
   const contentEditableMatches = appSource.match(/contentEditable=\{!isPreview\}/g);
   assert.ok(contentEditableMatches && contentEditableMatches.length >= 8, `Expected at least 8 contentEditable elements, found ${contentEditableMatches?.length || 0}`);
-  assert.match(appSource, /onPointerDown=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{ onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\); \}\}/);
   assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+});
+
+test("top toolbar AI button calls openAiDrawer handler", () => {
+  assert.match(appSource, /openAiDrawer\(\)/);
+  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,40}>AI<\/button>/);
+});
+
+test("openAiDrawer opens right drawer on mobile via setRightDrawerMobileOpen", () => {
+  assert.match(appSource, /function openAiDrawer/);
+  assert.match(appSource, /setRightDrawerMobileOpen\(true\)/);
+});
+
+test("openAiDrawer sets right tab to AI", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]*setRightTab\("ai"\)/);
+});
+
+test("openAiDrawer falls back to first editable block when none selected", () => {
+  assert.match(appSource, /editableBlocks\[\s*0\s*\]/);
+  assert.match(appSource, /!\["spacer", "divider", "html"\]/);
+  assert.match(appSource, /Select a block to use AI/);
+});
+
+test("openAiDrawer guards preview mode with status message", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]{0,300}if \(previewMode\)/);
+  assert.match(appSource, /AI is not available in Preview mode/);
+});
+
+test("activateBlockTextTarget helper exists and sets selectedBlockId", () => {
+  assert.match(appSource, /function activateBlockTextTarget/);
+  assert.match(appSource, /setSelectedBlockId\(blockId\)/);
+  assert.match(appSource, /setSelectedGalleryIndex\(null\)/);
+  assert.match(appSource, /setSelectedSitePart\(null\)/);
+  assert.match(appSource, /setSelectedNavIndex\(null\)/);
+  assert.match(appSource, /lastFocusedTextBlockId\.current = blockId/);
+});
+
+test("lastFocusedTextBlockId useRef exists", () => {
+  assert.match(appSource, /lastFocusedTextBlockId = useRef<string>\(""\)/);
+});
+
+test("openAiDrawer prefers lastFocusedTextBlockId over selectedBlockId", () => {
+  assert.match(appSource, /function openAiDrawer[\s\S]*lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+  assert.match(appSource, /const freshId = lastFocusedTextBlockId\.current \|\| selectedBlockId/);
+});
+
+test("openAiDrawer syncs freshId into state when stale", () => {
+  assert.match(appSource, /if \(freshId !== selectedBlockId\)/);
+  assert.match(appSource, /setSelectedBlockId\(freshId\)/);
+});
+
+test("block components accept onActivateTarget prop", () => {
+  assert.match(appSource, /HeroBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /TextBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /CardsBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /HoursBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /ContactBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /TestimonialBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /MapBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /MarqueeBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+  assert.match(appSource, /ImageBlock[\s\S]*onActivateTarget\?: \(part\?:\s*string\) => void/);
+});
+
+test("contentEditable onPointerDown calls onActivateTarget before stopPropagation", () => {
+  const actCalls = appSource.match(/onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\)/g);
+  assert.ok(actCalls && actCalls.length >= 8, `Expected onActivateTarget calls before stopPropagation, found ${actCalls?.length || 0}`);
+});
+
+test("activateBlockTextTarget is passed to renderTypedBlock call site", () => {
+  assert.match(appSource, /activateBlockTextTarget\(block\.id, part\)/);
+  assert.match(appSource, /onActivateTarget=\{onActivateTarget\}/);
+});
+
+test("selectBlock also updates lastFocusedTextBlockId", () => {
+  assert.match(appSource, /function selectBlock[\s\S]*lastFocusedTextBlockId\.current = blockId/);
+});
+
+test("preview useEffect resets lastFocusedTextBlockId", () => {
+  assert.match(appSource, /if \(previewMode\)[\s\S]*lastFocusedTextBlockId\.current = \"\"/);
 });

@@ -360,52 +360,52 @@ function withSavedStatusText(status: string, dirty: boolean): string {
   return "Idle";
 }
 
-const HeroBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const HeroBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as HeroBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.heading}</h1>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.subheading}</p>
+      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.heading}</h1>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.subheading}</p>
       <button className="cta-btn" style={partStyleToCss(parts?.button, "body")}>{data.ctaLabel || "Call to Action"}</button>
     </section>
   );
 };
 
-const TextBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const TextBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as TextBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.body}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.body}</p>
     </section>
   );
 };
 
-const ImageBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const ImageBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as ImageBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
   return (
     <section>
       {data.src ? <img src={data.src} alt={data.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Image Placeholder</div>}
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("caption", e.currentTarget.textContent || "")} onBlur={(e) => onText("caption", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.caption}</p>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("caption", e.currentTarget.textContent || "")} onBlur={(e) => onText("caption", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.caption}</p>
     </section>
   );
 };
 
-const CardsBlock = ({ block, onText, onCardText, isPreview }: { block: Block; onText?: (field: string, value: string) => void; onCardText?: (cardIndex: number, field: string, value: string) => void; isPreview?: boolean }) => {
+const CardsBlock = ({ block, onText, onCardText, isPreview, onActivateTarget }: { block: Block; onText?: (field: string, value: string) => void; onCardText?: (cardIndex: number, field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as CardsBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
       <div className="cards-grid">
         {data.cards.map((card, i) => (
           <article key={card.id} style={partStyleToCss(parts?.card, "body")}>
-            <h3 style={partStyleToCss(parts?.cardHeading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{card.title}</h3>
-            <p style={partStyleToCss(parts?.cardBody, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{card.body}</p>
+            <h3 style={partStyleToCss(parts?.cardHeading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("cardHeading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{card.title}</h3>
+            <p style={partStyleToCss(parts?.cardBody, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("cardBody"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{card.body}</p>
           </article>
         ))}
       </div>
@@ -413,22 +413,22 @@ const CardsBlock = ({ block, onText, onCardText, isPreview }: { block: Block; on
   );
 };
 
-const HoursBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const HoursBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as HoursBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
       <ul>
         {data.rows.map((row, i) => (
-          <li key={`${row.day}-${i}`} style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onBlur={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{row.day}: {row.open} - {row.close}</li>
+          <li key={`${row.day}-${i}`} style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onBlur={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{row.day}: {row.open} - {row.close}</li>
         ))}
       </ul>
     </section>
   );
 };
 
-const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, onSlotLongPress, isPreview, onText }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void; isMobileViewport?: boolean; onSlotLongPress?: (index: number) => void; isPreview?: boolean; onText?: (field: string, value: string) => void }) => {
+const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, onSlotLongPress, isPreview, onText, onActivateTarget }: { block: Block; selectedIndex?: number | null; onImageSelect?: (index: number) => void; isMobileViewport?: boolean; onSlotLongPress?: (index: number) => void; isPreview?: boolean; onText?: (field: string, value: string) => void; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as GalleryBlockData;
   const fit = block.styles?.backgroundSize || "cover";
   const parts = block.styles?.parts;
@@ -450,7 +450,7 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, o
   }
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
       <div className="gallery-grid">
         {data.images.map((img, i) => (
           <figure
@@ -496,40 +496,40 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, o
   );
 };
 
-const ContactBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const ContactBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as ContactBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("phone", e.currentTarget.textContent || "")} onBlur={(e) => onText("phone", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.phone}</p>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("email", e.currentTarget.textContent || "")} onBlur={(e) => onText("email", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.email}</p>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.address}</p>
+      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("phone", e.currentTarget.textContent || "")} onBlur={(e) => onText("phone", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.phone}</p>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("email", e.currentTarget.textContent || "")} onBlur={(e) => onText("email", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.email}</p>
+      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.address}</p>
     </section>
   );
 };
 
-const TestimonialBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const TestimonialBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as TestimonialBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <blockquote style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("quote", e.currentTarget.textContent || "")} onBlur={(e) => onText("quote", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>"{data.quote}"</blockquote>
-      <cite style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("author", e.currentTarget.textContent || "")} onBlur={(e) => onText("author", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.author}</cite>
+      <blockquote style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("quote", e.currentTarget.textContent || "")} onBlur={(e) => onText("quote", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>"{data.quote}"</blockquote>
+      <cite style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("author", e.currentTarget.textContent || "")} onBlur={(e) => onText("author", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.author}</cite>
     </section>
   );
 };
 
-const MapBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const MapBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as MapBlockData;
   const parts = block.styles?.parts;
-  return <section><h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.address || "Map placeholder"}</h2></section>;
+  return <section><h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.address || "Map placeholder"}</h2></section>;
 };
 
-const MarqueeBlock = ({ block, onText, isPreview }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean }) => {
+const MarqueeBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as MarqueeBlockData;
   const parts = block.styles?.parts;
-  return <section className="marquee" style={partStyleToCss(parts?.container)}><div style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("text", e.currentTarget.textContent || "")} onBlur={(e) => onText("text", e.currentTarget.textContent || "")} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>{data.text}</div></section>;
+  return <section className="marquee" style={partStyleToCss(parts?.container)}><div style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("text", e.currentTarget.textContent || "")} onBlur={(e) => onText("text", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.text}</div></section>;
 };
 
 const SpacerBlock = ({ block }: { block: Block }) => {
@@ -624,18 +624,18 @@ const HtmlBlock = ({ block }: { block: Block }) => {
   return <section dangerouslySetInnerHTML={{ __html: data.html }} />;
 };
 
-function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null, isMobileViewport?: boolean, onSlotLongPress?: (index: number) => void, isPreview?: boolean, onCardText?: (cardIndex: number, field: string, value: string) => void): JSX.Element {
+function renderTypedBlock(block: Block, onText: (field: string, value: string) => void, onImageSelect?: (index: number) => void, selectedGalleryIndex?: number | null, isMobileViewport?: boolean, onSlotLongPress?: (index: number) => void, isPreview?: boolean, onCardText?: (cardIndex: number, field: string, value: string) => void, onActivateTarget?: (part?: string) => void): JSX.Element {
   switch (block.type) {
-    case "hero": return <HeroBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "text": return <TextBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "image": return <ImageBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "cards": return <CardsBlock block={block} onText={onText} onCardText={onCardText} isPreview={isPreview} />;
-    case "hours": return <HoursBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} isMobileViewport={isMobileViewport} onSlotLongPress={onSlotLongPress} isPreview={isPreview} onText={onText} />;
-    case "contact": return <ContactBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "testimonial": return <TestimonialBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "map": return <MapBlock block={block} onText={onText} isPreview={isPreview} />;
-    case "marquee": return <MarqueeBlock block={block} onText={onText} isPreview={isPreview} />;
+    case "hero": return <HeroBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "text": return <TextBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "image": return <ImageBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "cards": return <CardsBlock block={block} onText={onText} onCardText={onCardText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "hours": return <HoursBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "gallery": return <GalleryBlock block={block} selectedIndex={selectedGalleryIndex} onImageSelect={onImageSelect} isMobileViewport={isMobileViewport} onSlotLongPress={onSlotLongPress} isPreview={isPreview} onText={onText} onActivateTarget={onActivateTarget} />;
+    case "contact": return <ContactBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "testimonial": return <TestimonialBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "map": return <MapBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
+    case "marquee": return <MarqueeBlock block={block} onText={onText} isPreview={isPreview} onActivateTarget={onActivateTarget} />;
     case "spacer": return <SpacerBlock block={block} />;
     case "divider": return <DividerBlock block={block} />;
     case "html": return <HtmlBlock block={block} />;
@@ -706,6 +706,7 @@ export function App() {
       setSelectedNavIndex(null);
       setRightDrawerMobileOpen(false);
       setContextMenu(null);
+      lastFocusedTextBlockId.current = "";
     }
   }, [previewMode]);
 
@@ -723,6 +724,7 @@ export function App() {
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
   const [selectedGalleryIndex, setSelectedGalleryIndex] = useState<number | null>(null);
+  const lastFocusedTextBlockId = useRef<string>("");
   const [copiedBlockStyle, setCopiedBlockStyle] = useState<Block["styles"] | null>(null);
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
@@ -1147,6 +1149,16 @@ export function App() {
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
+    lastFocusedTextBlockId.current = blockId;
+  }
+
+  function activateBlockTextTarget(blockId: string, part?: string) {
+    setSelectedBlockId(blockId);
+    setSelectedGalleryIndex(null);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
+    if (part) setSelectedPart(part as keyof BlockPartStyles);
+    lastFocusedTextBlockId.current = blockId;
   }
 
   function openBlockDrawer(blockId: string) {
@@ -1178,6 +1190,50 @@ export function App() {
     setRightTab("images");
     setRightDrawerMobileOpen(true);
     setStatus(`Editing Gallery image ${index + 1}`);
+  }
+
+  function openAiDrawer() {
+    if (previewMode) {
+      setStatus("AI is not available in Preview mode");
+      return;
+    }
+
+    const freshId = lastFocusedTextBlockId.current || selectedBlockId;
+
+    if (freshId) {
+      if (freshId !== selectedBlockId) {
+        setSelectedBlockId(freshId);
+        setSelectedGalleryIndex(null);
+        setSelectedSitePart(null);
+        setSelectedNavIndex(null);
+      }
+      setRightTab("ai");
+      setRightDrawerMobileOpen(true);
+      const block = selectedPage?.blocks.find((b) => b.id === freshId);
+      const label = block ? (blockTypeLabels[block.type] || block.type) : "block";
+      setStatus(`AI panel opened for ${label}`);
+      return;
+    }
+
+    const editableBlocks = selectedPage?.blocks.filter(
+      (b) => !["spacer", "divider", "html"].includes(b.type)
+    ) || [];
+
+    if (editableBlocks.length > 0) {
+      const target = editableBlocks[0];
+      setSelectedBlockId(target.id);
+      setSelectedGalleryIndex(null);
+      setSelectedSitePart(null);
+      setSelectedNavIndex(null);
+      setRightTab("ai");
+      setRightDrawerMobileOpen(true);
+      const label = blockTypeLabels[target.type] || target.type;
+      setStatus(`AI panel opened for ${label}`);
+    } else {
+      setRightTab("ai");
+      setRightDrawerMobileOpen(true);
+      setStatus("Select a block to use AI");
+    }
   }
 
   function targetSummary(): string {
@@ -1966,6 +2022,7 @@ export function App() {
       setSelectedGalleryIndex(null);
       setSelectedSitePart(null);
       setSelectedNavIndex(null);
+      lastFocusedTextBlockId.current = blockId;
       return;
     }
     if (!drag) selectBlock(blockId);
@@ -2036,7 +2093,7 @@ export function App() {
         <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
         <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
         <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
-        <button onClick={() => setRightTab("ai")}>AI</button>
+        <button onClick={() => openAiDrawer()}>AI</button>
         <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
         <button onClick={() => void saveProject()}>Save</button>
         <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
@@ -2289,7 +2346,7 @@ export function App() {
                             cards[cardIndex] = { ...cards[cardIndex], [field]: value };
                             return { ...current, data: { ...data, cards } };
                           });
-                        })}
+                        }, (part) => activateBlockTextTarget(block.id, part))}
                         {selectedBlock?.id === block.id && !previewMode && (
                           <>
                             <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
