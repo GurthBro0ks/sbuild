@@ -1735,47 +1735,57 @@ button:disabled {
     max-width: 100%;
   }
 
-  .canvas-frame.phone .row-shell.stack .row-grid {
+  .canvas-frame.phone .row-shell.stack .row-grid,
+  .canvas-frame.mobile-viewport .row-shell.stack .row-grid {
     flex-direction: column;
     gap: 10px;
   }
 
-  .canvas-frame.phone .row-shell.stack .block-shell.mobile-row-block {
+  .canvas-frame.phone .row-shell.stack .block-shell.mobile-row-block,
+  .canvas-frame.mobile-viewport .row-shell.stack .block-shell.mobile-row-block {
     width: 100% !important;
-    max-width: 100%;
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
     flex-basis: 100% !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
     align-self: stretch !important;
+    min-width: 0;
   }
 
-  .canvas-frame.phone .row-shell.stack .row-label {
+  .canvas-frame.phone .row-shell.stack .row-label,
+  .canvas-frame.mobile-viewport .row-shell.stack .row-label {
     line-height: 1.3;
     display: inline-flex;
     width: fit-content;
     max-width: 100%;
   }
 
-  .canvas-frame.phone .row-shell.stack .block-meta {
+  .canvas-frame.phone .row-shell.stack .block-meta,
+  .canvas-frame.mobile-viewport .row-shell.stack .block-meta {
     align-items: flex-start;
   }
 
-  .canvas-frame.phone .row-shell.stack .block-meta-main {
+  .canvas-frame.phone .row-shell.stack .block-meta-main,
+  .canvas-frame.mobile-viewport .row-shell.stack .block-meta-main {
     flex-wrap: wrap;
     gap: 6px;
   }
 
-  .canvas-frame.phone .row-shell.stack .block-meta-badges {
+  .canvas-frame.phone .row-shell.stack .block-meta-badges,
+  .canvas-frame.mobile-viewport .row-shell.stack .block-meta-badges {
     flex: 1 1 100%;
     order: 3;
   }
 
-  .canvas-frame.phone .row-shell.stack .resize-badge {
+  .canvas-frame.phone .row-shell.stack .resize-badge,
+  .canvas-frame.mobile-viewport .row-shell.stack .resize-badge {
     white-space: normal;
     overflow-wrap: anywhere;
   }
 
-  .canvas-frame.phone .row-shell.stack .context-btn {
+  .canvas-frame.phone .row-shell.stack .context-btn,
+  .canvas-frame.mobile-viewport .row-shell.stack .context-btn {
     order: 2;
     margin-left: auto;
     margin-top: -2px;

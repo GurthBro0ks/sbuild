@@ -38,14 +38,15 @@ test("joinAdjacentBlocks assigns shared row and 50/50 defaults", () => {
   assert.equal(out[1]!.styles!.layout!.widthPercent, 50);
 });
 
-test("leaveRowForBlock clears row on selected block", () => {
+test("leaveRowForBlock clears selected block and normalizes lone leftover", () => {
   const blocks = [
     { id: "a", type: "text", data: { body: "a" }, styles: { layout: { rowId: "row-a", widthPercent: 50 } } },
     { id: "b", type: "text", data: { body: "b" }, styles: { layout: { rowId: "row-a", widthPercent: 50 } } }
   ] as any[];
   const out = leaveRowForBlock(blocks as any, 0);
   assert.equal(out[0]!.styles!.layout!.rowId, undefined);
-  assert.equal(out[1]!.styles!.layout!.rowId, "row-a");
+  assert.equal(out[1]!.styles!.layout!.rowId, undefined);
+  assert.equal(out[1]!.styles!.layout!.widthPercent, 100);
 });
 
 test("resize helpers clamp and snap", () => {

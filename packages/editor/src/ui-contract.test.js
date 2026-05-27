@@ -4,6 +4,7 @@ import test from "node:test";
 
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 
 test("gallery slots expose direct selection and selected-slot highlight affordances", () => {
   assert.match(appSource, /selectGallerySlot\(block\.id, index\)/);
@@ -262,17 +263,18 @@ test("context menu includes required mobile row and layout actions", () => {
 });
 
 test("mobile row containers stack same-row blocks visually while preserving row metadata", () => {
-  assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{deviceMode === "phone" \? "stack" : ""\}`\}/);
-  assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{deviceMode === "phone" \? "mobile-row-block" : ""\}`\}/);
-  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+  assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{isMobileViewport \? "stack" : ""\}`\}/);
+  assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{isMobileViewport \? "mobile-row-block" : ""\}`\}/);
+  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
   assert.match(appSource, /shortRowId\(row\.rowId\.startsWith\("single:"\) \? undefined : row\.rowId\)/);
   assert.match(appSource, /· \{row\.blocks\.length\} columns/);
 });
 
 test("mobile same-row block visual width is forced readable full width", () => {
-  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: deviceMode === "phone" \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
-  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
-  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
+  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: isMobileViewport \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
+  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
 });
 
 test("desktop row layout remains side-by-side capable", () => {
@@ -322,6 +324,17 @@ test("remove from row action remains available and clears row membership", () =>
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); setContextMenu\(null\);/);
   assert.match(appSource, /leaveRowForBlock\(selectedPage\.blocks, idx\)/);
   assert.match(appSource, /setStatus\("Removed block from row"\)/);
+});
+
+test("leave-row helper normalizes single leftover row member to full width", () => {
+  assert.match(layoutHelpersSource, /const shouldNormalizeSingleLeftover = Boolean\(targetRowId\) && rowMembers\.length === 2/);
+  assert.match(layoutHelpersSource, /widthMode:\s*"full"/);
+  assert.match(layoutHelpersSource, /widthPercent:\s*100/);
+  assert.match(layoutHelpersSource, /rowId:\s*undefined/);
+});
+
+test("canvas frame tags mobile viewport class for mobile-only row visual overrides", () => {
+  assert.match(appSource, /className=\{`canvas-frame sbuild-site-preview sbuild-rendered-page \$\{deviceMode\} \$\{isMobileViewport \? "mobile-viewport" : ""\}`\}/);
 });
 
 test("move up and move down actions remain present after row operations", () => {

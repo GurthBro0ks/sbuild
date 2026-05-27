@@ -3295,7 +3295,7 @@ export function App() {
 
           <div
             ref={canvasRef}
-            className={`canvas-frame sbuild-site-preview sbuild-rendered-page ${deviceMode}`}
+            className={`canvas-frame sbuild-site-preview sbuild-rendered-page ${deviceMode} ${isMobileViewport ? "mobile-viewport" : ""}`}
             style={{ background: project.globalStyles.colors.bg, color: project.globalStyles.colors.text }}
             onPointerDown={beginPaint}
             onPointerMove={movePaint}
@@ -3425,7 +3425,7 @@ export function App() {
             </nav>
 
             {rowGroups.map((row) => (
-              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${deviceMode === "phone" ? "stack" : ""}`}>
+              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${isMobileViewport ? "stack" : ""}`}>
                 <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
                 <div className="row-grid">
                   {row.blocks.map((block) => {
@@ -3435,9 +3435,9 @@ export function App() {
                     return (
                       <div
                         key={block.id}
-                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${deviceMode === "phone" ? "mobile-row-block" : ""}`}
+                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${isMobileViewport ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
-                        style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
+                        style={{ ...blockStyleToCss(block), flexBasis: isMobileViewport ? "100%" : `${width}%` }}
                         onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}

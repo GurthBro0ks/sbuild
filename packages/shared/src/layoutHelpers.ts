@@ -72,8 +72,12 @@ export function joinAdjacentBlocks(blocks: Block[], index: number, direction: "p
 
 export function leaveRowForBlock(blocks: Block[], index: number): Block[] {
   if (index < 0 || index >= blocks.length) return blocks;
+  const targetRowId = blocks[index]?.styles?.layout?.rowId;
+  const rowMembers = targetRowId ? blocks.filter((block) => block.styles?.layout?.rowId === targetRowId) : [];
+  const shouldNormalizeSingleLeftover = Boolean(targetRowId) && rowMembers.length === 2;
+
   return blocks.map((block, i) => {
-    if (i !== index) return block;
+    if (i !== index && !(shouldNormalizeSingleLeftover && block.styles?.layout?.rowId === targetRowId)) return block;
     return {
       ...block,
       styles: {
