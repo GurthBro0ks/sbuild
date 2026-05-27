@@ -3435,7 +3435,7 @@ export function App() {
                     return (
                       <div
                         key={block.id}
-                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""}`}
+                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${deviceMode === "phone" ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
                         style={{ ...blockStyleToCss(block), flexBasis: deviceMode === "phone" ? "100%" : `${width}%` }}
                         onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
@@ -3450,10 +3450,14 @@ export function App() {
                       >
                         {!previewMode && (
                           <div className="block-meta">
-                            <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
-                            <span className="block-friendly-label">{blockTypeLabels[block.type] || block.type}</span>
-                            <span className="block-id-debug">{block.id.slice(0, 12)}</span>
-                            <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
+                            <div className="block-meta-main">
+                              <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
+                              <span className="block-friendly-label">{blockTypeLabels[block.type] || block.type}</span>
+                              <span className="block-id-debug">{block.id.slice(0, 12)}</span>
+                            </div>
+                            <div className="block-meta-badges">
+                              <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
+                            </div>
                             <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
                           </div>
                         )}

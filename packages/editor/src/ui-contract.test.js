@@ -261,12 +261,72 @@ test("context menu includes required mobile row and layout actions", () => {
   assert.match(appSource, /Move Down/);
 });
 
+test("mobile row containers stack same-row blocks visually while preserving row metadata", () => {
+  assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{deviceMode === "phone" \? "stack" : ""\}`\}/);
+  assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{deviceMode === "phone" \? "mobile-row-block" : ""\}`\}/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+  assert.match(appSource, /shortRowId\(row\.rowId\.startsWith\("single:"\) \? undefined : row\.rowId\)/);
+  assert.match(appSource, /· \{row\.blocks\.length\} columns/);
+});
+
+test("mobile same-row block visual width is forced readable full width", () => {
+  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: deviceMode === "phone" \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
+});
+
+test("desktop row layout remains side-by-side capable", () => {
+  assert.match(cssSource, /\.row-grid[\s\S]*display:\s*flex/);
+  assert.match(cssSource, /\.row-grid[\s\S]*flex-wrap:\s*nowrap/);
+  assert.match(cssSource, /\.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+});
+
+test("mobile block header layout uses wrap-safe structure and keeps menu button tappable", () => {
+  assert.match(appSource, /className="block-meta-main"/);
+  assert.match(appSource, /className="block-meta-badges"/);
+  assert.match(appSource, /className="context-btn"[\s\S]*title="Menu"/);
+  assert.match(cssSource, /\.block-meta[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-meta-main[\s\S]*flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.context-btn[\s\S]*min-width:\s*36px/);
+  assert.match(cssSource, /\.context-btn[\s\S]*min-height:\s*36px/);
+});
+
+test("width and row badges are wrap-safe and do not rely on overlap-prone absolute placement", () => {
+  assert.match(cssSource, /\.resize-badge[\s\S]*max-width:\s*100%/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.resize-badge[\s\S]*white-space:\s*normal/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-meta-badges[\s\S]*order:\s*3/);
+  assert.doesNotMatch(cssSource, /\.resize-badge\s*\{[^{}]*position:\s*absolute/);
+});
+
 test("row and layout context menu actions select context block id before applying", () => {
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); openResizeLayoutForBlock\(contextMenu\.blockId\);/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); startNewRow\(contextMenu\.blockId\);/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\);/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\);/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\);/);
+});
+
+test("place-with-row actions close context menu and set explicit status text", () => {
+  assert.match(appSource, /Place with block above/);
+  assert.match(appSource, /Place with block below/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /setStatus\("Placed block with block above"\)/);
+  assert.match(appSource, /setStatus\("Placed block with block below"\)/);
+});
+
+test("remove from row action remains available and clears row membership", () => {
+  assert.match(appSource, /Remove from row \/ Leave row/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /leaveRowForBlock\(selectedPage\.blocks, idx\)/);
+  assert.match(appSource, /setStatus\("Removed block from row"\)/);
+});
+
+test("move up and move down actions remain present after row operations", () => {
+  assert.match(appSource, /Move Up/);
+  assert.match(appSource, /Move Down/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\);/);
   assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\);/);
 });

@@ -883,12 +883,13 @@ button:disabled {
 .block-shell.selected-block { border-color: #2b6dff; box-shadow: 0 0 0 2px rgba(43,109,255,.2); }
 
 .resize-badge {
-  margin-left: auto;
   font-size: 10px;
   color: var(--editor-muted);
   border: 1px solid var(--editor-border);
   border-radius: 999px;
   padding: 2px 6px;
+  max-width: 100%;
+  white-space: nowrap;
 }
 .block-shell.dragging { opacity: 0.6; transform: scale(1.01); box-shadow: 0 8px 24px rgba(0,0,0,.15); }
 
@@ -897,20 +898,37 @@ button:disabled {
   text-transform: uppercase;
   margin-bottom: 8px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
   color: var(--editor-muted);
+  min-width: 0;
+}
+.block-meta-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.block-meta-badges {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .block-friendly-label {
   font-weight: 700;
   color: var(--editor-text);
   font-size: 12px;
   text-transform: none;
+  min-width: 0;
 }
 .block-id-debug {
   font-size: 10px;
   color: var(--editor-muted);
   opacity: 0.7;
+  word-break: break-word;
 }
 .block-shell.selected-block .block-friendly-label {
   color: var(--editor-accent);
@@ -959,6 +977,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
 }
 
 /* ===== BLOCK IMAGES ===== */
@@ -1714,6 +1733,52 @@ button:disabled {
   .canvas-frame.phone,
   .canvas-frame.tablet {
     max-width: 100%;
+  }
+
+  .canvas-frame.phone .row-shell.stack .row-grid {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .canvas-frame.phone .row-shell.stack .block-shell.mobile-row-block {
+    width: 100% !important;
+    max-width: 100%;
+    flex-basis: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    align-self: stretch !important;
+  }
+
+  .canvas-frame.phone .row-shell.stack .row-label {
+    line-height: 1.3;
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .canvas-frame.phone .row-shell.stack .block-meta {
+    align-items: flex-start;
+  }
+
+  .canvas-frame.phone .row-shell.stack .block-meta-main {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .canvas-frame.phone .row-shell.stack .block-meta-badges {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .canvas-frame.phone .row-shell.stack .resize-badge {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .canvas-frame.phone .row-shell.stack .context-btn {
+    order: 2;
+    margin-left: auto;
+    margin-top: -2px;
   }
 
   .canvas-nav {
