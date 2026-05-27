@@ -1700,6 +1700,7 @@ export function App() {
     if (to < 0 || to >= selectedPage.blocks.length) return;
     patchCurrentPage({ ...selectedPage, blocks: move(selectedPage.blocks, index, to) });
     setLastAction(`move-${direction}`);
+    setStatus(direction === "up" ? "Moved block up" : "Moved block down");
     setContextMenu(null);
   }
 
@@ -1758,6 +1759,9 @@ export function App() {
     const block = selectedPage?.blocks.find((b) => b.id === blockId);
     if (!block) return;
     setSelectedBlockId(blockId);
+    setSelectedGalleryIndex(null);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
     setRightTab("properties");
     setPropertiesTab("resize");
     setLayoutHighlight(true);
@@ -1803,7 +1807,7 @@ export function App() {
     const joined = joinAdjacentBlocks(selectedPage.blocks, idx, "previous");
     if (joined === selectedPage.blocks) return;
     patchCurrentPage({ ...selectedPage, blocks: joined });
-    setStatus("Joined row with previous block");
+    setStatus("Placed block with block above");
   }
 
   function placeWithNext(blockId?: string) {
@@ -1814,7 +1818,7 @@ export function App() {
     const joined = joinAdjacentBlocks(selectedPage.blocks, idx, "next");
     if (joined === selectedPage.blocks) return;
     patchCurrentPage({ ...selectedPage, blocks: joined });
-    setStatus("Joined row with next block");
+    setStatus("Placed block with block below");
   }
 
   function removeFromRow(blockId?: string) {
@@ -2999,7 +3003,7 @@ export function App() {
           )}
 
           {rightTab === "ai" && (
-            <div className="panel">
+            <div className="panel mobile-ai-panel">
               <h3>AI Chat</h3>
               <p className="panel-status">
                 <strong>AI panel:</strong> {(() => { const t = computeAiTarget(); if (t.kind === "site-header") return "site header"; if (t.kind === "block") return `block ${t.label}`; return "none"; })()}
@@ -3015,8 +3019,10 @@ export function App() {
                   <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
                 ))}
               </div>
-              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" />
-              <button onClick={() => void chat()}>Send</button>
+              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" className="mobile-field-stack" />
+              <div className="button-row mobile-button-row">
+                <button onClick={() => void chat()}>Send</button>
+              </div>
 
               <h3>Image Generator</h3>
               <label>
@@ -3032,7 +3038,9 @@ export function App() {
                   <option value="1536x1024">1536 x 1024</option>
                 </select>
               </label>
-              <button onClick={() => void generateImage()}>Generate image for this block ({blockTypeForTarget(selectedBlock)})</button>
+              <div className="button-row mobile-button-row">
+                <button onClick={() => void generateImage()}>Generate image for this block ({blockTypeForTarget(selectedBlock)})</button>
+              </div>
               {imageStatus && <p><strong>Image status:</strong> {imageStatus}</p>}
               {imageSizeDecision && (
                 <div className="image-debug">
@@ -3071,7 +3079,9 @@ export function App() {
                 Instruction
                 <textarea value={photoEditInstruction} onChange={(e) => setPhotoEditInstruction(e.target.value)} rows={3} placeholder="Optional instruction for edit." />
               </label>
-              <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>{uploadingImage ? "Uploading..." : "Apply photo edit"}</button>
+              <div className="button-row mobile-button-row">
+                <button onClick={() => void applyPhotoEdit()} disabled={uploadingImage}>{uploadingImage ? "Uploading..." : "Apply photo edit"}</button>
+              </div>
               {photoEditStatus && <p><strong>Photo edit status:</strong> {photoEditStatus}</p>}
               {lastEditedImage && <img src={lastEditedImage} alt="Last edited" className="block-image" />}
             </div>
@@ -3538,6 +3548,8 @@ export function App() {
 
       {/* Context Menu */}
       {contextMenu?.visible && (
+        <>
+        <div className="context-menu-backdrop" onClick={() => setContextMenu(null)} />
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
           {contextMenu.isSiteHeader ? (
             <>
@@ -3551,18 +3563,18 @@ export function App() {
             <>
               <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Assistant</button>
-              <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
               <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
-              <button onClick={() => { startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
-              <button onClick={() => { placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
-              <button onClick={() => { placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
-              <button onClick={() => { removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row / Leave row</button>
               <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
               <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
-              <button onClick={() => { moveBlock("up", contextMenu.blockId); }}>Move Up</button>
-              <button onClick={() => { moveBlock("down", contextMenu.blockId); }}>Move Down</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); }}>Move Up</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); }}>Move Down</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>
@@ -3575,6 +3587,7 @@ export function App() {
             </>
           )}
         </div>
+        </>
       )}
 
       {settingsOpen && (

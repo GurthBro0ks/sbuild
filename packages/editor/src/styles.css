@@ -1223,6 +1223,13 @@ button:disabled {
 }
 
 /* ===== CONTEXT MENU ===== */
+.context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 190;
+}
+
 .context-menu {
   position: fixed;
   z-index: 200;
@@ -1237,6 +1244,12 @@ button:disabled {
   max-height: min(70vh, 420px);
   overflow: auto;
   color: var(--editor-text);
+}
+
+@media (max-width: 768px) {
+  .context-menu-backdrop {
+    background: rgba(0, 0, 0, 0.2);
+  }
 }
 .context-menu button {
   text-align: left;
@@ -1514,7 +1527,7 @@ button:disabled {
     bottom: 0;
     z-index: 95;
     pointer-events: none;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.22);
   }
 
   .mobile-editor-overlay.open {
@@ -1544,7 +1557,7 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: 6px 12px;
     border-bottom: 1px solid var(--editor-border);
     background: var(--editor-panel-bg);
     flex-shrink: 0;
@@ -1600,7 +1613,7 @@ button:disabled {
   }
 
   .mobile-editor-sheet-target {
-    padding: 4px 12px 6px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--editor-border);
     background: var(--editor-panel-bg);
     flex-shrink: 0;
@@ -1619,6 +1632,53 @@ button:disabled {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     padding: 8px;
+    overflow-x: hidden;
+  }
+
+  .mobile-editor-sheet,
+  .mobile-editor-sheet * {
+    min-width: 0;
+  }
+
+  .mobile-editor-sheet input,
+  .mobile-editor-sheet textarea,
+  .mobile-editor-sheet select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .mobile-editor-sheet .panel,
+  .mobile-editor-sheet .style-panel,
+  .mobile-editor-sheet .advanced-fields,
+  .mobile-editor-sheet .global-style-section,
+  .mobile-editor-sheet .image-manager-actions,
+  .mobile-editor-sheet .image-action-stack,
+  .mobile-editor-sheet .image-grid,
+  .mobile-editor-sheet .chat-log {
+    overflow-x: hidden;
+  }
+
+  .mobile-editor-sheet .button-row,
+  .mobile-editor-sheet .quick-actions,
+  .mobile-editor-sheet .nav-edit-row,
+  .mobile-editor-sheet .part-selector,
+  .mobile-editor-sheet .preset-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .mobile-editor-sheet .mobile-button-row button,
+  .mobile-editor-sheet .quick-actions button,
+  .mobile-editor-sheet .button-row button,
+  .mobile-editor-sheet .preset-row button {
+    width: 100%;
+  }
+
+  .mobile-editor-sheet .color-input-inline {
+    width: 100%;
+    min-height: 36px;
   }
 
   .canvas-area {

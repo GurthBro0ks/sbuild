@@ -207,6 +207,83 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /dryRun/);
 });
 
+test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.22\)/);
+  assert.match(appSource, /className={`mobile-editor-overlay \$\{rightDrawerMobileOpen \? "open" : ""\}`}/);
+  assert.match(appSource, /<section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">/);
+});
+
+test("mobile editor header keeps title and close in single compact row", () => {
+  assert.match(appSource, /<div className="mobile-editor-sheet-header">[\s\S]*<h2>Edit block<\/h2>[\s\S]*className="mobile-editor-x-close"/);
+  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*display:\s*flex/);
+  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*justify-content:\s*space-between/);
+  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*padding:\s*6px\s*12px/);
+  assert.doesNotMatch(appSource, /mobile-editor-close-row|close-only-row/);
+});
+
+test("mobile close button preserves aria label and tap target", () => {
+  assert.match(appSource, /className="mobile-editor-x-close"[\s\S]*aria-label="Close editor drawer"/);
+  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*width:\s*44px/);
+  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*height:\s*44px/);
+});
+
+test("mobile drawer forms enforce full width controls and no horizontal overflow", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet input,[\s\S]*\.mobile-editor-sheet textarea,[\s\S]*\.mobile-editor-sheet select[\s\S]*width:\s*100%/);
+  assert.match(cssSource, /\.mobile-editor-sheet input,[\s\S]*max-width:\s*100%/);
+  assert.match(cssSource, /\.mobile-editor-sheet input,[\s\S]*box-sizing:\s*border-box/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-x:\s*hidden/);
+});
+
+test("mobile AI panel uses stacked fields and non-colliding button rows", () => {
+  assert.match(appSource, /<div className="panel mobile-ai-panel">/);
+  assert.match(appSource, /Optional Provider Size Override/);
+  assert.match(appSource, /className="button-row mobile-button-row"/);
+  assert.match(appSource, />Send<\/button>/);
+  assert.match(appSource, />Generate image for this block/);
+  assert.match(appSource, /Apply photo edit/);
+});
+
+test("mobile props style controls stack safely in sheet", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet \.button-row,[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /\.mobile-editor-sheet \.part-selector,[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /\.mobile-editor-sheet \.preset-row[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /\.mobile-editor-sheet \.color-input-inline[\s\S]*width:\s*100%/);
+});
+
+test("context menu includes required mobile row and layout actions", () => {
+  assert.match(appSource, /Edit Properties[\s\S]*AI Assistant/);
+  assert.match(appSource, /AI Assistant[\s\S]*Resize\/Layout/);
+  assert.match(appSource, /Place with block above/);
+  assert.match(appSource, /Place with block below/);
+  assert.match(appSource, /Start new row/);
+  assert.match(appSource, /Remove from row \/ Leave row/);
+  assert.match(appSource, /Move Up/);
+  assert.match(appSource, /Move Down/);
+});
+
+test("row and layout context menu actions select context block id before applying", () => {
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); openResizeLayoutForBlock\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); startNewRow\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\);/);
+});
+
+test("row action status text and context menu closing behavior remain explicit", () => {
+  assert.match(appSource, /setStatus\("Placed block with block above"\)/);
+  assert.match(appSource, /setStatus\("Placed block with block below"\)/);
+  assert.match(appSource, /setStatus\(direction === "up" \? "Moved block up" : "Moved block down"\)/);
+  assert.match(appSource, /setStatus\("Removed block from row"\)/);
+  assert.match(appSource, /setContextMenu\(null\)/);
+});
+
+test("context menu uses light backdrop dim layer", () => {
+  assert.match(appSource, /className="context-menu-backdrop"/);
+  assert.match(cssSource, /\.context-menu-backdrop[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.2\)/);
+});
+
 test("mobile site title single tap edits directly without opening drawer", () => {
   assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
   assert.match(appSource, /if \(previewMode\) return;[\s\S]*setSelectedSitePart\("site-title"\)/);
