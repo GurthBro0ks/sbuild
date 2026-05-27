@@ -1828,9 +1828,6 @@ button:disabled {
   .app.mobile-shell .left-drawer {
     position: fixed;
   }
-  .row-grid {
-    flex-wrap: wrap;
-  }
 }
 
 @media (min-width: 1101px) and (max-width: 1300px) {

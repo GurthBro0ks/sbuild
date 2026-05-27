@@ -283,6 +283,7 @@ test("desktop row layout remains side-by-side capable", () => {
   assert.match(cssSource, /\.row-grid[\s\S]*display:\s*flex/);
   assert.match(cssSource, /\.row-grid[\s\S]*flex-wrap:\s*nowrap/);
   assert.match(cssSource, /\.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+  assert.doesNotMatch(cssSource, /@media \(max-width: 1100px\)[\s\S]*\.row-grid\s*\{[\s\S]*flex-wrap:\s*wrap/);
 });
 
 test("mobile block header layout uses wrap-safe structure and keeps menu button tappable", () => {
