@@ -38,6 +38,17 @@ test("joinAdjacentBlocks assigns shared row and 50/50 defaults", () => {
   assert.equal(out[1]!.styles!.layout!.widthPercent, 50);
 });
 
+test("joinAdjacentBlocks normalizes stale invalid row widths", () => {
+  const blocks = [
+    { id: "a", type: "text", data: { body: "a" }, styles: { layout: { rowId: "row-x", widthPercent: 25 } } },
+    { id: "b", type: "text", data: { body: "b" }, styles: { layout: { rowId: "row-x", widthPercent: 66 } } },
+    { id: "c", type: "text", data: { body: "c" }, styles: {} }
+  ] as any[];
+  const out = joinAdjacentBlocks(blocks as any, 2, "previous");
+  const rowMembers = out.filter((b) => b.styles?.layout?.rowId === "row-x");
+  assert.deepEqual(rowMembers.map((b) => b.styles.layout.widthPercent), [33, 33, 34]);
+});
+
 test("leaveRowForBlock clears selected block and normalizes lone leftover", () => {
   const blocks = [
     { id: "a", type: "text", data: { body: "a" }, styles: { layout: { rowId: "row-a", widthPercent: 50 } } },
@@ -47,6 +58,18 @@ test("leaveRowForBlock clears selected block and normalizes lone leftover", () =
   assert.equal(out[0]!.styles!.layout!.rowId, undefined);
   assert.equal(out[1]!.styles!.layout!.rowId, undefined);
   assert.equal(out[1]!.styles!.layout!.widthPercent, 100);
+});
+
+test("leaveRowForBlock rebalances remaining multi-member row", () => {
+  const blocks = [
+    { id: "a", type: "text", data: { body: "a" }, styles: { layout: { rowId: "row-a", widthPercent: 25 } } },
+    { id: "b", type: "text", data: { body: "b" }, styles: { layout: { rowId: "row-a", widthPercent: 25 } } },
+    { id: "c", type: "text", data: { body: "c" }, styles: { layout: { rowId: "row-a", widthPercent: 25 } } }
+  ] as any[];
+  const out = leaveRowForBlock(blocks as any, 0);
+  const rowMembers = out.filter((b) => b.styles?.layout?.rowId === "row-a");
+  assert.equal(out[0]!.styles!.layout!.rowId, undefined);
+  assert.deepEqual(rowMembers.map((b) => b.styles.layout.widthPercent), [50, 50]);
 });
 
 test("resize helpers clamp and snap", () => {

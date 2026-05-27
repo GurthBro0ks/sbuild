@@ -209,7 +209,8 @@ test("publish endpoint remains dry-run", () => {
 });
 
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
-  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.22\)/);
+  assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*background:\s*transparent/);
+  assert.match(cssSource, /\.mobile-editor-overlay\.open[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.22\)/);
   assert.match(appSource, /className={`mobile-editor-overlay \$\{rightDrawerMobileOpen \? "open" : ""\}`}/);
   assert.match(appSource, /<section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">/);
 });
@@ -262,19 +263,20 @@ test("context menu includes required mobile row and layout actions", () => {
   assert.match(appSource, /Move Down/);
 });
 
-test("mobile row containers stack same-row blocks visually while preserving row metadata", () => {
-  assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{isMobileViewport \? "stack" : ""\}`\}/);
-  assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{isMobileViewport \? "mobile-row-block" : ""\}`\}/);
-  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+test("row stacking is controlled by device mode instead of physical viewport", () => {
+  assert.match(appSource, /const shouldStackRows = deviceMode === "phone";/);
+  assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{shouldStackRows \? "stack" : ""\}`\}/);
+  assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{shouldStackRows \? "mobile-row-block" : ""\}`\}/);
   assert.match(appSource, /shortRowId\(row\.rowId\.startsWith\("single:"\) \? undefined : row\.rowId\)/);
   assert.match(appSource, /· \{row\.blocks\.length\} columns/);
 });
 
-test("mobile same-row block visual width is forced readable full width", () => {
-  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: isMobileViewport \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
-  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
-  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
-  assert.match(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
+test("phone mode keeps readable stacked row width while desktop/tablet can stay row-like", () => {
+  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: shouldStackRows \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
+  assert.doesNotMatch(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.row-grid/);
 });
 
 test("desktop row layout remains side-by-side capable", () => {
@@ -327,10 +329,16 @@ test("remove from row action remains available and clears row membership", () =>
 });
 
 test("leave-row helper normalizes single leftover row member to full width", () => {
-  assert.match(layoutHelpersSource, /const shouldNormalizeSingleLeftover = Boolean\(targetRowId\) && rowMembers\.length === 2/);
+  assert.match(layoutHelpersSource, /if \(remainingIndexes\.length <= 1\)/);
   assert.match(layoutHelpersSource, /widthMode:\s*"full"/);
   assert.match(layoutHelpersSource, /widthPercent:\s*100/);
   assert.match(layoutHelpersSource, /rowId:\s*undefined/);
+});
+
+test("row width normalization defaults to balanced widths and rejects stale invalid sums", () => {
+  assert.match(layoutHelpersSource, /function defaultRowWidths/);
+  assert.match(layoutHelpersSource, /const keepExisting = validWidths && sum >= 99 && sum <= 101/);
+  assert.match(layoutHelpersSource, /const normalizedWidths = keepExisting \? widths : defaultRowWidths\(indexes\.length\)/);
 });
 
 test("canvas frame tags mobile viewport class for mobile-only row visual overrides", () => {
@@ -340,8 +348,8 @@ test("canvas frame tags mobile viewport class for mobile-only row visual overrid
 test("move up and move down actions remain present after row operations", () => {
   assert.match(appSource, /Move Up/);
   assert.match(appSource, /Move Down/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); setContextMenu\(null\);/);
 });
 
 test("row action status text and context menu closing behavior remain explicit", () => {

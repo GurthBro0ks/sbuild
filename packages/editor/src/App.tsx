@@ -849,6 +849,7 @@ export function App() {
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
   const rowGroups = useMemo(() => groupBlocksIntoRows(selectedPage?.blocks || []), [selectedPage?.blocks]);
+  const shouldStackRows = deviceMode === "phone";
 
   useEffect(() => {
     if (selectedBlock?.type !== "gallery" && selectedGalleryIndex !== null) setSelectedGalleryIndex(null);
@@ -3425,7 +3426,7 @@ export function App() {
             </nav>
 
             {rowGroups.map((row) => (
-              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${isMobileViewport ? "stack" : ""}`}>
+              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${shouldStackRows ? "stack" : ""}`}>
                 <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
                 <div className="row-grid">
                   {row.blocks.map((block) => {
@@ -3435,9 +3436,9 @@ export function App() {
                     return (
                       <div
                         key={block.id}
-                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${isMobileViewport ? "mobile-row-block" : ""}`}
+                        className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${shouldStackRows ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
-                        style={{ ...blockStyleToCss(block), flexBasis: isMobileViewport ? "100%" : `${width}%` }}
+                        style={{ ...blockStyleToCss(block), flexBasis: shouldStackRows ? "100%" : `${width}%` }}
                         onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
@@ -3576,9 +3577,9 @@ export function App() {
               <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
-              <button onClick={() => { deleteBlock(contextMenu.blockId); }}>Delete</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); }}>Move Up</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); }}>Move Down</button>
+              <button onClick={() => { deleteBlock(contextMenu.blockId); setContextMenu(null); }}>Delete</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); setContextMenu(null); }}>Move Up</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); setContextMenu(null); }}>Move Down</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>
