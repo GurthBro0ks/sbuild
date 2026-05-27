@@ -264,6 +264,12 @@ test("context menu includes required mobile row and layout actions", () => {
 });
 
 test("row stacking is controlled by device mode instead of physical viewport", () => {
+  assert.match(appSource, /type RowRenderItem/);
+  assert.match(appSource, /function toRowRenderItems\(blocks: Block\[\]\)/);
+  assert.match(appSource, /kind: "row"/);
+  assert.match(appSource, /kind: "single"/);
+  assert.match(appSource, /data-row-id=\{row\.rowId\}/);
+  assert.match(appSource, /rowRenderItems\.map/);
   assert.match(appSource, /const shouldStackRows = deviceMode === "phone";/);
   assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{shouldStackRows \? "stack" : ""\}`\}/);
   assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{shouldStackRows \? "mobile-row-block" : ""\}`\}/);
@@ -272,7 +278,8 @@ test("row stacking is controlled by device mode instead of physical viewport", (
 });
 
 test("phone mode keeps readable stacked row width while desktop/tablet can stay row-like", () => {
-  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: shouldStackRows \? "100%" : `\$\{width\}%`[\s\S]*\}\}/);
+  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: shouldStackRows \? "100%" : "100%"[\s\S]*\}\}/);
+  assert.match(appSource, /className="row-grid" style=\{\{ gridTemplateColumns: rowTemplate \}\}/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
@@ -280,9 +287,11 @@ test("phone mode keeps readable stacked row width while desktop/tablet can stay 
 });
 
 test("desktop row layout remains side-by-side capable", () => {
-  assert.match(cssSource, /\.row-grid[\s\S]*display:\s*flex/);
-  assert.match(cssSource, /\.row-grid[\s\S]*flex-wrap:\s*nowrap/);
-  assert.match(cssSource, /\.row-shell\.stack \.row-grid[\s\S]*flex-direction:\s*column/);
+  assert.match(cssSource, /\.row-grid[\s\S]*display:\s*grid/);
+  assert.match(cssSource, /\.row-grid[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(cssSource, /\.row-shell\.stack \.row-grid[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) !important/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid \.block-shell/);
+  assert.match(cssSource, /\.canvas-frame\.tablet \.row-shell\.multi \.row-grid \.block-shell/);
   assert.doesNotMatch(cssSource, /@media \(max-width: 1100px\)[\s\S]*\.row-grid\s*\{[\s\S]*flex-wrap:\s*wrap/);
 });
 
@@ -316,15 +325,17 @@ test("row and layout context menu actions select context block id before applyin
 test("place-with-row actions close context menu and set explicit status text", () => {
   assert.match(appSource, /Place with block above/);
   assert.match(appSource, /Place with block below/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); setContextMenu\(null\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /function closeTransientOverlays\(\)/);
+  assert.match(appSource, /setContextMenu\(null\);\s*setRightDrawerMobileOpen\(false\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
   assert.match(appSource, /setStatus\("Placed block with block above"\)/);
   assert.match(appSource, /setStatus\("Placed block with block below"\)/);
 });
 
 test("remove from row action remains available and clears row membership", () => {
   assert.match(appSource, /Remove from row \/ Leave row/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
   assert.match(appSource, /leaveRowForBlock\(selectedPage\.blocks, idx\)/);
   assert.match(appSource, /setStatus\("Removed block from row"\)/);
 });
@@ -349,8 +360,8 @@ test("canvas frame tags mobile viewport class for mobile-only row visual overrid
 test("move up and move down actions remain present after row operations", () => {
   assert.match(appSource, /Move Up/);
   assert.match(appSource, /Move Down/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); setContextMenu\(null\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); setContextMenu\(null\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); closeTransientOverlays\(\);/);
 });
 
 test("row action status text and context menu closing behavior remain explicit", () => {

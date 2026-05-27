@@ -48,6 +48,7 @@ type DragState = { blockId: string; startIndex: number; currentIndex: number } |
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
+type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
 
 const BLOCK_TYPES: BlockType[] = [
   "hero", "text", "image", "cards", "hours", "gallery", "contact",
@@ -169,6 +170,15 @@ function isThemeDerivedColor(value: string | undefined, previous: SBuildProject[
 function shortRowId(rowId?: string): string {
   if (!rowId) return "Single";
   return `Row ${rowId.replace("row-", "").slice(0, 4).toUpperCase()}`;
+}
+
+function toRowRenderItems(blocks: Block[]): RowRenderItem[] {
+  return groupBlocksIntoRows(blocks).flatMap((row) => {
+    if (row.rowId.startsWith("single:") || row.blocks.length <= 1) {
+      return row.blocks.map((block) => ({ kind: "single" as const, block }));
+    }
+    return [{ kind: "row" as const, rowId: row.rowId, blocks: row.blocks }];
+  });
 }
 
 function apiBase(): string { return ""; }
@@ -848,8 +858,13 @@ export function App() {
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
-  const rowGroups = useMemo(() => groupBlocksIntoRows(selectedPage?.blocks || []), [selectedPage?.blocks]);
+  const rowRenderItems = useMemo(() => toRowRenderItems(selectedPage?.blocks || []), [selectedPage?.blocks]);
   const shouldStackRows = deviceMode === "phone";
+
+  function closeTransientOverlays() {
+    setContextMenu(null);
+    setRightDrawerMobileOpen(false);
+  }
 
   useEffect(() => {
     if (selectedBlock?.type !== "gallery" && selectedGalleryIndex !== null) setSelectedGalleryIndex(null);
@@ -3425,10 +3440,18 @@ export function App() {
               </div>
             </nav>
 
-            {rowGroups.map((row) => (
-              <div key={row.rowId} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${shouldStackRows ? "stack" : ""}`}>
+            {rowRenderItems.map((item, rowItemIndex) => {
+              const row = item.kind === "row" ? item : { rowId: `single:${item.block.id}`, blocks: [item.block] };
+              const rowTemplate = shouldStackRows
+                ? "minmax(0, 1fr)"
+                : row.blocks.map((block) => {
+                  const width = Math.max(1, block.styles?.layout?.widthPercent || 100);
+                  return `minmax(0, ${width}fr)`;
+                }).join(" ");
+              return (
+              <div key={`${row.rowId}-${rowItemIndex}`} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${shouldStackRows ? "stack" : ""}`} data-row-id={row.rowId}>
                 <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
-                <div className="row-grid">
+                <div className="row-grid" style={{ gridTemplateColumns: rowTemplate }}>
                   {row.blocks.map((block) => {
                     const index = selectedPage.blocks.findIndex((b) => b.id === block.id);
                     const width = block.styles?.layout?.widthPercent || 100;
@@ -3438,7 +3461,7 @@ export function App() {
                         key={block.id}
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${shouldStackRows ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
-                        style={{ ...blockStyleToCss(block), flexBasis: shouldStackRows ? "100%" : `${width}%` }}
+                        style={{ ...blockStyleToCss(block), flexBasis: shouldStackRows ? "100%" : "100%" }}
                         onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
@@ -3483,7 +3506,7 @@ export function App() {
                   })}
                 </div>
               </div>
-            ))}
+            )})}
 
             {paintMode && (
               <svg className="paint-overlay" viewBox="0 0 1200 1200" preserveAspectRatio="none">
@@ -3570,16 +3593,16 @@ export function App() {
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Assistant</button>
               <button onClick={() => { selectBlock(contextMenu.blockId); openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
               <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); startNewRow(contextMenu.blockId); setContextMenu(null); }}>Start new row</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); setContextMenu(null); }}>Place with block above</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithNext(contextMenu.blockId); setContextMenu(null); }}>Place with block below</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); removeFromRow(contextMenu.blockId); setContextMenu(null); }}>Remove from row / Leave row</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); startNewRow(contextMenu.blockId); closeTransientOverlays(); }}>Start new row</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); closeTransientOverlays(); }}>Place with block above</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithNext(contextMenu.blockId); closeTransientOverlays(); }}>Place with block below</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); removeFromRow(contextMenu.blockId); closeTransientOverlays(); }}>Remove from row / Leave row</button>
               <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
               <button onClick={() => { deleteBlock(contextMenu.blockId); setContextMenu(null); }}>Delete</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); setContextMenu(null); }}>Move Up</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); setContextMenu(null); }}>Move Down</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); closeTransientOverlays(); }}>Move Up</button>
+              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); closeTransientOverlays(); }}>Move Down</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>

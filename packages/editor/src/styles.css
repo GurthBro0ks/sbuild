@@ -1127,12 +1127,25 @@ button:disabled {
   padding: 6px;
 }
 .row-grid {
-  display: flex;
+  display: grid;
   gap: 8px;
-  flex-wrap: nowrap;
+  grid-template-columns: minmax(0, 1fr);
 }
 .row-shell.stack .row-grid {
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.canvas-frame.desktop .row-shell.multi .row-grid,
+.canvas-frame.tablet .row-shell.multi .row-grid {
+  align-items: stretch;
+}
+
+.canvas-frame.desktop .row-shell.multi .row-grid .block-shell,
+.canvas-frame.tablet .row-shell.multi .row-grid .block-shell {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
 }
 .row-label {
   font-size: 11px;
@@ -1727,7 +1740,7 @@ button:disabled {
     width: 100%;
     max-width: 100%;
     min-height: 58vh;
-    overflow-x: hidden;
+    overflow-x: auto;
     padding: 8px;
   }
 
@@ -1737,7 +1750,7 @@ button:disabled {
   }
 
   .canvas-frame.phone .row-shell.stack .row-grid {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: 10px;
   }
 
