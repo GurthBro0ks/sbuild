@@ -145,7 +145,7 @@ test("mobile editor shell uses <=768px stacked layout and mobile overlay", () =>
   assert.match(cssSource, /\.left-drawer\.collapsed[\s\S]*display:\s*none/);
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
   assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*sticky/);
+  assert.match(cssSource, /\.canvas-controls[\s\S]*position:\s*static/);
   assert.match(cssSource, /\.topbar-status[\s\S]*width:\s*100%/);
   assert.match(cssSource, /overflow-x:\s*hidden/);
   assert.match(appSource, /function openBlockDrawer/);
@@ -216,45 +216,43 @@ test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /SBUILD_SMOKE_COOKIE_FILE/);
 });
 
-test("debug diagnostics include mobile-toolbar-spacer-v3 active marker", () => {
-  assert.match(appSource, /mobile-toolbar-spacer-v3 active/);
+test("debug diagnostics include mobile-toolbar-gap-repair active marker", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair active/);
 });
 
-test("spacer v3 debug panel exposes all runtime measurement values", () => {
-  assert.match(appSource, /toolbar clientHeight:/);
-  assert.match(appSource, /toolbar scrollHeight:/);
-  assert.match(appSource, /CSS --mobile-topbar-h:/);
-  assert.match(appSource, /spacer clientHeight:/);
-  assert.match(appSource, /status pill clientHeight:/);
-  assert.match(appSource, /status pill scrollHeight:/);
-  assert.match(appSource, /canvas-controls offsetTop:/);
-  assert.match(appSource, /status text overflows:/);
-  assert.match(appSource, /gap detected:/);
-});
-
-test("spacer v3 measurement uses spacerRef and canvasControlsRef", () => {
+test("spacer is the single mobile toolbar offset mechanism", () => {
   assert.match(appSource, /spacerRef/);
   assert.match(appSource, /canvasControlsRef/);
+  assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*height:\s*var\(--mobile-topbar-h/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*fixed/);
 });
 
-test("spacer v3 measurement triggers on status and settingsOpen changes", () => {
-  const measureIdx = appSource.indexOf("measureMobileToolbar");
-  assert.ok(measureIdx > 0, "measureMobileToolbar exists");
-  const effectIdx = appSource.indexOf("measureMobileToolbar();", measureIdx + 1);
-  assert.ok(effectIdx > 0, "measureMobileToolbar is called in an effect");
-  const depArrayMatch = appSource.slice(effectIdx, effectIdx + 200).match(/\[([^\]]+)\]/);
-  assert.ok(depArrayMatch, "dependency array found after measureMobileToolbar call");
-  const deps = depArrayMatch[1];
-  assert.ok(deps.includes("status"), "status is a dependency");
-  assert.ok(deps.includes("settingsOpen"), "settingsOpen is a dependency");
-  assert.ok(deps.includes("isMobileViewport"), "isMobileViewport is a dependency");
+test("canvas-controls on mobile uses position static not sticky", () => {
+  const mobileStart = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileStart >= 0, "mobile media query exists");
+  const afterMobile = cssSource.substring(mobileStart);
+  const ccIdx = afterMobile.indexOf(".canvas-controls {");
+  assert.ok(ccIdx >= 0, ".canvas-controls block exists in mobile section");
+  const ccBlock = afterMobile.substring(ccIdx, afterMobile.indexOf("}", ccIdx) + 1);
+  assert.match(ccBlock, /position:\s*static/, "canvas-controls uses position: static on mobile");
+  assert.doesNotMatch(ccBlock, /position:\s*sticky/, "canvas-controls does not use position: sticky on mobile");
 });
 
-test("spacer v3 uses requestAnimationFrame for post-layout measurement", () => {
-  const measureIdx = appSource.indexOf("measureMobileToolbar");
-  const fnBody = appSource.slice(measureIdx, measureIdx + 3000);
-  assert.ok(fnBody.includes("requestAnimationFrame"), "uses requestAnimationFrame");
-  assert.ok(fnBody.includes("getBoundingClientRect"), "uses getBoundingClientRect");
+test("main editor debug strip shows mobile-toolbar-gap-repair values", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair/);
+  assert.match(appSource, /toolbarH=\{debugToolbarH\}/);
+  assert.match(appSource, /spacerH=\{debugSpacerH\}/);
+  assert.match(appSource, /gapPx=\{debugGapPx\}/);
+  assert.match(appSource, /dup=\{debugDuplicateOffset/);
+});
+
+test("gap detection flags duplicate offset when gapPx exceeds 48px", () => {
+  assert.match(appSource, /setDebugDuplicateOffset\(gapPx\s*>\s*48\)/);
+});
+
+test("failed d811dc1 spacer-v3 marker is replaced", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
+  assert.doesNotMatch(appSource, /mobile-toolbar-runtime-v2 active/);
 });
 
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
@@ -942,8 +940,14 @@ test("mobile topbar hides when left drawer is open", () => {
   assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open .left-drawer[\s\S]*top:/);
 });
 
-test("mobile canvas-controls sticky top accounts for fixed toolbar height", () => {
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.canvas-controls[\s\S]*--mobile-topbar-h/);
+test("mobile canvas-controls does not reference --mobile-topbar-h (spacer is single offset)", () => {
+  const mobileStart = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileStart >= 0, "mobile media query exists");
+  const afterMobile = cssSource.substring(mobileStart);
+  const ccIdx = afterMobile.indexOf(".canvas-controls {");
+  assert.ok(ccIdx >= 0, ".canvas-controls block exists in mobile section");
+  const ccBlock = afterMobile.substring(ccIdx, afterMobile.indexOf("}", ccIdx) + 1);
+  assert.doesNotMatch(ccBlock, /--mobile-topbar-h/, "canvas-controls does not reference --mobile-topbar-h on mobile");
 });
 
 test("left drawer top on mobile accounts for fixed toolbar height", () => {
@@ -957,17 +961,20 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
   assert.match(appSource, /statusPillRef/);
 });
 
-test("debug panel shows toolbar and status pill measured heights with overflow detection", () => {
-  assert.match(appSource, /toolbar clientHeight:/);
-  assert.match(appSource, /status pill clientHeight:/);
-  assert.match(appSource, /status pill scrollHeight:/);
-  assert.match(appSource, /CSS --mobile-topbar-h:/);
-  assert.match(appSource, /status text overflows:/);
+test("debug panel shows mobile-toolbar-gap-repair active marker with gap detection", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair active/);
+  assert.match(appSource, /toolbarHeight/);
+  assert.match(appSource, /spacerHeight/);
+  assert.match(appSource, /topbarBottom/);
+  assert.match(appSource, /canvasControlsTop/);
+  assert.match(appSource, /gapPx/);
+  assert.match(appSource, /duplicateOffsetDetected/);
   assert.match(appSource, /debugToolbarH/);
-  assert.match(appSource, /debugStatusPillH/);
-  assert.match(appSource, /debugStatusOverflow/);
-  assert.match(appSource, /spacer clientHeight:/);
-  assert.match(appSource, /gap detected:/);
+  assert.match(appSource, /debugSpacerH/);
+  assert.match(appSource, /debugToolbarBottom/);
+  assert.match(appSource, /debugCanvasControlsTop/);
+  assert.match(appSource, /debugGapPx/);
+  assert.match(appSource, /debugDuplicateOffset/);
 });
 
 test("status label includes space after Status colon", () => {
