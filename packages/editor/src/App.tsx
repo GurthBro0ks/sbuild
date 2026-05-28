@@ -3124,6 +3124,7 @@ export function App() {
               {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
+              <p><strong>mobileToolbarStatusOffset=active</strong></p>
 
               <h4>Provider Status</h4>
               {providerStatus.length === 0 && <p>Loading providers...</p>}
@@ -3204,7 +3205,7 @@ export function App() {
         <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
         <button onClick={() => void runBuild()}>Build</button>
         <button onClick={() => void runPublish()}>Publish</button>
-        <div className="topbar-status">
+        <div className="topbar-status" data-status-row="topbar-status-pill">
           <strong>Status:</strong> {withSavedStatusText(status, dirty)} · {status}
         </div>
       </header>

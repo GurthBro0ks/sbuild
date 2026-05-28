@@ -208,6 +208,10 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /dryRun/);
 });
 
+test("debug diagnostics include mobile toolbar status offset marker", () => {
+  assert.match(appSource, /mobileToolbarStatusOffset=active/);
+});
+
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*background:\s*transparent/);
   assert.match(cssSource, /\.mobile-editor-overlay\.open[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.22\)/);
@@ -846,6 +850,27 @@ test("mobile topbar spacer div exists for fixed toolbar offset", () => {
   assert.match(appSource, /topbar-mobile-spacer/);
   assert.match(cssSource, /\.topbar-mobile-spacer/);
   assert.match(cssSource, /--mobile-topbar-h/);
+});
+
+test("status row renders with stable topbar status selector", () => {
+  assert.match(appSource, /className="topbar-status"/);
+  assert.match(appSource, /data-status-row="topbar-status-pill"/);
+  assert.match(appSource, /<strong>Status:<\/strong>/);
+});
+
+test("mobile status row has non-clipping sizing and spacing rules", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*min-height:\s*34px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*line-height:\s*1\.4/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*padding:\s*7px\s*10px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*box-sizing:\s*border-box/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*overflow-wrap:\s*anywhere/);
+});
+
+test("mobile spacer uses measured toolbar variable height", () => {
+  assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*height:\s*var\(--mobile-topbar-h,\s*110px\)/);
+  assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*min-height:\s*var\(--mobile-topbar-h,\s*110px\)/);
+  assert.match(appSource, /ResizeObserver/);
+  assert.match(appSource, /setProperty\("--mobile-topbar-h"/);
 });
 
 test("mobile topbar hides when left drawer is open", () => {
