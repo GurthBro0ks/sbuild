@@ -1506,6 +1506,8 @@ button:disabled {
     z-index: 90;
     box-shadow: 0 2px 12px rgba(0, 0, 0, .15);
     overflow: visible;
+    height: auto;
+    min-height: 0;
     background: var(--editor-panel-bg);
   }
 
@@ -1525,6 +1527,8 @@ button:disabled {
 
   .topbar-status {
     margin-left: 0;
+    flex-basis: 100%;
+    flex-shrink: 0;
     width: 100%;
     border-radius: 10px;
     box-sizing: border-box;
@@ -1615,7 +1619,7 @@ button:disabled {
     position: fixed;
     left: 10px;
     right: 10px;
-    top: calc(var(--mobile-toolbar-h, 0px) + env(safe-area-inset-top, 0px) + 8px);
+    top: calc(var(--mobile-topbar-h, 0px) + env(safe-area-inset-top, 0px) + 8px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);

@@ -913,20 +913,25 @@ export function App() {
   const statusPillRef = useRef<HTMLDivElement>(null);
   const [debugToolbarH, setDebugToolbarH] = useState(0);
   const [debugStatusPillH, setDebugStatusPillH] = useState(0);
+  const [debugStatusOverflow, setDebugStatusOverflow] = useState(false);
   useEffect(() => {
     if (!isMobileViewport || !topbarRef.current) {
       document.documentElement.style.removeProperty("--mobile-topbar-h");
+      document.documentElement.style.removeProperty("--mobile-toolbar-h");
       setDebugToolbarH(0);
       setDebugStatusPillH(0);
+      setDebugStatusOverflow(false);
       return;
     }
     const el = topbarRef.current;
     const update = () => {
       const h = Math.round(el.getBoundingClientRect().height);
       document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
+      document.documentElement.style.setProperty("--mobile-toolbar-h", `${h}px`);
       setDebugToolbarH(h);
       if (statusPillRef.current) {
         setDebugStatusPillH(Math.round(statusPillRef.current.getBoundingClientRect().height));
+        setDebugStatusOverflow(statusPillRef.current.scrollHeight > statusPillRef.current.clientHeight);
       }
     };
     update();
@@ -3134,15 +3139,13 @@ export function App() {
               {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
-              <p><strong>mobileToolbarStatusOffset=active</strong></p>
-              {isMobileViewport && (
-                <>
-                  <p><strong>mobileToolbarHeight:</strong> {debugToolbarH}px</p>
-                  <p><strong>statusPillHeight:</strong> {debugStatusPillH}px</p>
-                  <p><strong>toolbarStatusNoClip:</strong> {debugToolbarH > 0 ? "true" : "n/a (desktop)"}</p>
-                  <p><strong>commit:</strong> {SBUILD_VERSION}</p>
-                </>
-              )}
+              <p><strong>mobile-toolbar-runtime-v2 active</strong></p>
+              <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
+              <p><strong>statusPillClientH:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
+              <p><strong>statusPillScrollH:</strong> {isMobileViewport && statusPillRef.current ? `${Math.round(statusPillRef.current.scrollHeight)}px` : "n/a"}</p>
+              <p><strong>computedToolbarH:</strong> {isMobileViewport ? `var(--mobile-topbar-h) = ${debugToolbarH}px` : "n/a (desktop)"}</p>
+              <p><strong>statusTextOverflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
+              <p><strong>commit:</strong> {SBUILD_VERSION}</p>
 
               <h4>Provider Status</h4>
               {providerStatus.length === 0 && <p>Loading providers...</p>}

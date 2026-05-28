@@ -216,8 +216,8 @@ test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /SBUILD_SMOKE_COOKIE_FILE/);
 });
 
-test("debug diagnostics include mobile toolbar status offset marker", () => {
-  assert.match(appSource, /mobileToolbarStatusOffset=active/);
+test("debug diagnostics include mobile-toolbar-runtime-v2 active marker", () => {
+  assert.match(appSource, /mobile-toolbar-runtime-v2 active/);
 });
 
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
@@ -877,6 +877,21 @@ test("mobile status row has non-clipping sizing and spacing rules", () => {
   assert.match(cssSource, /\.status-pill-text/);
 });
 
+test("mobile status pill uses flex-basis 100% and flex-shrink 0 for reliable full-width row", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*flex-basis:\s*100%/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*flex-shrink:\s*0/);
+});
+
+test("mobile fixed topbar has explicit height auto to prevent inherited constraints", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*height:\s*auto/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*min-height:\s*0/);
+});
+
+test("JS sets both --mobile-topbar-h and --mobile-toolbar-h CSS variables", () => {
+  assert.match(appSource, /setProperty\("--mobile-topbar-h"/);
+  assert.match(appSource, /setProperty\("--mobile-toolbar-h"/);
+});
+
 test("mobile spacer uses measured toolbar variable height", () => {
   assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*height:\s*var\(--mobile-topbar-h,\s*110px\)/);
   assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*min-height:\s*var\(--mobile-topbar-h,\s*110px\)/);
@@ -905,12 +920,16 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
   assert.match(appSource, /statusPillRef/);
 });
 
-test("debug panel shows toolbar and status pill measured heights", () => {
-  assert.match(appSource, /mobileToolbarHeight/);
-  assert.match(appSource, /statusPillHeight/);
-  assert.match(appSource, /toolbarStatusNoClip/);
+test("debug panel shows toolbar and status pill measured heights with overflow detection", () => {
+  assert.match(appSource, /toolbarHeight/);
+  assert.match(appSource, /statusPillClientH/);
+  assert.match(appSource, /statusPillScrollH/);
+  assert.match(appSource, /computedToolbarH/);
+  assert.match(appSource, /statusTextOverflows/);
   assert.match(appSource, /debugToolbarH/);
   assert.match(appSource, /debugStatusPillH/);
+  assert.match(appSource, /debugStatusOverflow/);
+  assert.match(appSource, /scrollHeight > .*\.clientHeight/);
 });
 
 test("status label includes space after Status colon", () => {
@@ -926,8 +945,8 @@ test("site header context menu AI Assistant still exists", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
 
-test("mobile editor overlay top references --mobile-toolbar-h", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-toolbar-h/);
+test("mobile editor overlay top references --mobile-topbar-h", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
 });
 
 test("mobile editor sheet top includes safe-area-inset-top", () => {
@@ -1063,9 +1082,9 @@ test("body/content row uses a dedicated scroll container", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*-webkit-overflow-scrolling:\s*touch/);
 });
 
-test("CSS for mobile overlay uses position fixed and top references --mobile-toolbar-h", () => {
+test("CSS for mobile overlay uses position fixed and top references --mobile-topbar-h", () => {
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-toolbar-h/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
 });
 
 test("CSS sheet uses grid-template-rows with header/tabs/target/body", () => {
