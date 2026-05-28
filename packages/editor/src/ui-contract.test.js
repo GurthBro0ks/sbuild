@@ -5,6 +5,7 @@ import test from "node:test";
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
+const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
 
 test("gallery slots expose direct selection and selected-slot highlight affordances", () => {
   assert.match(appSource, /selectGallerySlot\(block\.id, index\)/);
@@ -206,6 +207,13 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
+});
+
+test("smoke script treats unauth publish 401 as expected gate behavior", () => {
+  assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
+  assert.match(smokeSource, /unauth \/api\/publish expected 401/);
+  assert.match(smokeSource, /SKIPPED_AUTH_HELPER_MISSING/);
+  assert.match(smokeSource, /SBUILD_SMOKE_COOKIE_FILE/);
 });
 
 test("debug diagnostics include mobile toolbar status offset marker", () => {
