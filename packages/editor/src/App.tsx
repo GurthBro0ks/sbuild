@@ -3444,13 +3444,22 @@ export function App() {
               const row = item.kind === "row" ? item : { rowId: `single:${item.block.id}`, blocks: [item.block] };
               const rowTemplate = shouldStackRows
                 ? "minmax(0, 1fr)"
-                : row.blocks.map((block) => {
-                  const width = Math.max(1, block.styles?.layout?.widthPercent || 100);
-                  return `minmax(0, ${width}fr)`;
-                }).join(" ");
+                : row.blocks.map(() => "minmax(0, 1fr)").join(" ");
               return (
-              <div key={`${row.rowId}-${rowItemIndex}`} className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${shouldStackRows ? "stack" : ""}`} data-row-id={row.rowId}>
+              <div
+                key={`${row.rowId}-${rowItemIndex}`}
+                className={`row-shell ${row.blocks.length > 1 ? "multi" : "single"} ${shouldStackRows ? "stack" : ""}`}
+                data-row-id={row.rowId}
+                data-device-mode={deviceMode}
+                data-stack-rows={shouldStackRows ? "true" : "false"}
+                data-row-columns={row.blocks.length}
+              >
                 <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
+                {!previewMode && row.blocks.length > 1 && (
+                  <div className="row-debug" aria-label="Row debug status">
+                    Row debug: mode={deviceMode} stack={shouldStackRows ? "true" : "false"} cols={row.blocks.length} template={rowTemplate}
+                  </div>
+                )}
                 <div className="row-grid" style={{ gridTemplateColumns: rowTemplate }}>
                   {row.blocks.map((block) => {
                     const index = selectedPage.blocks.findIndex((b) => b.id === block.id);
@@ -3461,7 +3470,7 @@ export function App() {
                         key={block.id}
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${shouldStackRows ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
-                        style={{ ...blockStyleToCss(block), flexBasis: shouldStackRows ? "100%" : "100%" }}
+                        style={blockStyleToCss(block)}
                         onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
                         onContextMenu={(e) => openContextMenu(e, block.id)}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}

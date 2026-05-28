@@ -1131,19 +1131,30 @@ button:disabled {
   gap: 8px;
   grid-template-columns: minmax(0, 1fr);
 }
-.row-shell.stack .row-grid {
-  grid-template-columns: minmax(0, 1fr) !important;
+
+.row-debug {
+  font-size: 10px;
+  color: var(--editor-text);
+  border: 1px dashed var(--editor-border);
+  border-radius: 8px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--editor-accent) 7%, transparent);
+  word-break: break-word;
 }
 
 .canvas-frame.desktop .row-shell.multi .row-grid,
 .canvas-frame.tablet .row-shell.multi .row-grid {
+  grid-auto-flow: column;
   align-items: stretch;
 }
 
 .canvas-frame.desktop .row-shell.multi .row-grid .block-shell,
 .canvas-frame.tablet .row-shell.multi .row-grid .block-shell {
+  display: block;
+  flex: initial !important;
   width: 100% !important;
   max-width: 100% !important;
+  min-width: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
 }

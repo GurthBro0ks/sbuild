@@ -272,18 +272,32 @@ test("row stacking is controlled by device mode instead of physical viewport", (
   assert.match(appSource, /rowRenderItems\.map/);
   assert.match(appSource, /const shouldStackRows = deviceMode === "phone";/);
   assert.match(appSource, /className=\{`row-shell \$\{row\.blocks\.length > 1 \? "multi" : "single"\} \$\{shouldStackRows \? "stack" : ""\}`\}/);
+  assert.match(appSource, /data-device-mode=\{deviceMode\}/);
+  assert.match(appSource, /data-stack-rows=\{shouldStackRows \? "true" : "false"\}/);
+  assert.match(appSource, /data-row-columns=\{row\.blocks\.length\}/);
+  assert.match(appSource, /Row debug: mode=\{deviceMode\} stack=\{shouldStackRows \? "true" : "false"\} cols=\{row\.blocks\.length\} template=\{rowTemplate\}/);
   assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{shouldStackRows \? "mobile-row-block" : ""\}`\}/);
   assert.match(appSource, /shortRowId\(row\.rowId\.startsWith\("single:"\) \? undefined : row\.rowId\)/);
   assert.match(appSource, /· \{row\.blocks\.length\} columns/);
 });
 
 test("phone mode keeps readable stacked row width while desktop/tablet can stay row-like", () => {
-  assert.match(appSource, /style=\{\{[\s\S]*flexBasis: shouldStackRows \? "100%" : "100%"[\s\S]*\}\}/);
+  assert.match(appSource, /const rowTemplate = shouldStackRows[\s\S]*row\.blocks\.map\(\(\) => "minmax\(0, 1fr\)"\)\.join\(" "\)/);
   assert.match(appSource, /className="row-grid" style=\{\{ gridTemplateColumns: rowTemplate \}\}/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid[\s\S]*grid-auto-flow:\s*column/);
+  assert.match(cssSource, /\.canvas-frame\.tablet \.row-shell\.multi \.row-grid[\s\S]*align-items:\s*stretch/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid \.block-shell,[\s\S]*min-width:\s*0 !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
+  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.row-grid[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) !important/);
   assert.doesNotMatch(cssSource, /\.canvas-frame\.mobile-viewport \.row-shell\.stack \.row-grid/);
+});
+
+test("context row action flow still closes overlays and publish stays dry-run", () => {
+  assert.match(appSource, /setContextMenu\(null\)/);
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /dryRun/);
 });
 
 test("desktop row layout remains side-by-side capable", () => {
