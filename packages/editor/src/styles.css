@@ -1129,6 +1129,8 @@ button:disabled {
 .row-grid {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -1144,13 +1146,14 @@ button:disabled {
 
 .canvas-frame.desktop .row-shell.multi .row-grid,
 .canvas-frame.tablet .row-shell.multi .row-grid {
+  display: grid !important;
   grid-auto-flow: column;
   align-items: stretch;
 }
 
-.canvas-frame.desktop .row-shell.multi .row-grid .block-shell,
-.canvas-frame.tablet .row-shell.multi .row-grid .block-shell {
-  display: block;
+.canvas-frame.desktop .row-shell.multi .row-grid > .block-shell,
+.canvas-frame.tablet .row-shell.multi .row-grid > .block-shell {
+  display: block !important;
   flex: initial !important;
   width: 100% !important;
   max-width: 100% !important;

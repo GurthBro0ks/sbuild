@@ -286,7 +286,7 @@ test("phone mode keeps readable stacked row width while desktop/tablet can stay 
   assert.match(appSource, /className="row-grid" style=\{\{ gridTemplateColumns: rowTemplate \}\}/);
   assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid[\s\S]*grid-auto-flow:\s*column/);
   assert.match(cssSource, /\.canvas-frame\.tablet \.row-shell\.multi \.row-grid[\s\S]*align-items:\s*stretch/);
-  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid \.block-shell,[\s\S]*min-width:\s*0 !important/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid > \.block-shell,[\s\S]*min-width:\s*0 !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*width:\s*100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex:\s*0 0 100% !important/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-shell\.mobile-row-block[\s\S]*flex-basis:\s*100% !important/);
@@ -302,10 +302,13 @@ test("context row action flow still closes overlays and publish stays dry-run", 
 
 test("desktop row layout remains side-by-side capable", () => {
   assert.match(cssSource, /\.row-grid[\s\S]*display:\s*grid/);
+  assert.match(cssSource, /\.row-grid[\s\S]*min-width:\s*0/);
+  assert.match(cssSource, /\.row-grid[\s\S]*width:\s*100%/);
   assert.match(cssSource, /\.row-grid[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
   assert.match(cssSource, /\.row-shell\.stack \.row-grid[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) !important/);
-  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid \.block-shell/);
-  assert.match(cssSource, /\.canvas-frame\.tablet \.row-shell\.multi \.row-grid \.block-shell/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid,[\s\S]*display:\s*grid !important/);
+  assert.match(cssSource, /\.canvas-frame\.desktop \.row-shell\.multi \.row-grid > \.block-shell/);
+  assert.match(cssSource, /\.canvas-frame\.tablet \.row-shell\.multi \.row-grid > \.block-shell/);
   assert.doesNotMatch(cssSource, /@media \(max-width: 1100px\)[\s\S]*\.row-grid\s*\{[\s\S]*flex-wrap:\s*wrap/);
 });
 

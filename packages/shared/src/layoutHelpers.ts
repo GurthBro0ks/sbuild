@@ -52,7 +52,7 @@ export function joinAdjacentBlocks(blocks: Block[], index: number, direction: "p
   const peer = blocks[peerIndex];
   const rowId = source.styles?.layout?.rowId || peer.styles?.layout?.rowId || `row-${source.id}`;
 
-  const withRow = blocks.map((block, i) => {
+  const withRow: Block[] = blocks.map((block, i): Block => {
     if (i !== index && i !== peerIndex) return block;
     return {
       ...block,
@@ -72,7 +72,7 @@ export function leaveRowForBlock(blocks: Block[], index: number): Block[] {
   if (index < 0 || index >= blocks.length) return blocks;
   const targetRowId = blocks[index]?.styles?.layout?.rowId;
   if (!targetRowId) return blocks;
-  const withoutTarget = blocks.map((block, i) => {
+  const withoutTarget: Block[] = blocks.map((block, i): Block => {
     if (i !== index) return block;
     return {
       ...block,
@@ -93,7 +93,7 @@ export function leaveRowForBlock(blocks: Block[], index: number): Block[] {
     if (i !== index && block.styles?.layout?.rowId === targetRowId) remainingIndexes.push(i);
   });
   if (remainingIndexes.length <= 1) {
-    return withoutTarget.map((block, i) => {
+    return withoutTarget.map((block, i): Block => {
       if (!remainingIndexes.includes(i)) return block;
       return {
         ...block,

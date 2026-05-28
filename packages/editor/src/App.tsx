@@ -173,12 +173,14 @@ function shortRowId(rowId?: string): string {
 }
 
 function toRowRenderItems(blocks: Block[]): RowRenderItem[] {
-  return groupBlocksIntoRows(blocks).flatMap((row) => {
+  return groupBlocksIntoRows(blocks).reduce<RowRenderItem[]>((items, row) => {
     if (row.rowId.startsWith("single:") || row.blocks.length <= 1) {
-      return row.blocks.map((block) => ({ kind: "single" as const, block }));
+      items.push(...row.blocks.map((block) => ({ kind: "single" as const, block })));
+      return items;
     }
-    return [{ kind: "row" as const, rowId: row.rowId, blocks: row.blocks }];
-  });
+    items.push({ kind: "row" as const, rowId: row.rowId, blocks: row.blocks });
+    return items;
+  }, []);
 }
 
 function apiBase(): string { return ""; }

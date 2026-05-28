@@ -46,7 +46,7 @@ test("joinAdjacentBlocks normalizes stale invalid row widths", () => {
   ] as any[];
   const out = joinAdjacentBlocks(blocks as any, 2, "previous");
   const rowMembers = out.filter((b) => b.styles?.layout?.rowId === "row-x");
-  assert.deepEqual(rowMembers.map((b) => b.styles.layout.widthPercent), [33, 33, 34]);
+  assert.deepEqual(rowMembers.map((b) => b.styles?.layout?.widthPercent), [33, 33, 34]);
 });
 
 test("leaveRowForBlock clears selected block and normalizes lone leftover", () => {
@@ -69,7 +69,7 @@ test("leaveRowForBlock rebalances remaining multi-member row", () => {
   const out = leaveRowForBlock(blocks as any, 0);
   const rowMembers = out.filter((b) => b.styles?.layout?.rowId === "row-a");
   assert.equal(out[0]!.styles!.layout!.rowId, undefined);
-  assert.deepEqual(rowMembers.map((b) => b.styles.layout.widthPercent), [50, 50]);
+  assert.deepEqual(rowMembers.map((b) => b.styles?.layout?.widthPercent), [50, 50]);
 });
 
 test("resize helpers clamp and snap", () => {
