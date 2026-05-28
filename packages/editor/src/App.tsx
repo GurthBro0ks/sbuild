@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Block,
   BlockType,
@@ -911,35 +911,75 @@ export function App() {
 
   const topbarRef = useRef<HTMLElement>(null);
   const statusPillRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const canvasControlsRef = useRef<HTMLDivElement>(null);
   const [debugToolbarH, setDebugToolbarH] = useState(0);
+  const [debugToolbarScrollH, setDebugToolbarScrollH] = useState(0);
   const [debugStatusPillH, setDebugStatusPillH] = useState(0);
+  const [debugStatusPillScrollH, setDebugStatusPillScrollH] = useState(0);
   const [debugStatusOverflow, setDebugStatusOverflow] = useState(false);
-  useEffect(() => {
+  const [debugSpacerH, setDebugSpacerH] = useState(0);
+  const [debugCssVar, setDebugCssVar] = useState(0);
+  const [debugCanvasTop, setDebugCanvasTop] = useState(0);
+  const [debugGapDetected, setDebugGapDetected] = useState(false);
+  const measureMobileToolbar = useCallback(() => {
     if (!isMobileViewport || !topbarRef.current) {
       document.documentElement.style.removeProperty("--mobile-topbar-h");
       document.documentElement.style.removeProperty("--mobile-toolbar-h");
       setDebugToolbarH(0);
+      setDebugToolbarScrollH(0);
       setDebugStatusPillH(0);
+      setDebugStatusPillScrollH(0);
       setDebugStatusOverflow(false);
+      setDebugSpacerH(0);
+      setDebugCssVar(0);
+      setDebugCanvasTop(0);
+      setDebugGapDetected(false);
       return;
     }
-    const el = topbarRef.current;
-    const update = () => {
+    requestAnimationFrame(() => {
+      if (!topbarRef.current) return;
+      const el = topbarRef.current;
       const h = Math.round(el.getBoundingClientRect().height);
+      const scrollH = el.scrollHeight;
       document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
       document.documentElement.style.setProperty("--mobile-toolbar-h", `${h}px`);
       setDebugToolbarH(h);
+      setDebugToolbarScrollH(Math.round(scrollH));
       if (statusPillRef.current) {
         setDebugStatusPillH(Math.round(statusPillRef.current.getBoundingClientRect().height));
+        setDebugStatusPillScrollH(Math.round(statusPillRef.current.scrollHeight));
         setDebugStatusOverflow(statusPillRef.current.scrollHeight > statusPillRef.current.clientHeight);
       }
-    };
-    update();
-    const obs = new ResizeObserver(update);
+      const cssVal = getComputedStyle(document.documentElement).getPropertyValue("--mobile-topbar-h");
+      setDebugCssVar(parseInt(cssVal, 10) || 0);
+      requestAnimationFrame(() => {
+        if (spacerRef.current) {
+          setDebugSpacerH(Math.round(spacerRef.current.getBoundingClientRect().height));
+        }
+        if (canvasControlsRef.current) {
+          setDebugCanvasTop(Math.round(canvasControlsRef.current.getBoundingClientRect().top));
+        }
+        if (topbarRef.current && spacerRef.current) {
+          const toolbarBottom = topbarRef.current.getBoundingClientRect().bottom;
+          const spacerTop = spacerRef.current.getBoundingClientRect().top;
+          const gapBetween = spacerTop - toolbarBottom;
+          setDebugGapDetected(gapBetween > 2);
+        }
+      });
+    });
+  }, [isMobileViewport]);
+  useEffect(() => {
+    if (!isMobileViewport || !topbarRef.current) return;
+    const el = topbarRef.current;
+    const obs = new ResizeObserver(() => measureMobileToolbar());
     obs.observe(el);
     if (statusPillRef.current) obs.observe(statusPillRef.current);
     return () => obs.disconnect();
-  }, [isMobileViewport]);
+  }, [isMobileViewport, measureMobileToolbar]);
+  useEffect(() => {
+    measureMobileToolbar();
+  }, [isMobileViewport, status, settingsOpen, measureMobileToolbar]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -3139,13 +3179,17 @@ export function App() {
               {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
-              <p><strong>mobile-toolbar-runtime-v2 active</strong></p>
-              <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
-              <p><strong>statusPillClientH:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
-              <p><strong>statusPillScrollH:</strong> {isMobileViewport && statusPillRef.current ? `${Math.round(statusPillRef.current.scrollHeight)}px` : "n/a"}</p>
-              <p><strong>computedToolbarH:</strong> {isMobileViewport ? `var(--mobile-topbar-h) = ${debugToolbarH}px` : "n/a (desktop)"}</p>
-              <p><strong>statusTextOverflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
+              <p><strong>mobile-toolbar-spacer-v3 active</strong></p>
               <p><strong>commit:</strong> {SBUILD_VERSION}</p>
+              <p><strong>toolbar clientHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
+              <p><strong>toolbar scrollHeight:</strong> {debugToolbarScrollH || "n/a"}{debugToolbarScrollH ? "px" : ""}</p>
+              <p><strong>CSS --mobile-topbar-h:</strong> {debugCssVar || "n/a"}{debugCssVar ? "px" : ""}</p>
+              <p><strong>spacer clientHeight:</strong> {debugSpacerH || "n/a"}{debugSpacerH ? "px" : ""}</p>
+              <p><strong>status pill clientHeight:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
+              <p><strong>status pill scrollHeight:</strong> {debugStatusPillScrollH || "n/a"}{debugStatusPillScrollH ? "px" : ""}</p>
+              <p><strong>canvas-controls offsetTop:</strong> {debugCanvasTop || "n/a"}{debugCanvasTop ? "px" : ""}</p>
+              <p><strong>status text overflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
+              <p><strong>gap detected:</strong> {isMobileViewport ? (debugGapDetected ? "true" : "false") : "n/a"}</p>
 
               <h4>Provider Status</h4>
               {providerStatus.length === 0 && <p>Loading providers...</p>}
@@ -3230,7 +3274,7 @@ export function App() {
           <span className="status-pill-text">Status: {withSavedStatusText(status, dirty)} &middot; {status}</span>
         </div>
       </header>
-      <div className="topbar-mobile-spacer" />
+      <div ref={spacerRef} className="topbar-mobile-spacer" />
 
         <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
         <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
@@ -3311,7 +3355,7 @@ export function App() {
         </aside>
 
         <main className="canvas-area">
-          <div className="canvas-controls">
+          <div ref={canvasControlsRef} className="canvas-controls">
             <button onClick={() => setDeviceMode("desktop")} className={deviceMode === "desktop" ? "selected" : ""}>Desktop</button>
             <button onClick={() => setDeviceMode("tablet")} className={deviceMode === "tablet" ? "selected" : ""}>Tablet</button>
             <button onClick={() => setDeviceMode("phone")} className={deviceMode === "phone" ? "selected" : ""}>Phone</button>

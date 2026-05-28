@@ -216,8 +216,45 @@ test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /SBUILD_SMOKE_COOKIE_FILE/);
 });
 
-test("debug diagnostics include mobile-toolbar-runtime-v2 active marker", () => {
-  assert.match(appSource, /mobile-toolbar-runtime-v2 active/);
+test("debug diagnostics include mobile-toolbar-spacer-v3 active marker", () => {
+  assert.match(appSource, /mobile-toolbar-spacer-v3 active/);
+});
+
+test("spacer v3 debug panel exposes all runtime measurement values", () => {
+  assert.match(appSource, /toolbar clientHeight:/);
+  assert.match(appSource, /toolbar scrollHeight:/);
+  assert.match(appSource, /CSS --mobile-topbar-h:/);
+  assert.match(appSource, /spacer clientHeight:/);
+  assert.match(appSource, /status pill clientHeight:/);
+  assert.match(appSource, /status pill scrollHeight:/);
+  assert.match(appSource, /canvas-controls offsetTop:/);
+  assert.match(appSource, /status text overflows:/);
+  assert.match(appSource, /gap detected:/);
+});
+
+test("spacer v3 measurement uses spacerRef and canvasControlsRef", () => {
+  assert.match(appSource, /spacerRef/);
+  assert.match(appSource, /canvasControlsRef/);
+});
+
+test("spacer v3 measurement triggers on status and settingsOpen changes", () => {
+  const measureIdx = appSource.indexOf("measureMobileToolbar");
+  assert.ok(measureIdx > 0, "measureMobileToolbar exists");
+  const effectIdx = appSource.indexOf("measureMobileToolbar();", measureIdx + 1);
+  assert.ok(effectIdx > 0, "measureMobileToolbar is called in an effect");
+  const depArrayMatch = appSource.slice(effectIdx, effectIdx + 200).match(/\[([^\]]+)\]/);
+  assert.ok(depArrayMatch, "dependency array found after measureMobileToolbar call");
+  const deps = depArrayMatch[1];
+  assert.ok(deps.includes("status"), "status is a dependency");
+  assert.ok(deps.includes("settingsOpen"), "settingsOpen is a dependency");
+  assert.ok(deps.includes("isMobileViewport"), "isMobileViewport is a dependency");
+});
+
+test("spacer v3 uses requestAnimationFrame for post-layout measurement", () => {
+  const measureIdx = appSource.indexOf("measureMobileToolbar");
+  const fnBody = appSource.slice(measureIdx, measureIdx + 3000);
+  assert.ok(fnBody.includes("requestAnimationFrame"), "uses requestAnimationFrame");
+  assert.ok(fnBody.includes("getBoundingClientRect"), "uses getBoundingClientRect");
 });
 
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
@@ -921,15 +958,16 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
 });
 
 test("debug panel shows toolbar and status pill measured heights with overflow detection", () => {
-  assert.match(appSource, /toolbarHeight/);
-  assert.match(appSource, /statusPillClientH/);
-  assert.match(appSource, /statusPillScrollH/);
-  assert.match(appSource, /computedToolbarH/);
-  assert.match(appSource, /statusTextOverflows/);
+  assert.match(appSource, /toolbar clientHeight:/);
+  assert.match(appSource, /status pill clientHeight:/);
+  assert.match(appSource, /status pill scrollHeight:/);
+  assert.match(appSource, /CSS --mobile-topbar-h:/);
+  assert.match(appSource, /status text overflows:/);
   assert.match(appSource, /debugToolbarH/);
   assert.match(appSource, /debugStatusPillH/);
   assert.match(appSource, /debugStatusOverflow/);
-  assert.match(appSource, /scrollHeight > .*\.clientHeight/);
+  assert.match(appSource, /spacer clientHeight:/);
+  assert.match(appSource, /gap detected:/);
 });
 
 test("status label includes space after Status colon", () => {
