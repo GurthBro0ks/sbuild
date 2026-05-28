@@ -17,6 +17,7 @@ import {
   SBuildBuildInfo,
 } from "@sbuild/shared";
 import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 
 function safeGitCommand(cmd: string, cwd?: string): string | null {
   try {
@@ -294,6 +295,119 @@ function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
+type AuthConfig = {
+  enabled: boolean;
+  username: string;
+  passwordHash: string;
+  sessionSecret: string;
+};
+
+type SessionPayload = {
+  u: string;
+  exp: number;
+};
+
+const sessionCookieName = "sbuild_session";
+const sessionTtlMs = 1000 * 60 * 60 * 12;
+
+function readAuthConfig(): AuthConfig {
+  if (process.env.NODE_ENV === "test") {
+    return { enabled: false, username: "", passwordHash: "", sessionSecret: "" };
+  }
+  const username = String(process.env.SBUILD_AUTH_USERNAME || "").trim();
+  const passwordHash = String(process.env.SBUILD_AUTH_PASSWORD_HASH || "").trim();
+  const sessionSecret = String(process.env.SBUILD_SESSION_SECRET || "").trim();
+  const enabled = Boolean(username && passwordHash && sessionSecret);
+  return { enabled, username, passwordHash, sessionSecret };
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  const source = String(header || "");
+  for (const pair of source.split(";")) {
+    const [rawKey, ...rest] = pair.split("=");
+    const key = rawKey?.trim();
+    if (!key) continue;
+    out[key] = decodeURIComponent(rest.join("=") || "");
+  }
+  return out;
+}
+
+function signSession(payload: SessionPayload, secret: string): string {
+  const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+
+function verifySession(token: string, secret: string): SessionPayload | null {
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  const expected = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+  if (sig.length !== expected.length) return null;
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (!crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
+    if (!parsed.u || typeof parsed.exp !== "number") return null;
+    if (Date.now() >= parsed.exp) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function verifyPassword(plain: string, encodedHash: string): boolean {
+  const parts = encodedHash.split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const n = Number(parts[1]);
+  const r = Number(parts[2]);
+  const p = Number(parts[3]);
+  const salt = parts[4];
+  const expectedHex = parts[5];
+  if (!Number.isFinite(n) || !Number.isFinite(r) || !Number.isFinite(p) || !salt || !expectedHex) return false;
+  const expected = Buffer.from(expectedHex, "hex");
+  const derived = crypto.scryptSync(plain, salt, expected.length, { N: n, r, p });
+  return crypto.timingSafeEqual(derived, expected);
+}
+
+function renderLoginPage(reason?: string): string {
+  const escapedReason = reason ? `<p class="error">${reason}</p>` : "";
+  return [
+    "<!doctype html>",
+    "<html lang='en'>",
+    "<head>",
+    "<meta charset='utf-8' />",
+    "<meta name='viewport' content='width=device-width,initial-scale=1' />",
+    "<title>sBuild Login</title>",
+    "<style>",
+    ":root{--bg:#f3efe5;--card:#fffdf9;--ink:#1e2f2b;--accent:#285943;--muted:#61756f;--error:#9f2f2f}",
+    "*{box-sizing:border-box}body{margin:0;font-family:'Space Grotesk','Segoe UI',sans-serif;background:radial-gradient(circle at 20% 20%,#fff6dc,transparent 45%),linear-gradient(150deg,#f8f4ec,#e8f1ed);min-height:100vh;display:grid;place-items:center;color:var(--ink)}",
+    ".card{width:min(92vw,420px);background:var(--card);border:1px solid #d8d4c8;border-radius:16px;padding:28px;box-shadow:0 20px 45px rgba(26,40,34,.12)}",
+    "h1{margin:0 0 6px;font-size:1.6rem;letter-spacing:.02em}p{margin:0 0 14px;color:var(--muted)}label{display:block;font-size:.9rem;margin:14px 0 6px}",
+    "input{width:100%;border:1px solid #cfd7d3;border-radius:10px;padding:11px 12px;font:inherit;background:white}",
+    "button{margin-top:16px;width:100%;border:0;border-radius:10px;padding:12px;background:var(--accent);color:white;font:600 1rem 'Space Grotesk','Segoe UI',sans-serif;cursor:pointer}",
+    ".error{color:var(--error);font-weight:600;margin-bottom:8px}",
+    "</style>",
+    "</head>",
+    "<body>",
+    "<main class='card'>",
+    "<h1>sBuild Access</h1>",
+    "<p>Black Fish Farms staging editor</p>",
+    escapedReason,
+    "<form method='post' action='/login'>",
+    "<label for='username'>Username</label>",
+    "<input id='username' name='username' autocomplete='username' required />",
+    "<label for='password'>Password</label>",
+    "<input id='password' name='password' type='password' autocomplete='current-password' required />",
+    "<button type='submit'>Sign in</button>",
+    "</form>",
+    "</main>",
+    "</body>",
+    "</html>"
+  ].join("");
+}
+
 async function sendEditorFallback(
   res: express.Response,
   editorIndexPath: string,
@@ -319,11 +433,13 @@ async function sendEditorFallback(
 
 export function createApp(options?: { editorDistPath?: string }): express.Express {
   const app = express();
+  const auth = readAuthConfig();
   const resolvedEditorDistPath = options?.editorDistPath || editorDistDir;
   const editorIndexPath = path.join(resolvedEditorDistPath, "index.html");
   const editorAssetsPath = path.join(resolvedEditorDistPath, "assets");
   app.use(cors());
   app.use(express.json({ limit: "4mb" }));
+  app.use(express.urlencoded({ extended: false }));
   app.use("/project/images", express.static(projectImagesDir));
 
   app.get("/health", async (_req, res) => {
@@ -382,6 +498,58 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
         res.status(500).json({ ok: false, loadedProjectSource: "error", error: `${String(error)} | ${String(fallbackError)}` });
       }
     }
+  });
+
+  app.get("/login", (req, res) => {
+    if (!auth.enabled) {
+      res.redirect(302, "/");
+      return;
+    }
+    const reason = req.query?.reason === "invalid" ? "Invalid username or password." : undefined;
+    res.status(200).type("html").send(renderLoginPage(reason));
+  });
+
+  app.post("/login", (req, res) => {
+    if (!auth.enabled) {
+      res.redirect(302, "/");
+      return;
+    }
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    if (username !== auth.username || !verifyPassword(password, auth.passwordHash)) {
+      res.status(401).type("html").send(renderLoginPage("Invalid username or password."));
+      return;
+    }
+    const token = signSession({ u: username, exp: Date.now() + sessionTtlMs }, auth.sessionSecret);
+    res.setHeader("Set-Cookie", `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=43200`);
+    res.redirect(302, "/");
+  });
+
+  app.post("/logout", (_req, res) => {
+    res.setHeader("Set-Cookie", `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`);
+    res.redirect(302, "/login");
+  });
+
+  app.use((req, res, next) => {
+    if (!auth.enabled) {
+      next();
+      return;
+    }
+    if (req.path === "/health" || req.path === "/login" || req.path === "/logout") {
+      next();
+      return;
+    }
+    const token = parseCookies(req.headers.cookie)[sessionCookieName];
+    const session = token ? verifySession(token, auth.sessionSecret) : null;
+    if (session) {
+      next();
+      return;
+    }
+    if (isApiPath(req.path)) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    res.redirect(302, "/login");
   });
 
   app.put("/api/project", async (req, res) => {
