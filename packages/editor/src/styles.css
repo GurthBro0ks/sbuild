@@ -125,6 +125,11 @@ html, body, #root { overflow-x: hidden; }
   line-height: 1.35;
   display: inline-flex;
   align-items: center;
+  overflow: visible;
+}
+
+.status-pill-text {
+  white-space: nowrap;
 }
 
 .topbar-mobile-spacer {
@@ -1500,6 +1505,8 @@ button:disabled {
     right: 0;
     z-index: 90;
     box-shadow: 0 2px 12px rgba(0, 0, 0, .15);
+    overflow: visible;
+    background: var(--editor-panel-bg);
   }
 
   .topbar .logo {
@@ -1528,6 +1535,13 @@ button:disabled {
     align-items: center;
     white-space: normal;
     overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  .topbar-status .status-pill-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .workspace,

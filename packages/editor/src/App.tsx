@@ -910,19 +910,29 @@ export function App() {
   }, [isMobileViewport]);
 
   const topbarRef = useRef<HTMLElement>(null);
+  const statusPillRef = useRef<HTMLDivElement>(null);
+  const [debugToolbarH, setDebugToolbarH] = useState(0);
+  const [debugStatusPillH, setDebugStatusPillH] = useState(0);
   useEffect(() => {
     if (!isMobileViewport || !topbarRef.current) {
       document.documentElement.style.removeProperty("--mobile-topbar-h");
+      setDebugToolbarH(0);
+      setDebugStatusPillH(0);
       return;
     }
     const el = topbarRef.current;
     const update = () => {
       const h = Math.round(el.getBoundingClientRect().height);
       document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
+      setDebugToolbarH(h);
+      if (statusPillRef.current) {
+        setDebugStatusPillH(Math.round(statusPillRef.current.getBoundingClientRect().height));
+      }
     };
     update();
     const obs = new ResizeObserver(update);
     obs.observe(el);
+    if (statusPillRef.current) obs.observe(statusPillRef.current);
     return () => obs.disconnect();
   }, [isMobileViewport]);
 
@@ -3125,6 +3135,14 @@ export function App() {
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
               <p><strong>mobileToolbarStatusOffset=active</strong></p>
+              {isMobileViewport && (
+                <>
+                  <p><strong>mobileToolbarHeight:</strong> {debugToolbarH}px</p>
+                  <p><strong>statusPillHeight:</strong> {debugStatusPillH}px</p>
+                  <p><strong>toolbarStatusNoClip:</strong> {debugToolbarH > 0 ? "true" : "n/a (desktop)"}</p>
+                  <p><strong>commit:</strong> {SBUILD_VERSION}</p>
+                </>
+              )}
 
               <h4>Provider Status</h4>
               {providerStatus.length === 0 && <p>Loading providers...</p>}
@@ -3205,8 +3223,8 @@ export function App() {
         <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
         <button onClick={() => void runBuild()}>Build</button>
         <button onClick={() => void runPublish()}>Publish</button>
-        <div className="topbar-status" data-status-row="topbar-status-pill">
-          <strong>Status:</strong> {withSavedStatusText(status, dirty)} · {status}
+        <div ref={statusPillRef} className="topbar-status" data-status-row="topbar-status-pill">
+          <span className="status-pill-text">Status: {withSavedStatusText(status, dirty)} &middot; {status}</span>
         </div>
       </header>
       <div className="topbar-mobile-spacer" />

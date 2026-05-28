@@ -863,7 +863,8 @@ test("mobile topbar spacer div exists for fixed toolbar offset", () => {
 test("status row renders with stable topbar status selector", () => {
   assert.match(appSource, /className="topbar-status"/);
   assert.match(appSource, /data-status-row="topbar-status-pill"/);
-  assert.match(appSource, /<strong>Status:<\/strong>/);
+  assert.match(appSource, /status-pill-text/);
+  assert.match(appSource, /Status:\s/);
 });
 
 test("mobile status row has non-clipping sizing and spacing rules", () => {
@@ -872,6 +873,8 @@ test("mobile status row has non-clipping sizing and spacing rules", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*padding:\s*7px\s*10px/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*box-sizing:\s*border-box/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-status[\s\S]*overflow:\s*visible/);
+  assert.match(cssSource, /\.status-pill-text/);
 });
 
 test("mobile spacer uses measured toolbar variable height", () => {
@@ -899,6 +902,24 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
   assert.match(appSource, /topbarRef/);
   assert.match(appSource, /ResizeObserver/);
   assert.match(appSource, /--mobile-topbar-h/);
+  assert.match(appSource, /statusPillRef/);
+});
+
+test("debug panel shows toolbar and status pill measured heights", () => {
+  assert.match(appSource, /mobileToolbarHeight/);
+  assert.match(appSource, /statusPillHeight/);
+  assert.match(appSource, /toolbarStatusNoClip/);
+  assert.match(appSource, /debugToolbarH/);
+  assert.match(appSource, /debugStatusPillH/);
+});
+
+test("status label includes space after Status colon", () => {
+  assert.match(appSource, /Status:\s/);
+  assert.match(appSource, /status-pill-text/);
+});
+
+test("mobile topbar has explicit overflow visible to prevent clipping", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*overflow:\s*visible/);
 });
 
 test("site header context menu AI Assistant still exists", () => {
