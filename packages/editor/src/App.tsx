@@ -921,6 +921,7 @@ export function App() {
   const [debugCanvasControlsTop, setDebugCanvasControlsTop] = useState(0);
   const [debugGapPx, setDebugGapPx] = useState(0);
   const [debugDuplicateOffset, setDebugDuplicateOffset] = useState(false);
+  const [debugTopbarPaddingTop, setDebugTopbarPaddingTop] = useState(0);
   useEffect(() => {
     if (!isMobileViewport || !topbarRef.current) {
       document.documentElement.style.removeProperty("--mobile-topbar-h");
@@ -933,14 +934,18 @@ export function App() {
       setDebugCanvasControlsTop(0);
       setDebugGapPx(0);
       setDebugDuplicateOffset(false);
+      setDebugTopbarPaddingTop(0);
       return;
     }
     const el = topbarRef.current;
     const update = () => {
       const h = Math.round(el.getBoundingClientRect().height);
+      const computed = window.getComputedStyle(el);
+      const topPadding = Math.round(Number.parseFloat(computed.paddingTop || "0") || 0);
       document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
       document.documentElement.style.setProperty("--mobile-toolbar-h", `${h}px`);
       setDebugToolbarH(h);
+      setDebugTopbarPaddingTop(topPadding);
       if (statusPillRef.current) {
         setDebugStatusPillH(Math.round(statusPillRef.current.getBoundingClientRect().height));
         setDebugStatusOverflow(statusPillRef.current.scrollHeight > statusPillRef.current.clientHeight);
@@ -3171,6 +3176,7 @@ export function App() {
               <p><strong>canvasControlsTop:</strong> {debugCanvasControlsTop || "n/a"}{debugCanvasControlsTop ? "px" : ""}</p>
               <p><strong>gapPx:</strong> {isMobileViewport ? `${debugGapPx}px` : "n/a"}</p>
               <p><strong>duplicateOffsetDetected:</strong> {isMobileViewport ? (debugDuplicateOffset ? "true" : "false") : "n/a"}</p>
+              <p><strong>topbarPaddingTop:</strong> {debugTopbarPaddingTop || "n/a"}{debugTopbarPaddingTop ? "px" : ""}</p>
               <p><strong>statusPillClientH:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
               <p><strong>statusTextOverflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
 
@@ -3356,7 +3362,7 @@ export function App() {
           </p>
           {isMobileViewport && !previewMode && (
             <p className="panel-status">
-              <strong>mobile-toolbar-gap-repair</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"}
+              <strong>mobile-toolbar-gap-repair</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"} topPad={debugTopbarPaddingTop}
             </p>
           )}
           {isMobileViewport && !previewMode && (

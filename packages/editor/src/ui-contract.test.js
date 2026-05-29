@@ -827,6 +827,10 @@ test("mobile topbar is fixed with higher z-index and safe-area", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*env\(safe-area-inset-top/);
 });
 
+test("mobile topbar uses safe-area-aware top padding floor", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*padding-top:\s*max\(8px,\s*env\(safe-area-inset-top,\s*0px\)\)/);
+});
+
 test("context menu includes AI Assistant action for site header", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*AI Assistant/);
   assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,80}AI Assistant/);
@@ -969,12 +973,14 @@ test("debug panel shows mobile-toolbar-gap-repair active marker with gap detecti
   assert.match(appSource, /canvasControlsTop/);
   assert.match(appSource, /gapPx/);
   assert.match(appSource, /duplicateOffsetDetected/);
+  assert.match(appSource, /topbarPaddingTop/);
   assert.match(appSource, /debugToolbarH/);
   assert.match(appSource, /debugSpacerH/);
   assert.match(appSource, /debugToolbarBottom/);
   assert.match(appSource, /debugCanvasControlsTop/);
   assert.match(appSource, /debugGapPx/);
   assert.match(appSource, /debugDuplicateOffset/);
+  assert.match(appSource, /debugTopbarPaddingTop/);
 });
 
 test("status label includes space after Status colon", () => {
