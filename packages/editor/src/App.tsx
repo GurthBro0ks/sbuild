@@ -44,6 +44,9 @@ type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about";
 type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
+type PaintTool = "brush" | "eraser";
+type PaintDrawMode = "free" | "line";
+type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: PaintDrawMode; color: string; size: number; points: PaintPoint[] };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
@@ -686,9 +689,13 @@ export function App() {
   const [photoEditInstruction, setPhotoEditInstruction] = useState("");
   const [photoEditStatus, setPhotoEditStatus] = useState("");
   const [lastEditedImage, setLastEditedImage] = useState("");
-  const [paintPath, setPaintPath] = useState<PaintPoint[]>([]);
-  const [paintPrompt, setPaintPrompt] = useState("");
-  const [paintOpen, setPaintOpen] = useState(false);
+  const [paintDraftStrokes, setPaintDraftStrokes] = useState<PaintStroke[]>([]);
+  const [paintAppliedStrokes, setPaintAppliedStrokes] = useState<PaintStroke[]>([]);
+  const [paintActivePoints, setPaintActivePoints] = useState<PaintPoint[]>([]);
+  const [paintTool, setPaintTool] = useState<PaintTool>("brush");
+  const [paintDrawMode, setPaintDrawMode] = useState<PaintDrawMode>("free");
+  const [paintColor, setPaintColor] = useState("#2b6dff");
+  const [paintSize, setPaintSize] = useState(4);
   const [drag, setDrag] = useState<DragState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
@@ -726,8 +733,7 @@ export function App() {
       setLeftCollapsed(true);
       setRightCollapsed(true);
       setPaintMode(false);
-      setPaintPath([]);
-      setPaintOpen(false);
+      setPaintActivePoints([]);
       lastFocusedTextBlockId.current = "";
     } else {
       setLeftCollapsed(prePreviewLeftCollapsed);
@@ -1130,6 +1136,10 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; project: SBuildProject; loadedProjectSource?: string; loadedProjectUpdatedAt?: string; lastLoadedAt?: string; projectPath?: string }>("/api/project");
       setProject(data.project);
+      setPaintMode(false);
+      setPaintDraftStrokes([]);
+      setPaintAppliedStrokes([]);
+      setPaintActivePoints([]);
       setLoadedProjectSource(data.loadedProjectSource || "unknown");
       setLoadedProjectUpdatedAt(data.loadedProjectUpdatedAt || "");
       setLastLoadedAt(data.lastLoadedAt || new Date().toISOString());
@@ -2077,28 +2087,79 @@ export function App() {
   }
 
   function beginPaint(e: React.PointerEvent<HTMLDivElement>) {
-    if (!paintMode) return;
-    setPaintPath([pointerPoint(e)]);
+    if (!paintMode || previewMode) return;
+    const point = pointerPoint(e);
+    if (paintTool === "eraser") {
+      e.preventDefault();
+      e.stopPropagation();
+      setPaintDraftStrokes((strokes) => strokes.slice(0, -1));
+      setStatus("Removed last pending stroke");
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (paintDrawMode === "line") {
+      setPaintActivePoints([point, point]);
+      return;
+    }
+    setPaintActivePoints([point]);
   }
 
   function movePaint(e: React.PointerEvent<HTMLDivElement>) {
-    if (!paintMode || paintPath.length === 0) return;
-    setPaintPath((pts) => [...pts, pointerPoint(e)]);
+    if (!paintMode || previewMode || paintTool === "eraser" || paintActivePoints.length === 0) return;
+    const point = pointerPoint(e);
+    e.preventDefault();
+    e.stopPropagation();
+    if (paintDrawMode === "line") {
+      setPaintActivePoints((pts) => [pts[0], point]);
+      return;
+    }
+    setPaintActivePoints((pts) => [...pts, point]);
   }
 
   function endPaint() {
-    if (!paintMode || paintPath.length < 2) return;
-    setPaintOpen(true);
+    if (!paintMode || previewMode || paintTool === "eraser") return;
+    if (paintActivePoints.length < 2) {
+      setPaintActivePoints([]);
+      return;
+    }
+    const stroke: PaintStroke = {
+      id: `stroke-${Date.now()}`,
+      tool: "brush",
+      mode: paintDrawMode,
+      color: paintColor,
+      size: paintSize,
+      points: paintActivePoints
+    };
+    setPaintDraftStrokes((strokes) => [...strokes, stroke]);
+    setPaintActivePoints([]);
+    setStatus("Pending paint stroke added");
   }
 
-  async function applyPaintFix() {
-    if (!project || !selectedPage) return;
-    const data = await fetchJson<{ ok: boolean; project: SBuildProject; notes: string[] }>("/api/ai/paint-fix", {
-      method: "POST",
-      body: JSON.stringify({ instruction: paintPrompt, pageId: selectedPage.id, bounds: { width: 0, height: 0 }, points: paintPath, selectedBlockId, project })
-    });
-    if (data.ok) { setProject(data.project); setDirty(true); setStatus(`Paint fix applied: ${data.notes.join("; ")}`); setLastAction("paint-fix"); }
-    setPaintOpen(false); setPaintPrompt(""); setPaintPath([]);
+  function clearPaintDraft() {
+    setPaintDraftStrokes([]);
+    setPaintActivePoints([]);
+    setStatus("Pending paint cleared");
+  }
+
+  function applyPaintOverlay() {
+    if (paintDraftStrokes.length === 0) {
+      setStatus("No pending paint to apply");
+      return;
+    }
+    setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes]);
+    setPaintDraftStrokes([]);
+    setPaintActivePoints([]);
+    setDirty(true);
+    setLastAction("paint-apply-overlay");
+    setStatus("Paint overlay applied to this editor session");
+  }
+
+  function discardPaintAndExit() {
+    setPaintDraftStrokes([]);
+    setPaintActivePoints([]);
+    setPaintMode(false);
+    setStatus("Discarded pending paint");
   }
 
   // Drag reorder handlers
@@ -3333,7 +3394,7 @@ export function App() {
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
           <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-          <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
+          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Paint mode off" : "Paint mode on"); }} className={paintMode ? "active" : ""}>Paint</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
@@ -3444,6 +3505,23 @@ export function App() {
               </>
             )}
           </div>
+          {paintMode && !previewMode && (
+            <div className="paint-toolbar" role="toolbar" aria-label="Paint tools">
+              <button onClick={() => setPaintTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
+              <button onClick={() => setPaintTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
+              <button onClick={() => setPaintDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
+              <button onClick={() => setPaintDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
+              <input aria-label="Paint color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
+              <label className="paint-size-control">
+                Size
+                <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => setPaintSize(Number(e.target.value))} />
+                <span>{paintSize}px</span>
+              </label>
+              <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
+              <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Apply</button>
+              <button onClick={discardPaintAndExit}>Discard</button>
+            </div>
+          )}
           {!previewMode && (
             <p className="panel-status">
               <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
@@ -3667,21 +3745,20 @@ export function App() {
               </div>
             )})}
 
-            {paintMode && (
+            {(paintMode || paintAppliedStrokes.length > 0) && (
               <svg className="paint-overlay" viewBox="0 0 1200 1200" preserveAspectRatio="none">
-                <polyline points={paintPath.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#2b6dff" strokeWidth="3" />
+                {paintAppliedStrokes.map((stroke) => (
+                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" />
+                ))}
+                {paintDraftStrokes.map((stroke) => (
+                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />
+                ))}
+                {paintMode && paintActivePoints.length > 1 && (
+                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeLinecap="round" strokeLinejoin="round" />
+                )}
               </svg>
             )}
           </div>
-
-          {paintOpen && (
-            <div className="paint-prompt">
-              <label>Paint Instruction</label>
-              <input value={paintPrompt} onChange={(e) => setPaintPrompt(e.target.value)} placeholder="make heading bigger" />
-              <button onClick={() => void applyPaintFix()}>Apply</button>
-              <button onClick={() => { setPaintOpen(false); setPaintPath([]); }}>Cancel</button>
-            </div>
-          )}
         </main>
 
         {!isMobileViewport && !previewMode && (

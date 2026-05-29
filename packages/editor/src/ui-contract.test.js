@@ -1256,13 +1256,12 @@ test("preview mode hides left panel with preview-hidden class", () => {
   assert.match(cssSource, /\.app\.preview \.left-drawer\.preview-hidden/);
 });
 
-test("preview mode deactivates paint and clears paint path", () => {
-  const effectIdx = appSource.indexOf("useEffect(() => {");
+test("preview mode deactivates paint and clears active paint points", () => {
   const previewEffectIdx = appSource.indexOf("if (previewMode) {");
   assert.ok(previewEffectIdx > 0, "previewMode effect exists");
   const effectSection = appSource.substring(previewEffectIdx, previewEffectIdx + 800);
   assert.match(effectSection, /setPaintMode\(false\)/);
-  assert.match(effectSection, /setPaintPath\(\[\]\)/);
+  assert.match(effectSection, /setPaintActivePoints\(\[\]\)/);
 });
 
 test("preview mode saves and restores panel collapse states", () => {
@@ -1314,6 +1313,47 @@ test("right panel collapsed state applies CSS grid change", () => {
 
 test("preview mode CSS hides paint overlay", () => {
   assert.match(cssSource, /\.app\.preview \.paint-overlay/);
+});
+
+test("paint mode has explicit toolbar lifecycle controls", () => {
+  assert.match(appSource, /className="paint-toolbar"/);
+  assert.match(appSource, /role="toolbar" aria-label="Paint tools"/);
+  assert.match(appSource, />Brush<\/button>/);
+  assert.match(appSource, />Eraser<\/button>/);
+  assert.match(appSource, />Free Draw<\/button>/);
+  assert.match(appSource, />Line<\/button>/);
+  assert.match(appSource, /aria-label="Paint color"/);
+  assert.match(appSource, /aria-label="Brush size"/);
+  assert.match(appSource, />Clear<\/button>/);
+  assert.match(appSource, />Apply<\/button>/);
+  assert.match(appSource, />Discard<\/button>/);
+});
+
+test("paint toolbar only renders in paint mode and never in preview", () => {
+  assert.match(appSource, /\{paintMode && !previewMode && \(/);
+});
+
+test("paint mode entering does not auto-start stroke", () => {
+  assert.match(appSource, /setPaintMode\(\(p\) => !p\); setPaintActivePoints\(\[\]\)/);
+  assert.match(appSource, /if \(!paintMode \|\| previewMode\) return;/);
+});
+
+test("clear and discard remove pending strokes", () => {
+  assert.match(appSource, /function clearPaintDraft\(\)/);
+  assert.match(appSource, /setPaintDraftStrokes\(\[\]\)/);
+  assert.match(appSource, /function discardPaintAndExit\(\)/);
+  assert.match(appSource, /setPaintMode\(false\)/);
+});
+
+test("paint overlay applies pending and committed stroke separation", () => {
+  assert.match(appSource, /setPaintAppliedStrokes\(\(strokes\) => \[\.\.\.strokes, \.\.\.paintDraftStrokes\]\)/);
+  assert.match(appSource, /paintDraftStrokes\.map\(\(stroke\) =>/);
+  assert.match(appSource, /strokeDasharray="6 4"/);
+  assert.match(appSource, /paintAppliedStrokes\.map\(\(stroke\) =>/);
+});
+
+test("paint overlay visibility is paint mode or applied only", () => {
+  assert.match(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
 });
 
 test("mobile-toolbar-gap-repair and action-controls-offset markers remain", () => {
