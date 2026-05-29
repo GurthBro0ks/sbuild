@@ -1132,8 +1132,8 @@ test("right drawer internal scroll remains intact on mobile via sheet body", () 
 });
 
 test("desktop right drawer does not render when mobile viewport", () => {
-  assert.match(appSource, /\{!isMobileViewport && \(/);
-  assert.match(appSource, /<aside className="right-drawer">/);
+  assert.match(appSource, /\{!isMobileViewport && !previewMode && \(/);
+  assert.match(appSource, /<aside className=\{`right-drawer/);
   const overlayIdx = appSource.indexOf("mobile-editor-overlay");
   assert.ok(overlayIdx > 0, "mobile-editor-overlay exists for mobile-only rendering");
 });
@@ -1229,4 +1229,103 @@ test("publish remains dry-run", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
+});
+
+test("preview mode hides right panel on desktop", () => {
+  assert.match(appSource, /\{!isMobileViewport && !previewMode && \(/);
+  assert.match(appSource, /<aside className=\{`right-drawer/);
+});
+
+test("preview mode hides Duplicate Delete Up Down action controls", () => {
+  const controlsIdx = appSource.indexOf("canvas-controls");
+  assert.ok(controlsIdx > 0, "canvas-controls exists");
+  const section = appSource.substring(controlsIdx, controlsIdx + 800);
+  assert.match(section, /\{!previewMode &&/);
+  assert.match(section, /Duplicate/);
+  assert.match(section, /Delete/);
+});
+
+test("preview mode hides left panel with preview-hidden class", () => {
+  assert.match(appSource, /left-drawer.*preview-hidden/);
+  assert.match(cssSource, /\.app\.preview \.left-drawer\.preview-hidden/);
+});
+
+test("preview mode deactivates paint and clears paint path", () => {
+  const effectIdx = appSource.indexOf("useEffect(() => {");
+  const previewEffectIdx = appSource.indexOf("if (previewMode) {");
+  assert.ok(previewEffectIdx > 0, "previewMode effect exists");
+  const effectSection = appSource.substring(previewEffectIdx, previewEffectIdx + 800);
+  assert.match(effectSection, /setPaintMode\(false\)/);
+  assert.match(effectSection, /setPaintPath\(\[\]\)/);
+});
+
+test("preview mode saves and restores panel collapse states", () => {
+  assert.match(appSource, /setPrePreviewLeftCollapsed/);
+  assert.match(appSource, /setPrePreviewRightCollapsed/);
+  assert.match(appSource, /setLeftCollapsed\(prePreviewLeftCollapsed\)/);
+  assert.match(appSource, /setRightCollapsed\(prePreviewRightCollapsed\)/);
+});
+
+test("Settings modal has X close button in header", () => {
+  assert.match(appSource, /settingsOpen[\s\S]{0,200}modal-header[\s\S]{0,200}modal-close[\s\S]{0,200}setSettingsOpen\(false\)/);
+  assert.match(appSource, /aria-label="Close Settings"/);
+});
+
+test("Settings modal backdrop click closes the modal", () => {
+  const settingsIdx = appSource.indexOf('settingsOpen && (');
+  assert.ok(settingsIdx > 0);
+  const section = appSource.substring(settingsIdx, settingsIdx + 400);
+  assert.match(section, /modal-backdrop.*onClick.*setSettingsOpen\(false\)/);
+});
+
+test("Settings Escape key closes the modal", () => {
+  assert.match(appSource, /e\.key === "Escape" && settingsOpen/);
+});
+
+test("Logout button exists in Settings General tab", () => {
+  assert.match(appSource, /logout-btn/);
+  assert.match(appSource, /\/logout/);
+  assert.match(appSource, /window\.location\.href = "\/login"/);
+  assert.match(cssSource, /\.logout-btn/);
+});
+
+test("desktop right panel has collapse button", () => {
+  assert.match(appSource, /right-drawer-collapse-btn/);
+  assert.match(appSource, /setRightCollapsed\(true\)/);
+  assert.match(cssSource, /\.right-drawer-collapse-btn/);
+});
+
+test("desktop right panel has restore button when collapsed", () => {
+  assert.match(appSource, /right-drawer-restore-btn/);
+  assert.match(appSource, /setRightCollapsed\(false\)/);
+  assert.match(cssSource, /\.right-drawer-restore-btn/);
+});
+
+test("right panel collapsed state applies CSS grid change", () => {
+  assert.match(cssSource, /\.workspace\.right-collapsed/);
+  assert.match(cssSource, /\.right-drawer\.collapsed/);
+});
+
+test("preview mode CSS hides paint overlay", () => {
+  assert.match(cssSource, /\.app\.preview \.paint-overlay/);
+});
+
+test("mobile-toolbar-gap-repair and action-controls-offset markers remain", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair/);
+  assert.match(appSource, /action-controls-offset/);
+});
+
+test("mobile-toolbar-spacer-v3 marker is not active", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
+});
+
+test("isPreview helper exists as alias for previewMode", () => {
+  assert.match(appSource, /const isPreview = previewMode;/);
+});
+
+test("preview mode hides canvas debug panel status", () => {
+  const canvasDebugIdx = appSource.indexOf("Canvas debug");
+  assert.ok(canvasDebugIdx > 0, "Canvas debug text exists");
+  const beforeSection = appSource.substring(Math.max(0, canvasDebugIdx - 200), canvasDebugIdx);
+  assert.match(beforeSection, /\{!previewMode &&/);
 });

@@ -702,6 +702,9 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [prePreviewLeftCollapsed, setPrePreviewLeftCollapsed] = useState(false);
+  const [prePreviewRightCollapsed, setPrePreviewRightCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
   const [rightDrawerMobileOpen, setRightDrawerMobileOpen] = useState(false);
   const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
@@ -712,15 +715,27 @@ export function App() {
 
   useEffect(() => {
     if (previewMode) {
+      setPrePreviewLeftCollapsed(leftCollapsed);
+      setPrePreviewRightCollapsed(rightCollapsed);
       setSelectedBlockId("");
       setSelectedGalleryIndex(null);
       setSelectedSitePart(null);
       setSelectedNavIndex(null);
       setRightDrawerMobileOpen(false);
       setContextMenu(null);
+      setLeftCollapsed(true);
+      setRightCollapsed(true);
+      setPaintMode(false);
+      setPaintPath([]);
+      setPaintOpen(false);
       lastFocusedTextBlockId.current = "";
+    } else {
+      setLeftCollapsed(prePreviewLeftCollapsed);
+      setRightCollapsed(prePreviewRightCollapsed);
     }
   }, [previewMode]);
+
+  const isPreview = previewMode;
 
   useEffect(() => {
     projectRef.current = project;
@@ -1026,6 +1041,10 @@ export function App() {
 
   useEffect(() => {
     const onToggle = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
       if (e.key === "Escape" && imageManagerOpen) {
         setImageManagerOpen(false);
         return;
@@ -3330,8 +3349,8 @@ export function App() {
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
 
-        <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""}`}>
-        <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""}`}>
+        <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""} ${rightCollapsed ? "right-collapsed" : ""} ${previewMode ? "preview-mode" : ""}`}>
+        <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""} ${previewMode ? "preview-hidden" : ""}`}>
           {isMobileViewport && !leftCollapsed && (
             <div className="mobile-drawer-toolbar">
               <strong>Left panel</strong>
@@ -3413,18 +3432,24 @@ export function App() {
             <button onClick={() => setDeviceMode("desktop")} className={deviceMode === "desktop" ? "selected" : ""}>Desktop</button>
             <button onClick={() => setDeviceMode("tablet")} className={deviceMode === "tablet" ? "selected" : ""}>Tablet</button>
             <button onClick={() => setDeviceMode("phone")} className={deviceMode === "phone" ? "selected" : ""}>Phone</button>
-            <button onClick={() => duplicateBlock()}>Duplicate</button>
-            <button onClick={() => deleteBlock()}>Delete</button>
-            <button onClick={() => moveBlock("up")}>Up</button>
-            <button onClick={() => moveBlock("down")}>Down</button>
+            {!previewMode && (
+              <>
+                <button onClick={() => duplicateBlock()}>Duplicate</button>
+                <button onClick={() => deleteBlock()}>Delete</button>
+                <button onClick={() => moveBlock("up")}>Up</button>
+                <button onClick={() => moveBlock("down")}>Down</button>
+              </>
+            )}
           </div>
-          <p className="panel-status">
-            <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
-            {drag && ` · dragging ${drag.blockId.slice(0, 12)} ${drag.startIndex}→${drag.currentIndex}`}
-            {resizeStatus && ` · ${resizeStatus}`}
-            {themeApplied && ` · theme: ${themeApplied}`}
-            {!leftCollapsed ? " · left panel open" : " · left panel collapsed"}
-          </p>
+          {!previewMode && (
+            <p className="panel-status">
+              <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
+              {drag && ` · dragging ${drag.blockId.slice(0, 12)} ${drag.startIndex}→${drag.currentIndex}`}
+              {resizeStatus && ` · ${resizeStatus}`}
+              {themeApplied && ` · theme: ${themeApplied}`}
+              {!leftCollapsed ? " · left panel open" : " · left panel collapsed"}
+            </p>
+          )}
           {isMobileViewport && !previewMode && (
             <p className="panel-status">
               <strong>mobile-toolbar-gap-repair</strong> <strong>action-controls-offset</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"} topPad={debugTopbarPaddingTop} missing={debugMeasurementMissing ? "true" : "false"}
@@ -3661,25 +3686,35 @@ export function App() {
           )}
         </main>
 
-        {!isMobileViewport && (
-        <aside className="right-drawer">
-          <div className="right-drawer-header">
-            <div className="mobile-drawer-tab-row">
-              <div className="tabs compact-tabs">
-            <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
-            <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
-            <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
-            <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
-            <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
-            <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
+        {!isMobileViewport && !previewMode && (
+        <aside className={`right-drawer ${rightCollapsed ? "collapsed" : ""}`}>
+          {!rightCollapsed && (
+            <>
+              <div className="right-drawer-header">
+                <div className="right-drawer-header-bar">
+                  <div className="mobile-drawer-tab-row">
+                    <div className="tabs compact-tabs">
+                      <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
+                      <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
+                      <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
+                      <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
+                      <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
+                      <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
+                    </div>
+                  </div>
+                  <button className="right-drawer-collapse-btn" onClick={() => setRightCollapsed(true)} aria-label="Collapse right panel" title="Collapse right panel">≫</button>
+                </div>
+                <p className="panel-status right-target-summary">{targetSummary()}</p>
               </div>
-            </div>
-            <p className="panel-status right-target-summary">{targetSummary()}</p>
-          </div>
-          <div className="right-drawer-content">
-            {renderRightDrawerBody()}
-          </div>
+              <div className="right-drawer-content">
+                {renderRightDrawerBody()}
+              </div>
+            </>
+          )}
         </aside>
+        )}
+        {!isMobileViewport && !previewMode && rightCollapsed && (
+          <button className="right-drawer-restore-btn" onClick={() => setRightCollapsed(false)} aria-label="Open right panel" title="Open right panel">≪</button>
         )}
       </div>
 
@@ -3757,9 +3792,12 @@ export function App() {
       )}
 
       {settingsOpen && (
-        <div className="modal-backdrop">
-          <div className="modal settings-modal">
-            <h3>Settings</h3>
+        <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
+          <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Settings</h3>
+              <button className="modal-close" onClick={() => setSettingsOpen(false)} aria-label="Close Settings">✕</button>
+            </div>
             <div className="tabs">
               <button className={settingsTab === "general" ? "selected" : ""} onClick={() => setSettingsTab("general")}>General</button>
               <button className={settingsTab === "providers" ? "selected" : ""} onClick={() => setSettingsTab("providers")}>AI Providers</button>
@@ -3780,6 +3818,8 @@ export function App() {
                     <option value="Dark">Dark</option>
                   </select>
                 </label>
+                <hr style={{ margin: "16px 0" }} />
+                <button className="logout-btn" onClick={() => { void (async () => { try { await fetch("/logout", { method: "POST" }); } catch { /* */ } window.location.href = "/login"; })(); }}>Logout</button>
               </div>
             )}
             {settingsTab === "providers" && <div>
