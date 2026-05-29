@@ -742,6 +742,8 @@ export function App() {
   }, [previewMode]);
 
   const isPreview = previewMode;
+  const paintExclusiveMode = paintMode && !previewMode;
+  const canEditBlocks = !previewMode && !paintMode;
 
   useEffect(() => {
     projectRef.current = project;
@@ -1295,14 +1297,17 @@ export function App() {
   }
 
   function selectBlock(blockId: string) {
+    if (previewMode || paintMode) return;
     setSelectedBlockId(blockId);
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
     lastFocusedTextBlockId.current = blockId;
+    if (!isMobileViewport) setRightCollapsed(false);
   }
 
   function selectSiteHeaderContainer() {
+    if (previewMode || paintMode) return;
     setSelectedSitePart("site-header");
     setSelectedNavIndex(null);
     setSelectedBlockId("");
@@ -1311,6 +1316,7 @@ export function App() {
   }
 
   function activateBlockTextTarget(blockId: string, part?: string) {
+    if (previewMode || paintMode) return;
     setSelectedBlockId(blockId);
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
@@ -1320,17 +1326,19 @@ export function App() {
   }
 
   function openBlockDrawer(blockId: string) {
+    if (previewMode || paintMode) return;
     setSelectedBlockId(blockId);
     setSelectedGalleryIndex(null);
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
     setRightDrawerMobileOpen(true);
-    if (isMobileViewport) setRightCollapsed(false);
+    setRightCollapsed(false);
     setRightTab("properties");
     setStatus("Edit drawer opened");
   }
 
   function selectGallerySlot(blockId: string, index: number) {
+    if (previewMode || paintMode) return;
     setSelectedBlockId(blockId);
     setSelectedPart("image");
     setSelectedGalleryIndex(index);
@@ -1341,6 +1349,7 @@ export function App() {
   }
 
   function openGallerySlotDrawer(blockId: string, index: number) {
+    if (previewMode || paintMode) return;
     setSelectedBlockId(blockId);
     setSelectedPart("image");
     setSelectedGalleryIndex(index);
@@ -1348,7 +1357,7 @@ export function App() {
     setSelectedNavIndex(null);
     setRightTab("images");
     setRightDrawerMobileOpen(true);
-    if (isMobileViewport) setRightCollapsed(false);
+    setRightCollapsed(false);
     setStatus(`Editing Gallery image ${index + 1}`);
   }
 
@@ -1373,13 +1382,14 @@ export function App() {
   }
 
   function openAiDrawer(targetBlockId?: string) {
-    if (previewMode) {
+    if (previewMode || paintMode) {
       setStatus("AI is not available in Preview mode");
       return;
     }
 
     setRightTab("ai");
     setRightDrawerMobileOpen(true);
+    setRightCollapsed(false);
 
     if (targetBlockId) {
       const block = selectedPage?.blocks.find((b) => b.id === targetBlockId);
@@ -2081,12 +2091,12 @@ export function App() {
     return fonts.filter((f) => f.family.toLowerCase().includes(q)).slice(0, 50);
   }, [fonts, fontSearch]);
 
-  function pointerPoint(e: React.PointerEvent<HTMLDivElement>): PaintPoint {
+  function pointerPoint(e: React.PointerEvent<Element>): PaintPoint {
     const rect = (e.target as HTMLElement).closest(".canvas-frame")!.getBoundingClientRect();
     return { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) };
   }
 
-  function beginPaint(e: React.PointerEvent<HTMLDivElement>) {
+  function beginPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode) return;
     const point = pointerPoint(e);
     if (paintTool === "eraser") {
@@ -2105,7 +2115,7 @@ export function App() {
     setPaintActivePoints([point]);
   }
 
-  function movePaint(e: React.PointerEvent<HTMLDivElement>) {
+  function movePaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode || paintTool === "eraser" || paintActivePoints.length === 0) return;
     const point = pointerPoint(e);
     e.preventDefault();
@@ -2184,7 +2194,7 @@ export function App() {
 
   // Context menu handlers
   function openContextMenu(e: React.MouseEvent | React.TouchEvent, blockId: string) {
-    if (previewMode) return;
+    if (previewMode || paintMode) return;
     e.preventDefault();
     e.stopPropagation();
     let x = 0, y = 0;
@@ -2222,7 +2232,7 @@ export function App() {
     setSelectedBlockId("");
     setSelectedGalleryIndex(null);
     setRightDrawerMobileOpen(true);
-    if (isMobileViewport) setRightCollapsed(false);
+    setRightCollapsed(false);
     setRightTab("properties");
     if (sitePart === "site-header") setStatus("Editing site header container");
     else if (sitePart === "site-title") setStatus("Editing site title");
@@ -2230,7 +2240,7 @@ export function App() {
   }
 
   function openSiteHeaderContextMenu(e: React.MouseEvent | React.TouchEvent) {
-    if (previewMode) return;
+    if (previewMode || paintMode) return;
     e.preventDefault();
     e.stopPropagation();
     let x = 0, y = 0;
@@ -2263,7 +2273,7 @@ export function App() {
 
   function handleBlockPointerDown(e: React.PointerEvent, blockId: string, index: number) {
     if (e.button !== 0) return;
-    if (previewMode) return;
+    if (previewMode || paintMode) return;
     const target = e.target as HTMLElement;
     if (isMobileViewport && target.closest('.gallery-slot')) {
       return;
@@ -2277,7 +2287,7 @@ export function App() {
       longPressRef.current.fired = false;
       return;
     }
-    if (previewMode) return;
+    if (previewMode || paintMode) return;
     const target = e.target as HTMLElement;
     if (isMobileViewport && target.closest('.gallery-slot')) {
       return;
@@ -2295,7 +2305,7 @@ export function App() {
   }
 
   function handleBlockPointerMove(e: React.PointerEvent, blockId: string, index: number) {
-    if (previewMode) return;
+    if (previewMode || paintMode) return;
     if (longPressRef.current.timer) {
       const dx = Math.abs(e.clientX - longPressRef.current.startX);
       const dy = Math.abs(e.clientY - longPressRef.current.startY);
@@ -3520,6 +3530,7 @@ export function App() {
               <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
               <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Apply</button>
               <button onClick={discardPaintAndExit}>Discard</button>
+              <span className="paint-toolbar-note">Apply is preview-only for this session (not persisted to project files).</span>
             </div>
           )}
           {!previewMode && (
@@ -3539,12 +3550,9 @@ export function App() {
 
           <div
             ref={canvasRef}
-            className={`canvas-frame sbuild-site-preview sbuild-rendered-page ${deviceMode} ${isMobileViewport ? "mobile-viewport" : ""}`}
+            className={`canvas-frame sbuild-site-preview sbuild-rendered-page ${deviceMode} ${isMobileViewport ? "mobile-viewport" : ""} ${paintExclusiveMode ? "paint-exclusive" : ""}`}
             style={{ background: project.globalStyles.colors.bg, color: project.globalStyles.colors.text }}
-            onPointerDown={beginPaint}
-            onPointerMove={movePaint}
-            onPointerUp={endPaint}
-            onClick={() => { if (!previewMode) { setSelectedSitePart(null); setSelectedNavIndex(null); } }}
+            onClick={() => { if (canEditBlocks) { setSelectedSitePart(null); setSelectedNavIndex(null); } }}
           >
             <nav
               className={`canvas-nav ${!previewMode && selectedSitePart === "site-header" ? "selected-site-part" : ""}`}
@@ -3582,12 +3590,12 @@ export function App() {
               <div className="site-header-left">
                 <strong
                   className={!previewMode && selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
-                  contentEditable={!previewMode}
+                  contentEditable={canEditBlocks}
                   suppressContentEditableWarning
                   onInput={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
                   onBlur={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
                   onClick={(e) => {
-                    if (previewMode) return;
+                    if (!canEditBlocks) return;
                     e.stopPropagation();
                     if (!isMobileViewport) {
                       setSelectedSitePart("site-title");
@@ -3597,11 +3605,11 @@ export function App() {
                     }
                   }}
                   onPointerDown={(e) => {
-                    if (previewMode || !isMobileViewport) return;
+                    if (!canEditBlocks || !isMobileViewport) return;
                     startSiteHeaderLongPress("site-title", e.clientX, e.clientY);
                   }}
                   onPointerUp={(e) => {
-                    if (previewMode || !isMobileViewport) return;
+                    if (!canEditBlocks || !isMobileViewport) return;
                     cancelSiteHeaderLongPress();
                     if (siteHeaderLongPressRef.current.fired) {
                       siteHeaderLongPressRef.current.fired = false;
@@ -3615,7 +3623,7 @@ export function App() {
                     if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
                   }}
                 >{project.site.siteName}</strong>
-                {isMobileViewport && !previewMode && (
+                {isMobileViewport && canEditBlocks && (
                   <button
                     className="site-header-edit-btn"
                     onClick={(e) => {
@@ -3631,12 +3639,12 @@ export function App() {
                   <span
                     key={item.id}
                     className={!previewMode && selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
-                    contentEditable={!previewMode}
+                    contentEditable={canEditBlocks}
                     suppressContentEditableWarning
                     onInput={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onBlur={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onClick={(e) => {
-                      if (previewMode) return;
+                      if (!canEditBlocks) return;
                       e.stopPropagation();
                       if (!isMobileViewport) {
                         setSelectedSitePart("nav");
@@ -3646,11 +3654,11 @@ export function App() {
                       }
                     }}
                     onPointerDown={(e) => {
-                      if (previewMode || !isMobileViewport) return;
+                      if (!canEditBlocks || !isMobileViewport) return;
                       startSiteHeaderLongPress("nav", e.clientX, e.clientY, ni);
                     }}
                     onPointerUp={(e) => {
-                      if (previewMode || !isMobileViewport) return;
+                      if (!canEditBlocks || !isMobileViewport) return;
                       cancelSiteHeaderLongPress();
                       if (siteHeaderLongPressRef.current.fired) {
                         siteHeaderLongPressRef.current.fired = false;
@@ -3683,7 +3691,7 @@ export function App() {
                 data-row-columns={row.blocks.length}
               >
                 <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
-                {!previewMode && row.blocks.length > 1 && (
+                {canEditBlocks && row.blocks.length > 1 && (
                   <div className="row-debug" aria-label="Row debug status">
                     Row debug: mode={deviceMode} stack={shouldStackRows ? "true" : "false"} cols={row.blocks.length} template={rowTemplate}
                   </div>
@@ -3699,17 +3707,17 @@ export function App() {
                         className={`block-shell ${block.id === selectedBlock?.id ? "selected-block" : ""} ${drag?.blockId === block.id ? "dragging" : ""} ${shouldStackRows ? "mobile-row-block" : ""}`}
                         data-background-style={block.styles?.parts?.container?.backgroundStyle || block.styles?.backgroundStyle || ""}
                         style={blockStyleToCss(block)}
-                        onClick={() => { if (!isMobileViewport) selectBlock(block.id); }}
-                        onContextMenu={(e) => openContextMenu(e, block.id)}
+                        onClick={() => { if (!isMobileViewport && canEditBlocks) selectBlock(block.id); }}
+                        onContextMenu={(e) => { if (canEditBlocks) openContextMenu(e, block.id); }}
                         onPointerDown={(e) => handleBlockPointerDown(e, block.id, index)}
                         onPointerUp={(e) => handleBlockPointerUp(e, block.id, index)}
                         onPointerMove={(e) => handleBlockPointerMove(e, block.id, index)}
-                        draggable
-                        onDragStart={() => handleDragStart(block.id, index)}
-                        onDragEnter={() => handleDragEnter(index)}
-                        onDragEnd={handleDragEnd}
+                        draggable={canEditBlocks}
+                        onDragStart={() => { if (canEditBlocks) handleDragStart(block.id, index); }}
+                        onDragEnter={() => { if (canEditBlocks) handleDragEnter(index); }}
+                        onDragEnd={() => { if (canEditBlocks) handleDragEnd(); }}
                       >
-                        {!previewMode && (
+                        {canEditBlocks && (
                           <div className="block-meta">
                             <div className="block-meta-main">
                               <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
@@ -3724,7 +3732,7 @@ export function App() {
                         )}
                         {renderTypedBlock(block, (field, value) => {
                           patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
-                        }, previewMode ? undefined : (index) => selectGallerySlot(block.id, index), selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, previewMode ? undefined : (index) => openGallerySlotDrawer(block.id, index), previewMode, (cardIndex, field, value) => {
+                        }, canEditBlocks ? (index) => selectGallerySlot(block.id, index) : undefined, selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, canEditBlocks ? (index) => openGallerySlotDrawer(block.id, index) : undefined, !canEditBlocks, (cardIndex, field, value) => {
                           patchSelectedBlock((current) => {
                             const data = current.data as CardsBlockData;
                             const cards = [...data.cards];
@@ -3732,7 +3740,7 @@ export function App() {
                             return { ...current, data: { ...data, cards } };
                           });
                         }, (part) => activateBlockTextTarget(block.id, part))}
-                        {selectedBlock?.id === block.id && !previewMode && (
+                        {selectedBlock?.id === block.id && canEditBlocks && (
                           <>
                             <button className="resize-handle right" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "right", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
                             <button className="resize-handle bottom" onPointerDown={(e) => { e.stopPropagation(); setResizeDrag({ handle: "bottom", blockId: block.id, startX: e.clientX, startY: e.clientY, startWidth: block.styles?.layout?.widthPercent || 100, startMinHeight: block.styles?.layout?.minHeightPx || 120 }); }} />
@@ -3746,7 +3754,7 @@ export function App() {
             )})}
 
             {(paintMode || paintAppliedStrokes.length > 0) && (
-              <svg className="paint-overlay" viewBox="0 0 1200 1200" preserveAspectRatio="none">
+              <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} viewBox="0 0 1200 1200" preserveAspectRatio="none" onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
                 {paintAppliedStrokes.map((stroke) => (
                   <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" />
                 ))}

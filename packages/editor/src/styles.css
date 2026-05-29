@@ -1061,6 +1061,28 @@ button:disabled {
   inset: 0;
   pointer-events: none;
 }
+
+.paint-overlay.capture-active {
+  pointer-events: auto;
+  cursor: crosshair;
+  z-index: 20;
+}
+
+.canvas-frame.paint-exclusive,
+.canvas-frame.paint-exclusive * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.canvas-frame.paint-exclusive .block-shell,
+.canvas-frame.paint-exclusive [contenteditable="true"] {
+  cursor: crosshair !important;
+}
+
+.paint-toolbar-note {
+  font-size: 11px;
+  color: var(--editor-text-muted);
+}
 .paint-toolbar {
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);

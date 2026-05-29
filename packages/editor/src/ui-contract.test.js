@@ -192,7 +192,7 @@ test("gallery slot long press opens drawer with correct target", () => {
 });
 
 test("desktop single click behavior remains unchanged", () => {
-  assert.match(appSource, /if \(!isMobileViewport\) selectBlock\(block\.id\)/);
+  assert.match(appSource, /if \(!isMobileViewport && canEditBlocks\) selectBlock\(block\.id\)/);
   assert.match(appSource, /if \(!drag\) selectBlock\(blockId\)/);
 });
 
@@ -433,7 +433,7 @@ test("row width normalization defaults to balanced widths and rejects stale inva
 });
 
 test("canvas frame tags mobile viewport class for mobile-only row visual overrides", () => {
-  assert.match(appSource, /className=\{`canvas-frame sbuild-site-preview sbuild-rendered-page \$\{deviceMode\} \$\{isMobileViewport \? "mobile-viewport" : ""\}`\}/);
+  assert.match(appSource, /className=\{`canvas-frame sbuild-site-preview sbuild-rendered-page \$\{deviceMode\} \$\{isMobileViewport \? "mobile-viewport" : ""\} \$\{paintExclusiveMode \? "paint-exclusive" : ""\}`\}/);
 });
 
 test("move up and move down actions remain present after row operations", () => {
@@ -457,8 +457,8 @@ test("context menu uses light backdrop dim layer", () => {
 });
 
 test("mobile site title single tap edits directly without opening drawer", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
-  assert.match(appSource, /if \(previewMode\) return;[\s\S]*setSelectedSitePart\("site-title"\)/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /if \(!canEditBlocks\) return;[\s\S]*setSelectedSitePart\("site-title"\)/);
   assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("site-title"\)[\s\S]{0,60}Site title selected/);
 });
 
@@ -471,8 +471,8 @@ test("mobile site title long press opens right drawer", () => {
 });
 
 test("mobile nav link single tap edits directly without opening drawer", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
-  assert.match(appSource, /if \(previewMode\) return;[\s\S]*setSelectedSitePart\("nav"\)/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
+  assert.match(appSource, /if \(!canEditBlocks\) return;[\s\S]*setSelectedSitePart\("nav"\)/);
   assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("nav"\)[\s\S]{0,60}Nav link/);
 });
 
@@ -514,12 +514,12 @@ test("preview mode clears selection and closes drawers via useEffect", () => {
 });
 
 test("preview mode guards block pointer handlers", () => {
-  assert.match(appSource, /function handleBlockPointerDown[\s\S]{0,120}if \(previewMode\) return;/);
-  assert.match(appSource, /function handleBlockPointerUp[\s\S]{0,200}if \(previewMode\) return;/);
+  assert.match(appSource, /function handleBlockPointerDown[\s\S]{0,140}if \(previewMode \|\| paintMode\) return;/);
+  assert.match(appSource, /function handleBlockPointerUp[\s\S]{0,220}if \(previewMode \|\| paintMode\) return;/);
 });
 
 test("preview mode guards context menu", () => {
-  assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
+  assert.match(appSource, /function openContextMenu[\s\S]{0,140}if \(previewMode \|\| paintMode\) return;/);
 });
 
 test("context menu Edit Properties opens right drawer via openBlockDrawer", () => {
@@ -553,12 +553,12 @@ test("edit mode supports direct text editing with stopPropagation on contentEdit
 });
 
 test("site title is contentEditable in edit mode and guarded in preview", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
   assert.match(appSource, /setProject\(\{ \.\.\.project, site: \{ \.\.\.project\.site, siteName:/);
 });
 
 test("nav labels are contentEditable in edit mode and guarded in preview", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
   assert.match(appSource, /nav\[ni\] = \{ \.\.\.nav\[ni\], label: e\.currentTarget\.textContent/);
 });
 
@@ -637,7 +637,7 @@ test("computeAiTarget falls back to first editable block when none selected", ()
 });
 
 test("openAiDrawer guards preview mode with status message", () => {
-  assert.match(appSource, /function openAiDrawer[\s\S]{0,300}if \(previewMode\)/);
+  assert.match(appSource, /function openAiDrawer[\s\S]{0,320}if \(previewMode \|\| paintMode\)/);
   assert.match(appSource, /AI is not available in Preview mode/);
 });
 
@@ -711,13 +711,13 @@ test("site header empty-area click selects container via nav onClick", () => {
 });
 
 test("site title direct edit still works via contentEditable and onClick", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("site-title"\)/);
   assert.match(appSource, /e\.stopPropagation\(\)[\s\S]*setSelectedSitePart\("site-title"\)/);
 });
 
 test("nav label direct edit still works via contentEditable and onClick", () => {
-  assert.match(appSource, /contentEditable=\{!previewMode\}[\s\S]*item\.label/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("nav"\)/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedNavIndex\(ni\)/);
 });
@@ -876,8 +876,8 @@ test("context menu AI uses normalized computeAiTarget resolution", () => {
 });
 
 test("preview mode guards AI opening from context menu", () => {
-  assert.match(appSource, /function openAiDrawer[\s\S]{0,300}if \(previewMode\)/);
-  assert.match(appSource, /function openContextMenu[\s\S]{0,120}if \(previewMode\) return;/);
+  assert.match(appSource, /function openAiDrawer[\s\S]{0,320}if \(previewMode \|\| paintMode\)/);
+  assert.match(appSource, /function openContextMenu[\s\S]{0,140}if \(previewMode \|\| paintMode\) return;/);
   assert.match(appSource, /AI is not available in Preview mode/);
 });
 
@@ -1327,6 +1327,7 @@ test("paint mode has explicit toolbar lifecycle controls", () => {
   assert.match(appSource, />Clear<\/button>/);
   assert.match(appSource, />Apply<\/button>/);
   assert.match(appSource, />Discard<\/button>/);
+  assert.match(appSource, /Apply is preview-only for this session/);
 });
 
 test("paint toolbar only renders in paint mode and never in preview", () => {
@@ -1354,6 +1355,26 @@ test("paint overlay applies pending and committed stroke separation", () => {
 
 test("paint overlay visibility is paint mode or applied only", () => {
   assert.match(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
+});
+
+test("paint overlay captures pointer events only in exclusive paint mode", () => {
+  assert.match(appSource, /className=\{`paint-overlay \$\{paintExclusiveMode \? "capture-active" : ""\}`\}/);
+  assert.match(appSource, /onPointerDown=\{paintExclusiveMode \? beginPaint : undefined\}/);
+  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*pointer-events:\s*auto/);
+});
+
+test("paint mode disables block editing interactions through canEditBlocks gate", () => {
+  assert.match(appSource, /const canEditBlocks = !previewMode && !paintMode;/);
+  assert.match(appSource, /if \(previewMode \|\| paintMode\) return;/);
+  assert.match(appSource, /draggable=\{canEditBlocks\}/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}/);
+  assert.match(appSource, /\{selectedBlock\?\.id === block\.id && canEditBlocks && \(/);
+});
+
+test("paint mode applies user-select lock on preview surface", () => {
+  assert.match(appSource, /paint-exclusive/);
+  assert.match(cssSource, /\.canvas-frame\.paint-exclusive,\n\.canvas-frame\.paint-exclusive \*/);
+  assert.match(cssSource, /user-select:\s*none/);
 });
 
 test("mobile-toolbar-gap-repair and action-controls-offset markers remain", () => {
@@ -1410,29 +1431,29 @@ test("openBlockDrawer clears rightCollapsed on mobile to prevent stuck collapse"
   const openBlockIdx = appSource.indexOf("function openBlockDrawer(blockId: string)");
   assert.ok(openBlockIdx > 0, "openBlockDrawer function exists");
   const fnSection = appSource.substring(openBlockIdx, openBlockIdx + 300);
-  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openBlockDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightCollapsed\(false\)/, "openBlockDrawer clears rightCollapsed");
   assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openBlockDrawer sets rightDrawerMobileOpen true");
 });
 
-test("openSiteHeaderDrawer clears rightCollapsed on mobile", () => {
+test("openSiteHeaderDrawer clears rightCollapsed", () => {
   const openSiteHeaderIdx = appSource.indexOf("function openSiteHeaderDrawer(");
   assert.ok(openSiteHeaderIdx > 0, "openSiteHeaderDrawer function exists");
   const fnSection = appSource.substring(openSiteHeaderIdx, openSiteHeaderIdx + 400);
-  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openSiteHeaderDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightCollapsed\(false\)/, "openSiteHeaderDrawer clears rightCollapsed");
   assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openSiteHeaderDrawer sets rightDrawerMobileOpen true");
 });
 
-test("openGallerySlotDrawer clears rightCollapsed on mobile", () => {
+test("openGallerySlotDrawer clears rightCollapsed", () => {
   const openGalleryIdx = appSource.indexOf("function openGallerySlotDrawer(");
   assert.ok(openGalleryIdx > 0, "openGallerySlotDrawer function exists");
   const fnSection = appSource.substring(openGalleryIdx, openGalleryIdx + 400);
-  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openGallerySlotDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightCollapsed\(false\)/, "openGallerySlotDrawer clears rightCollapsed");
   assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openGallerySlotDrawer sets rightDrawerMobileOpen true");
 });
 
 test("context menu Edit Properties reopens drawer after close via openBlockDrawer", () => {
   assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\)/);
-  assert.match(appSource, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+  assert.match(appSource, /setRightCollapsed\(false\)/);
 });
 
 test("desktop right panel collapse and restore still work independently", () => {
@@ -1449,14 +1470,14 @@ test("mobile drawer state is not permanently blocked by rightPanelCollapsed", ()
   assert.ok(openBlockIdx > 0, "openBlockDrawer function exists");
   const fnSection = appSource.substring(openBlockIdx, openBlockIdx + 300);
   assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/);
-  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+  assert.match(fnSection, /setRightCollapsed\(false\)/);
   assert.doesNotMatch(fnSection, /if \(rightCollapsed\)/, "openBlockDrawer is not gated by rightCollapsed");
 });
 
 test("leaving preview restores ability to open drawer on mobile", () => {
   assert.match(appSource, /setLeftCollapsed\(prePreviewLeftCollapsed\)/);
   assert.match(appSource, /setRightCollapsed\(prePreviewRightCollapsed\)/);
-  assert.match(appSource, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+  assert.match(appSource, /setRightCollapsed\(false\)/);
 });
 
 test("Settings X close still exists after mobile preview fix", () => {
