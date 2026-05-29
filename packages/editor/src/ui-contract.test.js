@@ -276,7 +276,7 @@ test("mobile overlay backdrop dimming stays light and sheet remains separate", (
 });
 
 test("mobile editor header keeps title and close in single compact row", () => {
-  assert.match(appSource, /<div className="mobile-editor-sheet-header">[\s\S]*<h2>Edit block<\/h2>[\s\S]*className="mobile-editor-x-close"/);
+  assert.match(appSource, /<div className="mobile-editor-sheet-header">[\s\S]*<h2>\{mobileDrawerHeading\(\)\}<\/h2>[\s\S]*className="mobile-editor-x-close"/);
   assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*display:\s*flex/);
   assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*justify-content:\s*space-between/);
   assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*padding:\s*6px\s*12px/);
@@ -488,8 +488,8 @@ test("mobile site header edit button opens context menu", () => {
 });
 
 test("site header target label includes Site header and Nav link", () => {
-  assert.match(appSource, /Editing Site header → Site title/);
-  assert.match(appSource, /Editing Site header → Nav link/);
+  assert.match(appSource, /Target: Site header - site title/);
+  assert.match(appSource, /Target: Site header - nav link/);
 });
 
 test("properties tab renders when site part is selected without block", () => {
@@ -695,7 +695,7 @@ test("preview useEffect resets lastFocusedTextBlockId", () => {
 test("site header container has selectable target path with site-header part", () => {
   assert.match(appSource, /function selectSiteHeaderContainer/);
   assert.match(appSource, /setSelectedSitePart\("site-header"\)/);
-  assert.match(appSource, /"Target: Site header → Whole header"/);
+  assert.match(appSource, /"Target: Site header - whole header"/);
 });
 
 test("site header container select clears block and gallery selection", () => {
@@ -1041,8 +1041,8 @@ test("mobile editor sheet body uses overflow-y auto and min-height 0", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
 });
 
-test("mobile editor sheet uses grid-template-rows with header/tabs/target/body", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\)/);
+test("mobile editor sheet uses grid-template-rows with header/target/quick-actions/tabs/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\)/);
 });
 
 test("mobile editor overlay uses position fixed and covers viewport", () => {
@@ -1103,6 +1103,23 @@ test("mobile right drawer tab row contains Props Style Resize Images AI Debug ta
   assert.match(tabSection, /Images/);
   assert.match(tabSection, /\bAI\b/);
   assert.match(tabSection, /Debug/);
+});
+
+test("mobile drawer includes quick actions strip for fewer taps", () => {
+  assert.match(appSource, /mobile-editor-sheet-quick-actions/);
+  const quickIdx = appSource.indexOf("mobile-editor-sheet-quick-actions");
+  const quickSection = appSource.substring(quickIdx, quickIdx + 1300);
+  assert.match(quickSection, /Properties/);
+  assert.match(quickSection, /Style/);
+  assert.match(quickSection, /Resize\/Layout/);
+  assert.match(quickSection, /AI Assistant/);
+  assert.match(cssSource, /\.mobile-editor-sheet-quick-actions[\s\S]*flex-wrap:\s*wrap/);
+});
+
+test("mobile quick actions keep Images contextual and reachable", () => {
+  assert.match(appSource, /\{showImagesAction\(\) && \(/);
+  assert.match(appSource, />Images<\/button>/);
+  assert.match(appSource, /function showImagesAction\(\): boolean/);
 });
 
 test("right drawer internal scroll remains intact on mobile via sheet body", () => {
@@ -1170,8 +1187,8 @@ test("CSS for mobile overlay uses position fixed and top references --mobile-top
   assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
 });
 
-test("CSS sheet uses grid-template-rows with header/tabs/target/body", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\)/);
+test("CSS sheet uses grid-template-rows with header/target/quick-actions/tabs/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\)/);
 });
 
 test("body uses overflow-y auto and min-height 0", () => {
@@ -1181,12 +1198,14 @@ test("body uses overflow-y auto and min-height 0", () => {
 
 test("header/tabs/target are not inside the scrolling body", () => {
   const headerIdx = appSource.indexOf("mobile-editor-sheet-header");
-  const tabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
   const targetIdx = appSource.indexOf("mobile-editor-sheet-target");
+  const quickIdx = appSource.indexOf("mobile-editor-sheet-quick-actions");
+  const tabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
   const bodyIdx = appSource.indexOf("mobile-editor-sheet-body");
   assert.ok(headerIdx < bodyIdx, "header comes before body in DOM");
-  assert.ok(tabsIdx < bodyIdx, "tabs come before body in DOM");
   assert.ok(targetIdx < bodyIdx, "target comes before body in DOM");
+  assert.ok(quickIdx < bodyIdx, "quick actions come before body in DOM");
+  assert.ok(tabsIdx < bodyIdx, "tabs come before body in DOM");
 });
 
 test("context menu Edit Properties calls the same open drawer path", () => {

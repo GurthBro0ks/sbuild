@@ -1645,7 +1645,7 @@ button:disabled {
     top: calc(var(--mobile-topbar-h, 0px) + env(safe-area-inset-top, 0px) + 8px);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     display: grid;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto minmax(0, 1fr);
     overflow: hidden;
     border-radius: 16px;
     background: var(--editor-panel-bg);
@@ -1713,7 +1713,7 @@ button:disabled {
   }
 
   .mobile-editor-sheet-target {
-    padding: 4px 12px;
+    padding: 8px 12px 6px;
     border-bottom: 1px solid var(--editor-border);
     background: var(--editor-panel-bg);
     flex-shrink: 0;
@@ -1724,6 +1724,26 @@ button:disabled {
     padding: 0;
     margin: 0;
     line-height: 1.2;
+  }
+
+  .mobile-editor-sheet-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--editor-border);
+    background: var(--editor-panel-bg);
+    flex-shrink: 0;
+  }
+
+  .mobile-editor-sheet-quick-actions button {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 124px;
+    min-height: 38px;
+    font-size: 12px;
+    line-height: 1.25;
+    padding: 8px 10px;
+    text-align: center;
   }
 
   .mobile-editor-sheet-body {
@@ -1761,6 +1781,7 @@ button:disabled {
 
   .mobile-editor-sheet .button-row,
   .mobile-editor-sheet .quick-actions,
+  .mobile-editor-sheet-quick-actions,
   .mobile-editor-sheet .nav-edit-row,
   .mobile-editor-sheet .part-selector,
   .mobile-editor-sheet .preset-row {

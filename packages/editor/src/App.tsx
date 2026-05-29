@@ -1384,16 +1384,31 @@ export function App() {
   }
 
   function targetSummary(): string {
-    if (selectedSitePart === "site-header") return "Target: Site header → Whole header";
-    if (selectedSitePart === "site-title") return "Editing Site header → Site title";
-    if (selectedSitePart === "nav" && selectedNavIndex !== null) return `Editing Site header → Nav link ${selectedNavIndex + 1}`;
-    if (!selectedBlock) return "No image content target selected";
+    if (selectedSitePart === "site-header") return "Target: Site header - whole header";
+    if (selectedSitePart === "site-title") return "Target: Site header - site title";
+    if (selectedSitePart === "nav" && selectedNavIndex !== null) return `Target: Site header - nav link ${selectedNavIndex + 1}`;
+    if (!selectedBlock) return "Target: none selected yet";
     const blockLabel = blockTypeLabels[selectedBlock.type] || selectedBlock.type;
-    if (selectedBlock.type === "gallery" && selectedGalleryIndex !== null) return `Target: ${blockLabel} → Image ${selectedGalleryIndex + 1}`;
-    if (selectedBlock.type === "gallery") return `Target: ${blockLabel} → Add to Gallery`;
-    if (selectedBlock.type === "image") return `Target: ${blockLabel} → Photo`;
-    if (selectedBlock.type === "hero") return `Target: ${blockLabel} → Background`;
-    return `Target: ${blockLabel} → Background`;
+    const blockIdShort = selectedBlock.id.length > 14 ? `${selectedBlock.id.slice(0, 14)}...` : selectedBlock.id;
+    if (selectedBlock.type === "gallery" && selectedGalleryIndex !== null) return `Target: ${blockLabel} #${blockIdShort} - image ${selectedGalleryIndex + 1}`;
+    if (selectedBlock.type === "gallery") return `Target: ${blockLabel} #${blockIdShort} - add to gallery`;
+    if (selectedBlock.type === "image") return `Target: ${blockLabel} #${blockIdShort} - photo`;
+    if (selectedBlock.type === "hero") return `Target: ${blockLabel} #${blockIdShort} - background`;
+    return `Target: ${blockLabel} #${blockIdShort} - background`;
+  }
+
+  function mobileDrawerHeading(): string {
+    if (selectedSitePart === "site-header") return "Editing Site header";
+    if (selectedSitePart === "site-title") return "Editing Site title";
+    if (selectedSitePart === "nav" && selectedNavIndex !== null) return `Editing Nav link ${selectedNavIndex + 1}`;
+    if (!selectedBlock) return "Edit selection";
+    const blockLabel = blockTypeLabels[selectedBlock.type] || selectedBlock.type;
+    return `Editing ${blockLabel}`;
+  }
+
+  function showImagesAction(): boolean {
+    if (!selectedBlock) return false;
+    return selectedBlock.type === "gallery" || selectedBlock.type === "image" || selectedBlock.type === "hero";
   }
 
   function contentActionLabel(): string {
@@ -3672,8 +3687,20 @@ export function App() {
         <div className={`mobile-editor-overlay ${rightDrawerMobileOpen ? "open" : ""}`}>
           <section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">
             <div className="mobile-editor-sheet-header">
-              <h2>Edit block</h2>
+              <h2>{mobileDrawerHeading()}</h2>
               <button className="mobile-editor-x-close" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">✕</button>
+            </div>
+            <div className="mobile-editor-sheet-target">
+              <p className="panel-status right-target-summary">{targetSummary()}</p>
+            </div>
+            <div className="mobile-editor-sheet-quick-actions" aria-label="Mobile quick actions">
+              <button onClick={() => setRightTab("properties")} className={rightTab === "properties" && propertiesTab !== "resize" ? "selected" : ""}>Properties</button>
+              <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""}>Style</button>
+              <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""}>Resize/Layout</button>
+              {showImagesAction() && (
+                <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""}>Images</button>
+              )}
+              <button onClick={() => openAiDrawer()} className={rightTab === "ai" ? "selected" : ""}>AI Assistant</button>
             </div>
             <div className="mobile-editor-sheet-tabs">
               <div className="tabs compact-tabs">
@@ -3684,9 +3711,6 @@ export function App() {
                 <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
                 <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
               </div>
-            </div>
-            <div className="mobile-editor-sheet-target">
-              <p className="panel-status right-target-summary">{targetSummary()}</p>
             </div>
             <div className="mobile-editor-sheet-body">
               {renderRightDrawerBody()}
