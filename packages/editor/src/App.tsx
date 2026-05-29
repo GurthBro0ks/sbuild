@@ -3687,28 +3687,21 @@ export function App() {
         <div className={`mobile-editor-overlay ${rightDrawerMobileOpen ? "open" : ""}`}>
           <section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">
             <div className="mobile-editor-sheet-header">
-              <h2>{mobileDrawerHeading()}</h2>
+              <div className="mobile-editor-header-left">
+                <h2>{mobileDrawerHeading()}</h2>
+                <p className="mobile-editor-target-inline">{targetSummary()}</p>
+              </div>
               <button className="mobile-editor-x-close" onClick={() => setRightDrawerMobileOpen(false)} aria-label="Close editor drawer">✕</button>
-            </div>
-            <div className="mobile-editor-sheet-target">
-              <p className="panel-status right-target-summary">{targetSummary()}</p>
-            </div>
-            <div className="mobile-editor-sheet-quick-actions" aria-label="Mobile quick actions">
-              <button onClick={() => setRightTab("properties")} className={rightTab === "properties" && propertiesTab !== "resize" ? "selected" : ""}>Properties</button>
-              <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""}>Style</button>
-              <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""}>Resize/Layout</button>
-              {showImagesAction() && (
-                <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""}>Images</button>
-              )}
-              <button onClick={() => openAiDrawer()} className={rightTab === "ai" ? "selected" : ""}>AI Assistant</button>
             </div>
             <div className="mobile-editor-sheet-tabs">
               <div className="tabs compact-tabs">
                 <button onClick={() => setRightTab("properties")} className={rightTab === "properties" ? "selected" : ""} title="Properties">Props</button>
                 <button onClick={() => setRightTab("style")} className={rightTab === "style" ? "selected" : ""} title="Style">Style</button>
                 <button onClick={() => { setRightTab("properties"); setPropertiesTab("resize"); }} className={rightTab === "properties" && propertiesTab === "resize" ? "selected" : ""} title="Resize">Resize</button>
-                <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
-                <button onClick={() => setRightTab("ai")} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
+                {showImagesAction() && (
+                  <button onClick={() => setRightTab("images")} className={rightTab === "images" ? "selected" : ""} title="Images">Images</button>
+                )}
+                <button onClick={() => openAiDrawer()} className={rightTab === "ai" ? "selected" : ""} title="AI Chat">AI</button>
                 <button onClick={() => setRightTab("status")} className={rightTab === "status" ? "selected" : ""} title="Debug">Debug</button>
               </div>
             </div>

@@ -276,17 +276,19 @@ test("mobile overlay backdrop dimming stays light and sheet remains separate", (
 });
 
 test("mobile editor header keeps title and close in single compact row", () => {
-  assert.match(appSource, /<div className="mobile-editor-sheet-header">[\s\S]*<h2>\{mobileDrawerHeading\(\)\}<\/h2>[\s\S]*className="mobile-editor-x-close"/);
+  assert.match(appSource, /<div className="mobile-editor-sheet-header">[\s\S]*<div className="mobile-editor-header-left">[\s\S]*<h2>\{mobileDrawerHeading\(\)\}<\/h2>[\s\S]*className="mobile-editor-x-close"/);
   assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*display:\s*flex/);
   assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*justify-content:\s*space-between/);
-  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*padding:\s*6px\s*12px/);
+  assert.match(cssSource, /\.mobile-editor-sheet-header[\s\S]*padding:\s*4px\s*10px/);
+  assert.match(appSource, /mobile-editor-header-left/);
+  assert.match(appSource, /mobile-editor-target-inline/);
   assert.doesNotMatch(appSource, /mobile-editor-close-row|close-only-row/);
 });
 
 test("mobile close button preserves aria label and tap target", () => {
   assert.match(appSource, /className="mobile-editor-x-close"[\s\S]*aria-label="Close editor drawer"/);
-  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*width:\s*44px/);
-  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*height:\s*44px/);
+  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*width:\s*38px/);
+  assert.match(cssSource, /\.mobile-editor-x-close[\s\S]*height:\s*38px/);
 });
 
 test("mobile drawer forms enforce full width controls and no horizontal overflow", () => {
@@ -1041,8 +1043,8 @@ test("mobile editor sheet body uses overflow-y auto and min-height 0", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
 });
 
-test("mobile editor sheet uses grid-template-rows with header/target/quick-actions/tabs/body", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\)/);
+test("mobile editor sheet uses grid-template-rows with header/tabs/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto minmax\(0, 1fr\)/);
 });
 
 test("mobile editor overlay uses position fixed and covers viewport", () => {
@@ -1084,13 +1086,13 @@ test("mobile X close button is inside mobile-editor-sheet-header gated by isMobi
   assert.match(cssSource, /\.mobile-editor-x-close\s*\{[^}]*display:\s*none/, "base CSS hides mobile X close button");
 });
 
-test("mobile X close button has at least 44px tap target", () => {
+test("mobile X close button has compact tap target", () => {
   const m768 = cssSource.indexOf("@media (max-width: 768px)");
   const section = cssSource.substring(m768, cssSource.indexOf("@media (max-width: 1100px)"));
-  assert.match(section, /\.mobile-editor-x-close[\s\S]*width:\s*44px/);
-  assert.match(section, /\.mobile-editor-x-close[\s\S]*height:\s*44px/);
-  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-width:\s*44px/);
-  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-height:\s*44px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*width:\s*38px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*height:\s*38px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-width:\s*38px/);
+  assert.match(section, /\.mobile-editor-x-close[\s\S]*min-height:\s*38px/);
 });
 
 test("mobile right drawer tab row contains Props Style Resize Images AI Debug tabs", () => {
@@ -1105,15 +1107,17 @@ test("mobile right drawer tab row contains Props Style Resize Images AI Debug ta
   assert.match(tabSection, /Debug/);
 });
 
-test("mobile drawer includes quick actions strip for fewer taps", () => {
-  assert.match(appSource, /mobile-editor-sheet-quick-actions/);
-  const quickIdx = appSource.indexOf("mobile-editor-sheet-quick-actions");
-  const quickSection = appSource.substring(quickIdx, quickIdx + 1300);
-  assert.match(quickSection, /Properties/);
-  assert.match(quickSection, /Style/);
-  assert.match(quickSection, /Resize\/Layout/);
-  assert.match(quickSection, /AI Assistant/);
-  assert.match(cssSource, /\.mobile-editor-sheet-quick-actions[\s\S]*flex-wrap:\s*wrap/);
+test("mobile drawer tabs contain key actions as compact chip row", () => {
+  const tabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
+  assert.ok(tabsIdx > 0, "mobile-editor-sheet-tabs exists");
+  const tabsSection = appSource.substring(tabsIdx, tabsIdx + 1500);
+  assert.match(tabsSection, /Props/);
+  assert.match(tabsSection, /Style/);
+  assert.match(tabsSection, /Resize/);
+  assert.match(tabsSection, /AI/);
+  assert.match(tabsSection, /Debug/);
+  assert.match(tabsSection, /showImagesAction\(\)/);
+  assert.match(cssSource, /\.mobile-editor-sheet-tabs[\s\S]*flex-shrink:\s*0/);
 });
 
 test("mobile quick actions keep Images contextual and reachable", () => {
@@ -1168,11 +1172,13 @@ test("tabs row exists with Props Style Resize Images AI Debug", () => {
   assert.match(tabSection, /Debug/);
 });
 
-test("target row exists outside the scrollable body", () => {
-  assert.match(appSource, /mobile-editor-sheet-target/);
-  const targetIdx = appSource.indexOf("mobile-editor-sheet-target");
+test("target summary is inline in the header outside the scrollable body", () => {
+  assert.match(appSource, /mobile-editor-target-inline/);
+  const targetIdx = appSource.indexOf("mobile-editor-target-inline");
   const bodyIdx = appSource.indexOf("mobile-editor-sheet-body", targetIdx);
-  assert.ok(bodyIdx > targetIdx, "target row comes before body in DOM");
+  assert.ok(bodyIdx > targetIdx, "target inline comes before body in DOM");
+  const headerIdx = appSource.indexOf("mobile-editor-sheet-header");
+  assert.ok(targetIdx > headerIdx, "target inline is inside header");
 });
 
 test("body/content row uses a dedicated scroll container", () => {
@@ -1187,8 +1193,8 @@ test("CSS for mobile overlay uses position fixed and top references --mobile-top
   assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
 });
 
-test("CSS sheet uses grid-template-rows with header/target/quick-actions/tabs/body", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto auto auto minmax\(0, 1fr\)/);
+test("CSS sheet uses grid-template-rows with header/tabs/body", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*grid-template-rows:\s*auto auto minmax\(0, 1fr\)/);
 });
 
 test("body uses overflow-y auto and min-height 0", () => {
@@ -1196,15 +1202,13 @@ test("body uses overflow-y auto and min-height 0", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*min-height:\s*0/);
 });
 
-test("header/tabs/target are not inside the scrolling body", () => {
+test("header and tabs are not inside the scrolling body", () => {
   const headerIdx = appSource.indexOf("mobile-editor-sheet-header");
-  const targetIdx = appSource.indexOf("mobile-editor-sheet-target");
-  const quickIdx = appSource.indexOf("mobile-editor-sheet-quick-actions");
+  const targetInlineIdx = appSource.indexOf("mobile-editor-target-inline");
   const tabsIdx = appSource.indexOf("mobile-editor-sheet-tabs");
   const bodyIdx = appSource.indexOf("mobile-editor-sheet-body");
   assert.ok(headerIdx < bodyIdx, "header comes before body in DOM");
-  assert.ok(targetIdx < bodyIdx, "target comes before body in DOM");
-  assert.ok(quickIdx < bodyIdx, "quick actions come before body in DOM");
+  assert.ok(targetInlineIdx < bodyIdx, "target inline comes before body in DOM");
   assert.ok(tabsIdx < bodyIdx, "tabs come before body in DOM");
 });
 
