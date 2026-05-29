@@ -35,7 +35,18 @@ import {
   joinAdjacentBlocks,
   leaveRowForBlock,
   snapMinHeight,
-  snapWidthPercent
+  snapWidthPercent,
+  createPage,
+  duplicatePage,
+  deletePage as deletePageHelper,
+  renamePage,
+  updatePageSlug,
+  buildNavItems,
+  migrateLegacyProject,
+  generateSlug,
+  getUniqueSlug,
+  getStarterBlocks,
+  STARTER_TEMPLATES,
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
@@ -773,6 +784,122 @@ export function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
 
+  const [websiteManagerOpen, setWebsiteManagerOpen] = useState(false);
+  const [newPageFlowOpen, setNewPageFlowOpen] = useState(false);
+  const [newPageStep, setNewPageStep] = useState(0);
+  const [newPageName, setNewPageName] = useState("");
+  const [newPageSlug, setNewPageSlug] = useState("");
+  const [newPageParentId, setNewPageParentId] = useState<string>("");
+  const [newPageShowInNav, setNewPageShowInNav] = useState(true);
+  const [newPageTemplate, setNewPageTemplate] = useState("blank");
+  const [websiteManagerError, setWebsiteManagerError] = useState("");
+
+  function resetNewPageFlow() {
+    setNewPageStep(0);
+    setNewPageName("");
+    setNewPageSlug("");
+    setNewPageParentId("");
+    setNewPageShowInNav(true);
+    setNewPageTemplate("blank");
+    setWebsiteManagerError("");
+  }
+
+  function handleCreatePage() {
+    if (!project) return;
+    if (!newPageName.trim()) {
+      setWebsiteManagerError("Page name is required.");
+      return;
+    }
+    const rawSlug = newPageSlug || generateSlug(newPageName);
+    const slug = getUniqueSlug(rawSlug, project.pages);
+    const blocks = getStarterBlocks(newPageTemplate, selectedPage?.blocks || []);
+    const page = createPage(newPageName.trim(), project.pages, {
+      parentId: newPageParentId || undefined,
+      showInNav: newPageShowInNav,
+      template: newPageTemplate,
+      blocks,
+    });
+    page.slug = slug;
+    const nextPages = [...project.pages, page];
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setSelectedPageId(page.id);
+    setDirty(true);
+    setStatus("Page created");
+    setNewPageFlowOpen(false);
+    setWebsiteManagerOpen(false);
+    resetNewPageFlow();
+  }
+
+  function handleDuplicatePage(pageId: string) {
+    if (!project) return;
+    const page = project.pages.find((p) => p.id === pageId);
+    if (!page) return;
+    const dup = duplicatePage(page, project.pages);
+    const nextPages = [...project.pages, dup];
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setSelectedPageId(dup.id);
+    setDirty(true);
+    setStatus("Page duplicated");
+    setWebsiteManagerOpen(false);
+  }
+
+  function handleDeletePage(pageId: string) {
+    if (!project) return;
+    if (project.pages.length <= 1) {
+      setWebsiteManagerError("Cannot delete the last page.");
+      return;
+    }
+    const pageName = project.pages.find((p) => p.id === pageId)?.title || "this page";
+    if (!window.confirm(`Delete "${pageName}"? This cannot be undone.`)) return;
+    const { pages: nextPages, fallbackId } = deletePageHelper(project.pages, pageId);
+    if (selectedPageId === pageId && fallbackId) setSelectedPageId(fallbackId);
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setDirty(true);
+    setStatus("Page deleted");
+    setWebsiteManagerOpen(false);
+  }
+
+  function handleRenamePage(pageId: string, newTitle: string) {
+    if (!project) return;
+    if (!newTitle.trim()) return;
+    const nextPages = project.pages.map((p) => p.id === pageId ? renamePage(p, newTitle.trim()) : p);
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setDirty(true);
+    setStatus("Page renamed");
+  }
+
+  function handleUpdatePageSlug(pageId: string, newSlug: string) {
+    if (!project) return;
+    const page = project.pages.find((p) => p.id === pageId);
+    if (!page) return;
+    const updated = updatePageSlug(page, newSlug, project.pages);
+    const nextPages = project.pages.map((p) => p.id === pageId ? updated : p);
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setDirty(true);
+    setStatus("Page slug updated");
+  }
+
+  function handleToggleShowInNav(pageId: string) {
+    if (!project) return;
+    const nextPages = project.pages.map((p) => p.id === pageId ? { ...p, showInNav: !p.showInNav } : p);
+    const navItems = buildNavItems(nextPages);
+    setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
+    setDirty(true);
+  }
+
+  function handleSetParentPage(pageId: string, parentId: string) {
+    if (!project) return;
+    const nextPages = project.pages.map((p) => p.id === pageId ? { ...p, parentId: parentId || undefined } : p);
+    setProject({ ...project, pages: nextPages, updatedAt: new Date().toISOString() });
+    setDirty(true);
+    setStatus("Parent page updated");
+  }
+
   // Friendly block type labels
   const blockTypeLabels: Record<BlockType, string> = {
     hero: "Hero section",
@@ -1137,7 +1264,8 @@ export function App() {
   async function loadProject() {
     try {
       const data = await fetchJson<{ ok: boolean; project: SBuildProject; loadedProjectSource?: string; loadedProjectUpdatedAt?: string; lastLoadedAt?: string; projectPath?: string }>("/api/project");
-      setProject(data.project);
+      const migrated = { ...data.project, pages: migrateLegacyProject(data.project.pages) };
+      setProject(migrated);
       setPaintMode(false);
       setPaintDraftStrokes([]);
       setPaintAppliedStrokes([]);
@@ -1630,7 +1758,8 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/project");
       if (data.ok && data.project) {
-        setProject(data.project);
+        const migrated = { ...data.project, pages: migrateLegacyProject(data.project.pages) };
+        setProject(migrated);
         setDirty(false);
         setStatus("Reverted to last save");
         setLastAction("revert");
@@ -1673,7 +1802,7 @@ export function App() {
 
   async function runWizard() {
     const data = await fetchJson<{ ok: boolean; project: SBuildProject }>("/api/ai/wizard", { method: "POST", body: JSON.stringify(wizardForm) });
-    if (data.ok) { setProject(data.project); setDirty(true); setShowWizard(false); setStatus("Wizard applied"); setLastAction("wizard"); }
+    if (data.ok) { setProject({ ...data.project, pages: migrateLegacyProject(data.project.pages) }); setDirty(true); setShowWizard(false); setStatus("Wizard applied"); setLastAction("wizard"); }
   }
 
   async function uploadImages(files: FileList | null) {
@@ -3466,8 +3595,15 @@ export function App() {
           <section>
             <h3>Pages</h3>
             {project.pages.map((page) => (
-              <button key={page.id} className={page.id === selectedPage.id ? "selected" : ""} onClick={() => setSelectedPageId(page.id)}>{page.title}</button>
+              <button key={page.id} className={`page-list-item ${page.id === selectedPage.id ? "selected" : ""}`} onClick={() => setSelectedPageId(page.id)}>
+                <span>{page.title}</span>
+                <span className="page-slug-hint">{page.slug}</span>
+              </button>
             ))}
+            <div className="button-row compact">
+              <button className="btn-new-page" onClick={() => { resetNewPageFlow(); setNewPageFlowOpen(true); }}>+ New Page</button>
+              <button className="btn-website-manager" onClick={() => { setWebsiteManagerError(""); setWebsiteManagerOpen(true); }}>Website Manager</button>
+            </div>
           </section>
           <section>
             <h3>Add Block</h3>
@@ -3994,6 +4130,127 @@ export function App() {
               <p style={{ fontSize: 12, opacity: 0.7 }}>See CHANGELOG.md in project root for full history.</p>
             </div>}
             <div className="button-row"><button onClick={() => setSettingsOpen(false)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {websiteManagerOpen && (
+        <div className="modal-backdrop" onClick={() => setWebsiteManagerOpen(false)}>
+          <div className="modal website-manager-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Website Manager</h3>
+              <button className="modal-close" onClick={() => setWebsiteManagerOpen(false)} aria-label="Close Website Manager">✕</button>
+            </div>
+            {websiteManagerError && <p className="hint error-text">{websiteManagerError}</p>}
+            <div className="website-manager-pages">
+              {project.pages.map((page) => (
+                <div key={page.id} className={`wm-page-row ${page.id === selectedPage.id ? "selected" : ""}`}>
+                  <div className="wm-page-info">
+                    <strong>{page.title}</strong>
+                    <span className="page-slug-hint">{page.slug}</span>
+                    {page.parentId && <span className="page-parent-hint">Parent: {project.pages.find((p) => p.id === page.parentId)?.title || "unknown"}</span>}
+                    <span className="page-nav-hint">{page.showInNav !== false ? "In nav" : "Hidden from nav"}</span>
+                  </div>
+                  <div className="wm-page-actions">
+                    <button onClick={() => { setSelectedPageId(page.id); setWebsiteManagerOpen(false); }}>Open</button>
+                    <button onClick={() => { const n = window.prompt("New page name:", page.title); if (n) handleRenamePage(page.id, n); }}>Rename</button>
+                    <button onClick={() => { const s = window.prompt("New slug:", page.slug); if (s) handleUpdatePageSlug(page.id, s); }}>Slug</button>
+                    <button onClick={() => handleToggleShowInNav(page.id)}>{page.showInNav !== false ? "Hide from nav" : "Show in nav"}</button>
+                    <button onClick={() => { const pid = window.prompt("Parent page ID (leave empty for none):", page.parentId || ""); handleSetParentPage(page.id, pid || ""); }}>Parent</button>
+                    <button onClick={() => handleDuplicatePage(page.id)}>Duplicate</button>
+                    <button onClick={() => handleDeletePage(page.id)} disabled={project.pages.length <= 1}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="button-row">
+              <button onClick={() => { resetNewPageFlow(); setNewPageFlowOpen(true); }}>+ New Page</button>
+              <button onClick={() => setWebsiteManagerOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newPageFlowOpen && (
+        <div className="modal-backdrop" onClick={() => setNewPageFlowOpen(false)}>
+          <div className="modal new-page-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Create New Page</h3>
+              <button className="modal-close" onClick={() => setNewPageFlowOpen(false)} aria-label="Close">✕</button>
+            </div>
+            {websiteManagerError && <p className="hint error-text">{websiteManagerError}</p>}
+            {newPageStep === 0 && (
+              <div className="new-page-step">
+                <h4>Step 1: Page Name</h4>
+                <label>Page title
+                  <input autoFocus value={newPageName} onChange={(e) => { setNewPageName(e.target.value); setNewPageSlug(generateSlug(e.target.value)); }} placeholder="My New Page" />
+                </label>
+                <div className="button-row">
+                  <button onClick={() => { if (!newPageName.trim()) { setWebsiteManagerError("Page name is required."); return; } setWebsiteManagerError(""); setNewPageStep(1); }}>Next</button>
+                  <button onClick={() => setNewPageFlowOpen(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {newPageStep === 1 && (
+              <div className="new-page-step">
+                <h4>Step 2: URL Slug</h4>
+                <p className="hint">Auto-generated from title. Edit if needed. Must be unique. Starts with /.</p>
+                <label>Slug
+                  <input value={newPageSlug} onChange={(e) => setNewPageSlug(e.target.value)} placeholder="/my-new-page" />
+                </label>
+                <div className="button-row">
+                  <button onClick={() => setNewPageStep(0)}>Back</button>
+                  <button onClick={() => setNewPageStep(2)}>Next</button>
+                </div>
+              </div>
+            )}
+            {newPageStep === 2 && (
+              <div className="new-page-step">
+                <h4>Step 3: Parent / Location</h4>
+                <p className="hint">Choose a parent page for organization. Stored as metadata; flat nav for now.</p>
+                <label>Parent page
+                  <select value={newPageParentId} onChange={(e) => setNewPageParentId(e.target.value)}>
+                    <option value="">None (top level)</option>
+                    {project.pages.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+                  </select>
+                </label>
+                <div className="button-row">
+                  <button onClick={() => setNewPageStep(1)}>Back</button>
+                  <button onClick={() => setNewPageStep(3)}>Next</button>
+                </div>
+              </div>
+            )}
+            {newPageStep === 3 && (
+              <div className="new-page-step">
+                <h4>Step 4: Navigation</h4>
+                <label>
+                  <input type="checkbox" checked={newPageShowInNav} onChange={(e) => setNewPageShowInNav(e.target.checked)} />
+                  Show in site navigation
+                </label>
+                <p className="hint">{newPageShowInNav ? "This page will appear in your site's navigation bar." : "This page will be hidden from the navigation bar."}</p>
+                <div className="button-row">
+                  <button onClick={() => setNewPageStep(2)}>Back</button>
+                  <button onClick={() => setNewPageStep(4)}>Next</button>
+                </div>
+              </div>
+            )}
+            {newPageStep === 4 && (
+              <div className="new-page-step">
+                <h4>Step 5: Starter Layout</h4>
+                <div className="template-grid">
+                  {STARTER_TEMPLATES.map((t) => (
+                    <button key={t.id} className={`template-option ${newPageTemplate === t.id ? "selected" : ""}`} onClick={() => setNewPageTemplate(t.id)} disabled={t.id === "copy" && !selectedPage}>
+                      <strong>{t.label}</strong>
+                      <span className="hint">{t.description}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="button-row">
+                  <button onClick={() => setNewPageStep(3)}>Back</button>
+                  <button onClick={handleCreatePage}>Create Page</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

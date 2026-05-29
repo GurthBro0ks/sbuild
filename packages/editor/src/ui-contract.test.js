@@ -1683,10 +1683,162 @@ test("preview remains read-only and publish remains dry-run", () => {
 });
 
 test("mobile-toolbar-gap-repair marker remains after context menu fix", () => {
+=======
+test("left sidebar includes + New Page button", () => {
+  assert.match(appSource, /btn-new-page/);
+  assert.match(appSource, /\+ New Page/);
+  assert.match(cssSource, /\.btn-new-page/);
+});
+
+test("left sidebar includes Website Manager button", () => {
+  assert.match(appSource, /btn-website-manager/);
+  assert.match(appSource, /Website Manager/);
+  assert.match(cssSource, /\.btn-website-manager/);
+});
+
+test("Website Manager modal exists with page list and actions", () => {
+  assert.match(appSource, /websiteManagerOpen/);
+  assert.match(appSource, /website-manager-modal/);
+  assert.match(cssSource, /\.website-manager-modal/);
+  assert.match(appSource, /wm-page-row/);
+  assert.match(appSource, /wm-page-actions/);
+});
+
+test("Website Manager modal has close button", () => {
+  assert.match(appSource, /Close Website Manager/);
+});
+
+test("Website Manager supports rename, duplicate, delete, slug, parent, showInNav", () => {
+  assert.match(appSource, /handleRenamePage/);
+  assert.match(appSource, /handleDuplicatePage/);
+  assert.match(appSource, /handleDeletePage/);
+  assert.match(appSource, /handleUpdatePageSlug/);
+  assert.match(appSource, /handleToggleShowInNav/);
+  assert.match(appSource, /handleSetParentPage/);
+});
+
+test("New Page flow modal exists with 5 steps", () => {
+  assert.match(appSource, /newPageFlowOpen/);
+  assert.match(appSource, /new-page-modal/);
+  assert.match(appSource, /newPageStep === 0/);
+  assert.match(appSource, /newPageStep === 1/);
+  assert.match(appSource, /newPageStep === 2/);
+  assert.match(appSource, /newPageStep === 3/);
+  assert.match(appSource, /newPageStep === 4/);
+  assert.match(cssSource, /\.new-page-modal/);
+  assert.match(cssSource, /\.new-page-step/);
+});
+
+test("New Page step 1 collects page name", () => {
+  assert.match(appSource, /Step 1: Page Name/);
+  assert.match(appSource, /newPageName/);
+});
+
+test("New Page step 2 collects URL slug", () => {
+  assert.match(appSource, /Step 2: URL Slug/);
+  assert.match(appSource, /newPageSlug/);
+});
+
+test("New Page step 3 collects parent page", () => {
+  assert.match(appSource, /Step 3: Parent/);
+  assert.match(appSource, /newPageParentId/);
+});
+
+test("New Page step 4 collects nav visibility", () => {
+  assert.match(appSource, /Step 4: Navigation/);
+  assert.match(appSource, /newPageShowInNav/);
+});
+
+test("New Page step 5 collects starter template", () => {
+  assert.match(appSource, /Step 5: Starter Layout/);
+  assert.match(appSource, /STARTER_TEMPLATES/);
+  assert.match(appSource, /template-grid/);
+  assert.match(cssSource, /\.template-grid/);
+  assert.match(cssSource, /\.template-option/);
+});
+
+test("page create uses helper from shared package", () => {
+  assert.match(appSource, /import[\s\S]*createPage[\s\S]*from "@sbuild\/shared"/);
+  assert.match(appSource, /import[\s\S]*duplicatePage[\s\S]*from "@sbuild\/shared"/);
+  assert.match(appSource, /import[\s\S]*buildNavItems[\s\S]*from "@sbuild\/shared"/);
+  assert.match(appSource, /import[\s\S]*migrateLegacyProject[\s\S]*from "@sbuild\/shared"/);
+});
+
+test("page list items show slug hint", () => {
+  assert.match(appSource, /page-list-item/);
+  assert.match(appSource, /page-slug-hint/);
+  assert.match(cssSource, /\.page-slug-hint/);
+  assert.match(cssSource, /\.page-list-item/);
+});
+
+test("legacy project migration runs on load", () => {
+  assert.match(appSource, /migrateLegacyProject/);
+});
+
+test("delete page prevents deleting last page", () => {
+  assert.match(appSource, /Cannot delete the last page/);
+  assert.match(appSource, /project\.pages\.length <= 1/);
+});
+
+test("delete page confirms before deleting", () => {
+  assert.match(appSource, /confirm\(`Delete/);
+});
+
+test("delete page selects fallback when deleting selected page", () => {
+  assert.match(appSource, /fallbackId/);
+  assert.match(appSource, /setSelectedPageId\(fallbackId\)/);
+});
+
+test("page creation updates site nav", () => {
+  assert.match(appSource, /const navItems = buildNavItems\(nextPages\)/);
+  assert.match(appSource, /site: { \.\.\.project\.site, nav: navItems }/);
+});
+
+test("Preview/Edit isolation preserved with Website Manager", () => {
+  assert.match(appSource, /preview-hidden/);
+  assert.match(appSource, /previewMode.*?leftCollapsed|leftCollapsed.*?previewMode/);
+});
+
+test("mobile Preview read-only preserved", () => {
+  assert.match(appSource, /isMobileViewport && !previewMode/);
+  assert.match(appSource, /mobile-viewport/);
+});
+
+test("mobile-toolbar-gap-repair marker still present after Website Manager", () => {
+>>>>>>> a0a0368 (feat: Website Manager MVP with page CRUD, templates, nav, and server persistence)
   assert.match(appSource, /mobile-toolbar-gap-repair/);
   assert.match(appSource, /action-controls-offset/);
 });
 
-test("mobile-toolbar-spacer-v3 marker still absent after context menu fix", () => {
+test("mobile-toolbar-spacer-v3 still absent after Website Manager", () => {
   assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
+});
+
+test("publishAllowed false remains correct", () => {
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /dryRun/);
+});
+
+test("template options include all five starter templates", () => {
+  assert.match(appSource, /STARTER_TEMPLATES/);
+  assert.match(appSource, /newPageTemplate/);
+  assert.match(appSource, /template-option/);
+});
+
+test("status messages for page operations", () => {
+  assert.match(appSource, /Page created/);
+  assert.match(appSource, /Page deleted/);
+  assert.match(appSource, /Page duplicated/);
+  assert.match(appSource, /Page renamed/);
+  assert.match(appSource, /Page slug updated/);
+});
+
+test("Website Manager error messages display", () => {
+  assert.match(appSource, /websiteManagerError/);
+  assert.match(appSource, /error-text/);
+  assert.match(cssSource, /\.error-text/);
+});
+
+test("handleCreatePage validates page name", () => {
+  assert.match(appSource, /Page name is required/);
 });

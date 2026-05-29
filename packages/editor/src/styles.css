@@ -1339,6 +1339,109 @@ button:disabled {
   overflow: auto;
 }
 
+.website-manager-modal {
+  width: min(720px, 96vw);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.wm-page-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: var(--editor-surface);
+}
+.wm-page-row.selected {
+  border-color: var(--editor-accent);
+  background: color-mix(in srgb, var(--editor-accent) 8%, var(--editor-surface));
+}
+.wm-page-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.wm-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.wm-page-actions button {
+  font-size: 11px;
+  padding: 3px 8px;
+  min-width: auto;
+}
+.page-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+}
+.page-slug-hint {
+  font-size: 10px;
+  color: var(--editor-muted);
+  font-family: monospace;
+}
+.page-parent-hint,
+.page-nav-hint {
+  font-size: 10px;
+  color: var(--editor-muted);
+}
+.page-nav-hint::before {
+  content: "· ";
+}
+.btn-new-page,
+.btn-website-manager {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+.new-page-modal {
+  width: min(520px, 94vw);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.new-page-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.new-page-step h4 {
+  margin: 4px 0;
+}
+.new-page-step label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.template-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.template-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+}
+.template-option.selected {
+  border-color: var(--editor-accent);
+  background: color-mix(in srgb, var(--editor-accent) 12%, var(--editor-surface));
+}
+.error-text {
+  color: #e53e3e;
+  font-weight: 600;
+}
+
 .loading {
   display: grid;
   place-items: center;

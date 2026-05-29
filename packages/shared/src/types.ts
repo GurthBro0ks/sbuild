@@ -212,6 +212,10 @@ export interface SBuildPage {
   slug: string;
   title: string;
   blocks: Block[];
+  parentId?: string;
+  showInNav?: boolean;
+  order?: number;
+  template?: string;
 }
 
 export interface SBuildGlobalStyles {
