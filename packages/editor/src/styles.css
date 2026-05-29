@@ -1631,7 +1631,7 @@ button:disabled {
 
   .mobile-editor-overlay.open {
     pointer-events: auto;
-    background: rgba(0, 0, 0, 0.22);
+    background: rgba(0, 0, 0, 0.14);
   }
 
   .mobile-editor-overlay:not(.open) {
@@ -1640,9 +1640,9 @@ button:disabled {
 
   .mobile-editor-sheet {
     position: fixed;
-    left: 10px;
-    right: 10px;
-    top: calc(var(--mobile-topbar-h, 0px) + env(safe-area-inset-top, 0px) + 4px);
+    left: 8px;
+    right: 8px;
+    top: auto;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
@@ -1651,6 +1651,8 @@ button:disabled {
     background: var(--editor-panel-bg);
     border: 1px solid var(--editor-border);
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+    height: min(74vh, calc(100dvh - var(--mobile-topbar-h, 0px) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px));
+    max-height: calc(100dvh - var(--mobile-topbar-h, 0px) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 12px);
   }
 
   .mobile-editor-sheet-header {
@@ -1756,6 +1758,7 @@ button:disabled {
     min-height: 0;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+    touch-action: pan-y;
     padding: 6px;
     overflow-x: hidden;
   }
@@ -1796,10 +1799,21 @@ button:disabled {
   }
 
   .mobile-editor-sheet .mobile-button-row button,
-  .mobile-editor-sheet .quick-actions button,
   .mobile-editor-sheet .button-row button,
   .mobile-editor-sheet .preset-row button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 104px;
+  }
+
+  .mobile-editor-sheet .mobile-button-row button {
     width: 100%;
+    flex-basis: 100%;
+  }
+
+  .mobile-editor-sheet .quick-actions button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 104px;
+    width: auto;
   }
 
   .mobile-editor-sheet .color-input-inline {

@@ -270,7 +270,7 @@ test("failed d811dc1 spacer-v3 marker is replaced", () => {
 
 test("mobile overlay backdrop dimming stays light and sheet remains separate", () => {
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*background:\s*transparent/);
-  assert.match(cssSource, /\.mobile-editor-overlay\.open[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.22\)/);
+  assert.match(cssSource, /\.mobile-editor-overlay\.open[\s\S]*background:\s*rgba\(0,\s*0,\s*0,\s*0\.14\)/);
   assert.match(appSource, /className={`mobile-editor-overlay \$\{rightDrawerMobileOpen \? "open" : ""\}`}/);
   assert.match(appSource, /<section className="mobile-editor-sheet" role="dialog" aria-label="Edit block">/);
 });
@@ -1030,8 +1030,9 @@ test("site header context menu AI Assistant still exists", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*?openAiDrawer\(\)[\s\S]{0,200}AI Assistant/);
 });
 
-test("mobile editor overlay top references --mobile-topbar-h", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
+test("mobile editor sheet height is bounded by viewport and toolbar measurement", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74vh,\s*calc\(100dvh - var\(--mobile-topbar-h/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*max-height:\s*calc\(100dvh - var\(--mobile-topbar-h/);
 });
 
 test("mobile editor sheet top includes safe-area-inset-top", () => {
@@ -1126,6 +1127,10 @@ test("mobile quick actions keep Images contextual and reachable", () => {
   assert.match(appSource, /function showImagesAction\(\): boolean/);
 });
 
+test("mobile drawer avoids extra static quick-action header strip", () => {
+  assert.doesNotMatch(appSource, /mobile-editor-sheet-quick-actions/);
+});
+
 test("right drawer internal scroll remains intact on mobile via sheet body", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*overflow-y:\s*auto/);
   assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y:\s*auto/);
@@ -1188,9 +1193,10 @@ test("body/content row uses a dedicated scroll container", () => {
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*-webkit-overflow-scrolling:\s*touch/);
 });
 
-test("CSS for mobile overlay uses position fixed and top references --mobile-topbar-h", () => {
+test("CSS for mobile overlay uses position fixed and viewport-bounded sheet", () => {
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*top:[\s]*calc\(var\(--mobile-topbar-h/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74vh,/);
+  assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*touch-action:\s*pan-y/);
 });
 
 test("CSS sheet uses grid-template-rows with header/tabs/body", () => {
