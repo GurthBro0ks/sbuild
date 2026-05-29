@@ -3,9 +3,9 @@ RESULT: PASS
 Project: /opt/slimy/sbuild
 human QA status before fix: ce8cc7a rejected, action controls clipped
 commit before: ce8cc7a
-commit after: pending local commit
+commit after: bbb36166308a00e8b7a38513a81d16e71d472917
 
-files changed:
+files changed/staged:
 - packages/editor/src/App.tsx
 - packages/editor/src/ui-contract.test.js
 
@@ -42,18 +42,47 @@ validation results:
 - curl http://127.0.0.1:3137/health: ok, publishAllowed=false
 - curl POST /api/publish unauthenticated: 401 Authentication required
 
+accepted commit before push: bbb36166308a00e8b7a38513a81d16e71d472917
+final HEAD: bbb36166308a00e8b7a38513a81d16e71d472917
+origin/main after push: bbb36166308a00e8b7a38513a81d16e71d472917
+pushed: YES
+proof directory: /tmp/proof_sbuild_mobile_toolbar_acceptance_push_20260529T095240Z
+human iPhone QA accepted: yes
+
+debug values from accepted screenshot:
+- toolbarH=171
+- spacerH=171
+- topbarBottom=171
+- ccTop=179
+- gapPx=8
+- dup=false
+- topPad=8
+- missing=false
+
+root cause fixed:
+- mobile measurement ran too early and did not rerun after editor layout readiness
+
+final offset owner:
+- spacer .topbar-mobile-spacer using --mobile-toolbar-h
+
+duplicate-offset fix intact: yes
+active markers:
+- mobile-toolbar-gap-repair
+- action-controls-offset
+rejected marker absent:
+- mobile-toolbar-spacer-v3
+
 health publishAllowed false: YES
 publish auth/dry-run result: unauthenticated publish is blocked (401), dry-run guard unchanged
 
 Caddy/DNS/WordPress untouched: YES
 
 remaining dirty files:
-- packages/editor/src/App.tsx
-- packages/editor/src/ui-contract.test.js
 - project/project.json
 - project/image-folder.json
 
-pushed: NO
+next suggested phase:
+- mobile toolbar density pass (compact grouping) while preserving current spacer measurement contract and dry-run/auth safety.
 
 manual iPhone QA checklist:
 1. Open https://sbuilder.blackfishfarms.com
