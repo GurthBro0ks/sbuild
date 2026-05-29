@@ -1315,6 +1315,7 @@ export function App() {
     setSelectedSitePart(null);
     setSelectedNavIndex(null);
     setRightDrawerMobileOpen(true);
+    if (isMobileViewport) setRightCollapsed(false);
     setRightTab("properties");
     setStatus("Edit drawer opened");
   }
@@ -1337,6 +1338,7 @@ export function App() {
     setSelectedNavIndex(null);
     setRightTab("images");
     setRightDrawerMobileOpen(true);
+    if (isMobileViewport) setRightCollapsed(false);
     setStatus(`Editing Gallery image ${index + 1}`);
   }
 
@@ -2159,6 +2161,7 @@ export function App() {
     setSelectedBlockId("");
     setSelectedGalleryIndex(null);
     setRightDrawerMobileOpen(true);
+    if (isMobileViewport) setRightCollapsed(false);
     setRightTab("properties");
     if (sitePart === "site-header") setStatus("Editing site header container");
     else if (sitePart === "site-title") setStatus("Editing site title");

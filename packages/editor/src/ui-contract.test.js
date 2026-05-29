@@ -539,7 +539,7 @@ test("mobile drawer open state and overlay exist for context menu path", () => {
   assert.match(appSource, /mobile-editor-overlay/);
   assert.match(appSource, /mobile-editor-sheet/);
   assert.match(cssSource, /\.mobile-editor-overlay\.open/);
-  assert.match(cssSource, /\.mobile-editor-overlay:not\(\.open\) \.mobile-editor-sheet[\s\S]*display:\s*none/);
+  assert.match(cssSource, /\.mobile-editor-overlay:not\(\.open\)[\s\S]*display:\s*none/);
 });
 
 test("preview mode hides selection outlines via CSS", () => {
@@ -1328,4 +1328,123 @@ test("preview mode hides canvas debug panel status", () => {
   assert.ok(canvasDebugIdx > 0, "Canvas debug text exists");
   const beforeSection = appSource.substring(Math.max(0, canvasDebugIdx - 200), canvasDebugIdx);
   assert.match(beforeSection, /\{!previewMode &&/);
+});
+
+test("mobile preview uses single-column grid instead of 3-column", () => {
+  const previewGridIdx = cssSource.indexOf(".app.preview .workspace.preview-mode");
+  assert.ok(previewGridIdx >= 0, "preview-mode workspace grid rule exists");
+  const desktopGridSection = cssSource.substring(previewGridIdx, previewGridIdx + 200);
+  assert.match(desktopGridSection, /grid-template-columns:\s*0 minmax\(0,\s*1fr\) 0 !important/);
+  const mobileOverrideIdx = cssSource.indexOf(".app.preview .workspace.preview-mode", previewGridIdx + 100);
+  assert.ok(mobileOverrideIdx >= 0, "mobile preview workspace grid override exists");
+  const mobileGridSection = cssSource.substring(mobileOverrideIdx, mobileOverrideIdx + 200);
+  assert.match(mobileGridSection, /grid-template-columns:\s*1fr !important/);
+});
+
+test("mobile preview does not hide canvas content", () => {
+  const firstPreviewGridIdx = cssSource.indexOf(".app.preview .workspace.preview-mode");
+  assert.ok(firstPreviewGridIdx >= 0, "preview-mode workspace grid rule exists");
+  const secondPreviewGridIdx = cssSource.indexOf(".app.preview .workspace.preview-mode", firstPreviewGridIdx + 1);
+  assert.ok(secondPreviewGridIdx >= 0, "mobile override for preview-mode workspace grid exists");
+  const mobileGridSection = cssSource.substring(secondPreviewGridIdx, secondPreviewGridIdx + 200);
+  assert.match(mobileGridSection, /grid-template-columns:\s*1fr !important/, "mobile preview grid is single column");
+});
+
+test("mobile editor overlay is display none when closed not just pointer-events none", () => {
+  const m768 = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(m768 >= 0, "mobile media query exists");
+  const afterMobile = cssSource.substring(m768);
+  const notOpenIdx = afterMobile.indexOf(".mobile-editor-overlay:not(.open)");
+  assert.ok(notOpenIdx >= 0, "mobile-editor-overlay:not(.open) rule exists in mobile section");
+  const notOpenBlock = afterMobile.substring(notOpenIdx, notOpenIdx + 200);
+  assert.match(notOpenBlock, /display:\s*none/, "closed mobile overlay is display none");
+});
+
+test("openBlockDrawer clears rightCollapsed on mobile to prevent stuck collapse", () => {
+  const openBlockIdx = appSource.indexOf("function openBlockDrawer(blockId: string)");
+  assert.ok(openBlockIdx > 0, "openBlockDrawer function exists");
+  const fnSection = appSource.substring(openBlockIdx, openBlockIdx + 300);
+  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openBlockDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openBlockDrawer sets rightDrawerMobileOpen true");
+});
+
+test("openSiteHeaderDrawer clears rightCollapsed on mobile", () => {
+  const openSiteHeaderIdx = appSource.indexOf("function openSiteHeaderDrawer(");
+  assert.ok(openSiteHeaderIdx > 0, "openSiteHeaderDrawer function exists");
+  const fnSection = appSource.substring(openSiteHeaderIdx, openSiteHeaderIdx + 400);
+  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openSiteHeaderDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openSiteHeaderDrawer sets rightDrawerMobileOpen true");
+});
+
+test("openGallerySlotDrawer clears rightCollapsed on mobile", () => {
+  const openGalleryIdx = appSource.indexOf("function openGallerySlotDrawer(");
+  assert.ok(openGalleryIdx > 0, "openGallerySlotDrawer function exists");
+  const fnSection = appSource.substring(openGalleryIdx, openGalleryIdx + 400);
+  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/, "openGallerySlotDrawer clears rightCollapsed on mobile");
+  assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/, "openGallerySlotDrawer sets rightDrawerMobileOpen true");
+});
+
+test("context menu Edit Properties reopens drawer after close via openBlockDrawer", () => {
+  assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\)/);
+  assert.match(appSource, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+});
+
+test("desktop right panel collapse and restore still work independently", () => {
+  assert.match(appSource, /right-drawer-collapse-btn/);
+  assert.match(appSource, /setRightCollapsed\(true\)/);
+  assert.match(appSource, /right-drawer-restore-btn/);
+  assert.match(appSource, /setRightCollapsed\(false\)/);
+  assert.match(cssSource, /\.workspace\.right-collapsed/);
+  assert.match(cssSource, /\.right-drawer\.collapsed/);
+});
+
+test("mobile drawer state is not permanently blocked by rightPanelCollapsed", () => {
+  const openBlockIdx = appSource.indexOf("function openBlockDrawer(blockId: string)");
+  assert.ok(openBlockIdx > 0, "openBlockDrawer function exists");
+  const fnSection = appSource.substring(openBlockIdx, openBlockIdx + 300);
+  assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/);
+  assert.match(fnSection, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+  assert.doesNotMatch(fnSection, /if \(rightCollapsed\)/, "openBlockDrawer is not gated by rightCollapsed");
+});
+
+test("leaving preview restores ability to open drawer on mobile", () => {
+  assert.match(appSource, /setLeftCollapsed\(prePreviewLeftCollapsed\)/);
+  assert.match(appSource, /setRightCollapsed\(prePreviewRightCollapsed\)/);
+  assert.match(appSource, /if \(isMobileViewport\) setRightCollapsed\(false\)/);
+});
+
+test("Settings X close still exists after mobile preview fix", () => {
+  assert.match(appSource, /modal-close/);
+  assert.match(appSource, /aria-label="Close Settings"/);
+  assert.match(appSource, /setSettingsOpen\(false\)/);
+});
+
+test("Logout button still exists after mobile preview fix", () => {
+  assert.match(appSource, /logout-btn/);
+  assert.match(appSource, /\/logout/);
+  assert.match(cssSource, /\.logout-btn/);
+});
+
+test("mobile-toolbar-gap-repair marker preserved after fix", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair/);
+  assert.match(appSource, /action-controls-offset/);
+});
+
+test("mobile-toolbar-spacer-v3 marker still absent after fix", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
+});
+
+test("topbar-mobile-spacer remains single mobile offset owner using --mobile-toolbar-h", () => {
+  assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*height:\s*var\(--mobile-topbar-h/);
+  assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*min-height:\s*var\(--mobile-topbar-h/);
+  assert.match(appSource, /setProperty\("--mobile-topbar-h"/);
+  assert.match(appSource, /topbar-mobile-spacer/);
+});
+
+test("publish login gate smoke expectations remain correct", () => {
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /\/api\/publish/);
+  assert.match(appSource, /dryRun/);
+  assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
+  assert.match(smokeSource, /unauth \/api\/publish expected 401/);
 });

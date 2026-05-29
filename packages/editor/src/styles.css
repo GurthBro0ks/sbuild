@@ -1634,7 +1634,7 @@ button:disabled {
     background: rgba(0, 0, 0, 0.22);
   }
 
-  .mobile-editor-overlay:not(.open) .mobile-editor-sheet {
+  .mobile-editor-overlay:not(.open) {
     display: none;
   }
 
@@ -2021,6 +2021,11 @@ button:disabled {
 /* ===== PREVIEW MODE ISOLATION ===== */
 .app.preview .workspace.preview-mode {
   grid-template-columns: 0 minmax(0, 1fr) 0 !important;
+}
+@media (max-width: 768px) {
+  .app.preview .workspace.preview-mode {
+    grid-template-columns: 1fr !important;
+  }
 }
 .app.preview .left-drawer.preview-hidden,
 .app.preview .left-drawer.collapsed {
