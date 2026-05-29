@@ -1084,9 +1084,7 @@ button:disabled {
   color: var(--editor-text-muted);
 }
 .paint-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 15;
+  position: static;
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);
   border-radius: 10px;
@@ -1095,13 +1093,30 @@ button:disabled {
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
-  margin: 8px 0;
+  margin: 0 10px;
+  z-index: 40;
+}
+.paint-toolbar-mobile-placeholder {
+  display: none;
 }
 
 @media (max-width: 768px) {
   .paint-toolbar {
-    top: calc(var(--mobile-topbar-h, 110px) + 4px);
+    position: fixed;
+    top: max(var(--mobile-topbar-h, 110px), 44px);
+    left: 8px;
+    right: 8px;
+    margin: 0;
     z-index: 25;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+  .paint-toolbar-mobile-placeholder {
+    display: none;
+  }
+
+  .app.mobile-shell.paint-active .workspace {
+    padding-top: 60px;
   }
 }
 
@@ -1989,6 +2004,14 @@ button:disabled {
   }
 
   .app.mobile-shell.mobile-left-open .topbar-mobile-spacer {
+    display: none;
+  }
+
+  .app.mobile-shell.mobile-left-open .paint-toolbar {
+    display: none;
+  }
+
+  .app.mobile-shell.mobile-left-open .paint-toolbar-mobile-placeholder {
     display: none;
   }
 

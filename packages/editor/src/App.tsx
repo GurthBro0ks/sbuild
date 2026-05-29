@@ -3408,7 +3408,7 @@ export function App() {
   }
 
   return (
-    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""}`}>
+    <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""} ${paintMode && !previewMode ? "paint-active" : ""}`}>
       <header ref={topbarRef} className="topbar">
         <div className="topbar-mobile-row topbar-mobile-row-main">
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
@@ -3432,6 +3432,24 @@ export function App() {
         </div>
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
+      {paintMode && !previewMode && (
+        <div className="paint-toolbar" role="toolbar" aria-label="Paint tools">
+          <button onClick={() => setPaintTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
+          <button onClick={() => setPaintTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
+          <button onClick={() => setPaintDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
+          <button onClick={() => setPaintDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
+          <input aria-label="Paint color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
+          <label className="paint-size-control">
+            Size
+            <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => setPaintSize(Number(e.target.value))} />
+            <span>{paintSize}px</span>
+          </label>
+          <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
+          <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Apply</button>
+          <button onClick={discardPaintAndExit}>Discard</button>
+          <span className="paint-toolbar-note">Apply is preview-only for this session (not persisted to project files).</span>
+        </div>
+      )}
 
         <div className={`workspace ${leftCollapsed ? "left-collapsed" : ""} ${rightCollapsed ? "right-collapsed" : ""} ${previewMode ? "preview-mode" : ""}`}>
         <aside className={`left-drawer ${leftCollapsed ? "collapsed" : ""} ${previewMode ? "preview-hidden" : ""}`}>
@@ -3525,24 +3543,6 @@ export function App() {
               </>
             )}
           </div>
-          {paintMode && !previewMode && (
-            <div className="paint-toolbar" role="toolbar" aria-label="Paint tools">
-              <button onClick={() => setPaintTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
-              <button onClick={() => setPaintTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
-              <button onClick={() => setPaintDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
-              <button onClick={() => setPaintDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
-              <input aria-label="Paint color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
-              <label className="paint-size-control">
-                Size
-                <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => setPaintSize(Number(e.target.value))} />
-                <span>{paintSize}px</span>
-              </label>
-              <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
-              <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Apply</button>
-              <button onClick={discardPaintAndExit}>Discard</button>
-              <span className="paint-toolbar-note">Apply is preview-only for this session (not persisted to project files).</span>
-            </div>
-          )}
           {!previewMode && (
             <p className="panel-status">
               <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}

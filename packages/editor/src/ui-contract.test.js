@@ -1600,14 +1600,23 @@ test("desktop right panel restore button still opens panel", () => {
   assert.match(appSource, /right-drawer-restore-btn[\s\S]{0,100}onClick=\{\(\) => setRightCollapsed\(false\)/);
 });
 
-test("paint toolbar uses sticky positioning", () => {
-  assert.match(cssSource, /\.paint-toolbar[\s\S]*position:\s*sticky/);
-  assert.match(cssSource, /\.paint-toolbar[\s\S]*top:\s*0/);
-  assert.match(cssSource, /\.paint-toolbar[\s\S]*z-index:\s*15/);
+test("paint toolbar is positioned in editor chrome stack", () => {
+  const spacerIdx = appSource.indexOf('className="topbar-mobile-spacer"');
+  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+  const workspaceIdx = appSource.indexOf('className={`workspace');
+  assert.ok(spacerIdx > 0, "topbar-mobile-spacer exists");
+  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(workspaceIdx > 0, "workspace exists");
+  assert.ok(spacerIdx < toolbarIdx, "paint toolbar is after spacer in DOM");
+  assert.ok(toolbarIdx < workspaceIdx, "paint toolbar is before workspace in DOM");
 });
 
-test("paint toolbar has mobile-aware sticky top offset", () => {
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*top:\s*calc\(var\(--mobile-topbar-h/);
+test("paint toolbar uses static positioning on desktop and fixed on mobile", () => {
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*position:\s*static/);
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*z-index:\s*40/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*top:\s*max\(var\(--mobile-topbar-h/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*z-index:\s*25/);
 });
 
 test("paint overlay SVG does not use viewBox scaling", () => {
@@ -1641,6 +1650,30 @@ test("paint exclusive mode applies user-select none", () => {
 test("paint toolbar is only present in paint mode not preview", () => {
   assert.match(appSource, /\{paintMode && !previewMode && \(/);
   assert.match(appSource, /className="paint-toolbar"/);
+});
+
+test("paint toolbar is not inside paint-overlay SVG", () => {
+  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+  const overlayIdx = appSource.indexOf('className={`paint-overlay');
+  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(overlayIdx > 0, "paint-overlay exists");
+  assert.ok(toolbarIdx < overlayIdx, "paint toolbar is before paint-overlay in DOM, not inside it");
+});
+
+test("paint toolbar is outside canvas-area scroll container", () => {
+  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+  const canvasAreaIdx = appSource.indexOf('className="canvas-area"');
+  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(canvasAreaIdx > 0, "canvas-area exists");
+  assert.ok(toolbarIdx < canvasAreaIdx, "paint toolbar is before canvas-area in DOM, outside scroll container");
+});
+
+test("paint-active class added to app container when paint mode is on", () => {
+  assert.match(appSource, /paintMode && !previewMode \? "paint-active" : ""/);
+});
+
+test("paint toolbar hidden behind left-drawer on mobile", () => {
+  assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open \.paint-toolbar[\s\S]*display:\s*none/);
 });
 
 test("preview remains read-only and publish remains dry-run", () => {
