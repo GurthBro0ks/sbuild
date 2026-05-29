@@ -922,8 +922,10 @@ export function App() {
   const [debugGapPx, setDebugGapPx] = useState(0);
   const [debugDuplicateOffset, setDebugDuplicateOffset] = useState(false);
   const [debugTopbarPaddingTop, setDebugTopbarPaddingTop] = useState(0);
+  const [debugMeasurementMissing, setDebugMeasurementMissing] = useState(false);
+  const mobileLayoutReady = Boolean(project && selectedPage);
   useEffect(() => {
-    if (!isMobileViewport || !topbarRef.current) {
+    if (!isMobileViewport || !mobileLayoutReady) {
       document.documentElement.style.removeProperty("--mobile-topbar-h");
       document.documentElement.style.removeProperty("--mobile-toolbar-h");
       setDebugToolbarH(0);
@@ -935,17 +937,28 @@ export function App() {
       setDebugGapPx(0);
       setDebugDuplicateOffset(false);
       setDebugTopbarPaddingTop(0);
+      setDebugMeasurementMissing(false);
       return;
     }
-    const el = topbarRef.current;
     const update = () => {
+      const el = topbarRef.current;
+      if (!el) {
+        setDebugMeasurementMissing(true);
+        return;
+      }
       const h = Math.round(el.getBoundingClientRect().height);
       const computed = window.getComputedStyle(el);
       const topPadding = Math.round(Number.parseFloat(computed.paddingTop || "0") || 0);
+      const visible = computed.display !== "none" && computed.visibility !== "hidden";
+      if (visible && h <= 0) {
+        setDebugMeasurementMissing(true);
+        return;
+      }
       document.documentElement.style.setProperty("--mobile-topbar-h", `${h}px`);
       document.documentElement.style.setProperty("--mobile-toolbar-h", `${h}px`);
       setDebugToolbarH(h);
       setDebugTopbarPaddingTop(topPadding);
+      setDebugMeasurementMissing(false);
       if (statusPillRef.current) {
         setDebugStatusPillH(Math.round(statusPillRef.current.getBoundingClientRect().height));
         setDebugStatusOverflow(statusPillRef.current.scrollHeight > statusPillRef.current.clientHeight);
@@ -961,14 +974,43 @@ export function App() {
         setDebugCanvasControlsTop(ccTop);
         setDebugGapPx(gapPx);
         setDebugDuplicateOffset(gapPx > 48);
+        if (visible && (tbBottom <= 0 || ccTop <= 0)) {
+          setDebugMeasurementMissing(true);
+        }
       });
     };
     update();
+    const raf1 = requestAnimationFrame(update);
+    const raf2 = requestAnimationFrame(update);
+    const timer = window.setTimeout(update, 120);
+    const el = topbarRef.current;
+    if (!el) {
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+        clearTimeout(timer);
+      };
+    }
     const obs = new ResizeObserver(update);
     obs.observe(el);
     if (statusPillRef.current) obs.observe(statusPillRef.current);
-    return () => obs.disconnect();
-  }, [isMobileViewport]);
+    if (spacerRef.current) obs.observe(spacerRef.current);
+    if (canvasControlsRef.current) obs.observe(canvasControlsRef.current);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      clearTimeout(timer);
+      obs.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
+  }, [isMobileViewport, mobileLayoutReady, leftCollapsed]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -3169,6 +3211,7 @@ export function App() {
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
               <p><strong>mobile-toolbar-gap-repair active</strong></p>
+              <p><strong>action-controls-offset active</strong></p>
               <p><strong>commit:</strong> {SBUILD_VERSION}</p>
               <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
               <p><strong>spacerHeight:</strong> {debugSpacerH || "n/a"}{debugSpacerH ? "px" : ""}</p>
@@ -3176,6 +3219,7 @@ export function App() {
               <p><strong>canvasControlsTop:</strong> {debugCanvasControlsTop || "n/a"}{debugCanvasControlsTop ? "px" : ""}</p>
               <p><strong>gapPx:</strong> {isMobileViewport ? `${debugGapPx}px` : "n/a"}</p>
               <p><strong>duplicateOffsetDetected:</strong> {isMobileViewport ? (debugDuplicateOffset ? "true" : "false") : "n/a"}</p>
+              <p><strong>measurementMissing:</strong> {isMobileViewport ? (debugMeasurementMissing ? "true" : "false") : "n/a"}</p>
               <p><strong>topbarPaddingTop:</strong> {debugTopbarPaddingTop || "n/a"}{debugTopbarPaddingTop ? "px" : ""}</p>
               <p><strong>statusPillClientH:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
               <p><strong>statusTextOverflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
@@ -3362,7 +3406,7 @@ export function App() {
           </p>
           {isMobileViewport && !previewMode && (
             <p className="panel-status">
-              <strong>mobile-toolbar-gap-repair</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"} topPad={debugTopbarPaddingTop}
+              <strong>mobile-toolbar-gap-repair</strong> <strong>action-controls-offset</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"} topPad={debugTopbarPaddingTop} missing={debugMeasurementMissing ? "true" : "false"}
             </p>
           )}
           {isMobileViewport && !previewMode && (

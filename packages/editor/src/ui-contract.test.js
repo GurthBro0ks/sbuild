@@ -218,6 +218,7 @@ test("smoke script treats unauth publish 401 as expected gate behavior", () => {
 
 test("debug diagnostics include mobile-toolbar-gap-repair active marker", () => {
   assert.match(appSource, /mobile-toolbar-gap-repair active/);
+  assert.match(appSource, /action-controls-offset active/);
 });
 
 test("spacer is the single mobile toolbar offset mechanism", () => {
@@ -225,6 +226,7 @@ test("spacer is the single mobile toolbar offset mechanism", () => {
   assert.match(appSource, /canvasControlsRef/);
   assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*height:\s*var\(--mobile-topbar-h/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*position:\s*fixed/);
+  assert.match(appSource, /topbar-mobile-spacer[\s\S]*workspace[\s\S]*canvas-controls/);
 });
 
 test("canvas-controls on mobile uses position static not sticky", () => {
@@ -240,10 +242,12 @@ test("canvas-controls on mobile uses position static not sticky", () => {
 
 test("main editor debug strip shows mobile-toolbar-gap-repair values", () => {
   assert.match(appSource, /mobile-toolbar-gap-repair/);
+  assert.match(appSource, /action-controls-offset/);
   assert.match(appSource, /toolbarH=\{debugToolbarH\}/);
   assert.match(appSource, /spacerH=\{debugSpacerH\}/);
   assert.match(appSource, /gapPx=\{debugGapPx\}/);
   assert.match(appSource, /dup=\{debugDuplicateOffset/);
+  assert.match(appSource, /missing=\{debugMeasurementMissing/);
 });
 
 test("gap detection flags duplicate offset when gapPx exceeds 48px", () => {
@@ -961,18 +965,28 @@ test("left drawer top on mobile accounts for fixed toolbar height", () => {
 test("topbar height is measured dynamically via ResizeObserver", () => {
   assert.match(appSource, /topbarRef/);
   assert.match(appSource, /ResizeObserver/);
+  assert.match(appSource, /getBoundingClientRect\(\)\.height/);
+  assert.match(appSource, /getBoundingClientRect\(\)\.bottom/);
   assert.match(appSource, /--mobile-topbar-h/);
   assert.match(appSource, /statusPillRef/);
 });
 
+test("mobile measurement uses viewport readiness not preview device mode", () => {
+  assert.match(appSource, /const mobileLayoutReady = Boolean\(project && selectedPage\)/);
+  assert.match(appSource, /\[isMobileViewport, mobileLayoutReady, leftCollapsed\]/);
+  assert.doesNotMatch(appSource, /\[isMobileViewport,\s*deviceMode\]/);
+});
+
 test("debug panel shows mobile-toolbar-gap-repair active marker with gap detection", () => {
   assert.match(appSource, /mobile-toolbar-gap-repair active/);
+  assert.match(appSource, /action-controls-offset active/);
   assert.match(appSource, /toolbarHeight/);
   assert.match(appSource, /spacerHeight/);
   assert.match(appSource, /topbarBottom/);
   assert.match(appSource, /canvasControlsTop/);
   assert.match(appSource, /gapPx/);
   assert.match(appSource, /duplicateOffsetDetected/);
+  assert.match(appSource, /measurementMissing/);
   assert.match(appSource, /topbarPaddingTop/);
   assert.match(appSource, /debugToolbarH/);
   assert.match(appSource, /debugSpacerH/);
@@ -980,6 +994,7 @@ test("debug panel shows mobile-toolbar-gap-repair active marker with gap detecti
   assert.match(appSource, /debugCanvasControlsTop/);
   assert.match(appSource, /debugGapPx/);
   assert.match(appSource, /debugDuplicateOffset/);
+  assert.match(appSource, /debugMeasurementMissing/);
   assert.match(appSource, /debugTopbarPaddingTop/);
 });
 
