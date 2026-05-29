@@ -58,7 +58,6 @@ test("right panel layout prevents content clipping", () => {
   assert.match(cssSource, /\.right-drawer[\s\S]*max-height: 100%/);
   assert.match(cssSource, /\.right-drawer[\s\S]*height: 100%/);
   assert.match(cssSource, /\.right-drawer[\s\S]*\bmin-width\b.*\d+px/);
-  assert.match(cssSource, /\.right-drawer[\s\S]*overflow: hidden/);
   assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y: auto/);
   assert.match(cssSource, /overflow-x: hidden/);
   assert.match(cssSource, /overscroll-behavior: contain/);
@@ -1841,4 +1840,44 @@ test("Website Manager error messages display", () => {
 
 test("handleCreatePage validates page name", () => {
   assert.match(appSource, /Page name is required/);
+});
+
+test("right panel header tab row is not clipped by parent overflow", () => {
+  assert.doesNotMatch(cssSource, /\.right-drawer[\s\S]*overflow-y: hidden/);
+  assert.match(cssSource, /\.right-drawer[\s\S]*overscroll-behavior: contain/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*overflow: visible/);
+  assert.match(cssSource, /\.right-drawer-header[\s\S]*flex: 0 0 auto/);
+});
+
+test("preview mode nav links navigate by page slug", () => {
+  const navClickSection = appSource.match(/onClick=\{\(e\)[\s\S]*?if \(previewMode\) \{[\s\S]*?setSelectedPageId\(targetPage\.id\)[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(!isMobileViewport\)/);
+  assert.ok(navClickSection, "previewMode branch in nav onClick selects page by slug");
+  assert.match(appSource, /targetSlug = href\.startsWith\("\/"\) \? href : "\/" \+ href/);
+  assert.match(appSource, /project\.pages\.find\(\(p\) => p\.slug === targetSlug\)/);
+});
+
+test("preview mode nav links open external URLs in new tab", () => {
+  assert.match(appSource, /href\.startsWith\("http:\/\/"\) \|\| href\.startsWith\("https:\/\/"\)/);
+  assert.match(appSource, /window\.open\(href, "_blank", "noopener"\)/);
+});
+
+test("preview mode nav links handle hash anchors", () => {
+  assert.match(appSource, /href\.startsWith\("#"\)/);
+  assert.match(appSource, /document\.getElementById\(href\.slice\(1\)\)/);
+  assert.match(appSource, /scrollIntoView/);
+});
+
+test("preview mode nav click does not select or edit nav items", () => {
+  assert.match(appSource, /if \(previewMode\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?e\.stopPropagation\(\)/);
+});
+
+test("modal and drawer inputs use 16px font-size to prevent iOS zoom", () => {
+  assert.match(cssSource, /\.modal input[\s\S]*font-size: 16px/);
+  assert.match(cssSource, /\.modal select[\s\S]*font-size: 16px/);
+  assert.match(cssSource, /\.modal textarea[\s\S]*font-size: 16px/);
+  assert.match(cssSource, /\.right-drawer input[\s\S]*font-size: 16px/);
+});
+
+test("new page flow step 1 input does not use autoFocus to prevent iOS zoom", () => {
+  assert.doesNotMatch(appSource, /autoFocus[\s\S]*My New Page/);
 });

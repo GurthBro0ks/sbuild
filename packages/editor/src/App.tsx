@@ -3790,7 +3790,23 @@ export function App() {
                     onInput={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onBlur={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onClick={(e) => {
-                      if (!canEditBlocks) return;
+                      if (previewMode) {
+                        e.stopPropagation();
+                        const href = item.href || "";
+                        if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//")) {
+                          window.open(href, "_blank", "noopener");
+                        } else if (href.startsWith("#")) {
+                          const el = href.length > 1 ? document.getElementById(href.slice(1)) : null;
+                          if (el) el.scrollIntoView({ behavior: "smooth" });
+                        } else {
+                          const targetSlug = href.startsWith("/") ? href : "/" + href;
+                          const targetPage = project.pages.find((p) => p.slug === targetSlug);
+                          if (targetPage) {
+                            setSelectedPageId(targetPage.id);
+                          }
+                        }
+                        return;
+                      }
                       e.stopPropagation();
                       if (!isMobileViewport) {
                         setSelectedSitePart("nav");
@@ -4183,7 +4199,7 @@ export function App() {
               <div className="new-page-step">
                 <h4>Step 1: Page Name</h4>
                 <label>Page title
-                  <input autoFocus value={newPageName} onChange={(e) => { setNewPageName(e.target.value); setNewPageSlug(generateSlug(e.target.value)); }} placeholder="My New Page" />
+                  <input value={newPageName} onChange={(e) => { setNewPageName(e.target.value); setNewPageSlug(generateSlug(e.target.value)); }} placeholder="My New Page" />
                 </label>
                 <div className="button-row">
                   <button onClick={() => { if (!newPageName.trim()) { setWebsiteManagerError("Page name is required."); return; } setWebsiteManagerError(""); setNewPageStep(1); }}>Next</button>
