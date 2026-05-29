@@ -52,7 +52,7 @@ import {
 type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
-type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about";
+type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about" | "account" | "users";
 type ChatItem = { role: "user" | "assistant"; text: string };
 type PaintPoint = { x: number; y: number };
 type PaintTool = "brush" | "eraser";
@@ -719,6 +719,22 @@ export function App() {
   const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>("fields");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [acctCurrentPw, setAcctCurrentPw] = useState("");
+  const [acctNewPw, setAcctNewPw] = useState("");
+  const [acctConfirmPw, setAcctConfirmPw] = useState("");
+  const [acctMsg, setAcctMsg] = useState("");
+  const [acctMsgOk, setAcctMsgOk] = useState(false);
+  const [userList, setUserList] = useState<Array<{ id: string; username: string; role: string; createdAt: string; disabled?: boolean }>>([]);
+  const [createUsername, setCreateUsername] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createMsg, setCreateMsg] = useState("");
+  const [createMsgOk, setCreateMsgOk] = useState(false);
+  const [resetPwUserId, setResetPwUserId] = useState("");
+  const [resetPwValue, setResetPwValue] = useState("");
+  const [resetPwMsg, setResetPwMsg] = useState("");
+  const [resetPwMsgOk, setResetPwMsgOk] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [prePreviewLeftCollapsed, setPrePreviewLeftCollapsed] = useState(false);
@@ -1351,6 +1367,28 @@ export function App() {
       setSecretStatus({ imageGenKeySource: data.imageGen.source, imageAnalyzeKeySource: data.imageAnalyze.source });
     } catch {
       setSecretStatus(null);
+    }
+  }
+
+  async function fetchUserInfo() {
+    try {
+      const data = await fetchJson<{ ok: boolean; user: { username: string; role: string } }>("/api/account/me");
+      if (data.ok) {
+        setUserName(data.user.username);
+        setUserRole(data.user.role);
+      }
+    } catch {
+      setUserName(null);
+      setUserRole(null);
+    }
+  }
+
+  async function fetchUsers() {
+    try {
+      const data = await fetchJson<{ ok: boolean; users: Array<{ id: string; username: string; role: string; createdAt: string; disabled?: boolean }> }>("/api/admin/users");
+      if (data.ok) setUserList(data.users);
+    } catch {
+      setUserList([]);
     }
   }
 
@@ -3548,7 +3586,18 @@ export function App() {
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
           <button onClick={() => openAiDrawer()}>AI</button>
-          <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
+          <button onClick={() => {
+            setSettingsOpen(true);
+            setSettingsTab("general");
+            setStatus("Settings opened");
+            setAcctMsg("");
+            setAcctMsgOk(false);
+            setCreateMsg("");
+            setCreateMsgOk(false);
+            setResetPwMsg("");
+            setResetPwMsgOk(false);
+            void fetchUserInfo();
+          }}>Settings</button>
           <button onClick={() => void saveProject()}>Save</button>
           <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
           <button onClick={() => void runBuild()}>Build</button>
@@ -4048,6 +4097,10 @@ export function App() {
               <button className={settingsTab === "providers" ? "selected" : ""} onClick={() => setSettingsTab("providers")}>AI Providers</button>
               <button className={settingsTab === "keys" ? "selected" : ""} onClick={() => setSettingsTab("keys")}>Image/API Keys</button>
               <button className={settingsTab === "deploy" ? "selected" : ""} onClick={() => setSettingsTab("deploy")}>Deploy Safety</button>
+              <button className={settingsTab === "account" ? "selected" : ""} onClick={() => { setSettingsTab("account"); setAcctMsg(""); setAcctMsgOk(false); }}>Account Management</button>
+              {userRole === "admin" && (
+                <button className={settingsTab === "users" ? "selected" : ""} onClick={() => { setSettingsTab("users"); setCreateMsg(""); setCreateMsgOk(false); setResetPwMsg(""); setResetPwMsgOk(false); void fetchUsers(); }}>User Management</button>
+              )}
               <button className={settingsTab === "debug" ? "selected" : ""} onClick={() => setSettingsTab("debug")}>Debug</button>
               <button className={settingsTab === "about" ? "selected" : ""} onClick={() => setSettingsTab("about")}>About</button>
             </div>
@@ -4097,6 +4150,116 @@ export function App() {
               <p className="panel-status"><strong>Live publish disabled</strong></p>
               <p>SBUILD_ALLOW_PUBLISH: {"false"}</p>
               <p>Publish target: dry-run preview</p>
+            </div>}
+            {settingsTab === "account" && <div>
+              <p><strong>Account Management</strong></p>
+              {userName && <p>Logged in as: <strong>{userName}</strong> ({userRole})</p>}
+              <hr />
+              <p><strong>Change Password</strong></p>
+              <label>Current Password
+                <input type="password" value={acctCurrentPw} onChange={(e) => setAcctCurrentPw(e.target.value)} autoComplete="current-password" />
+              </label>
+              <label>New Password
+                <input type="password" value={acctNewPw} onChange={(e) => setAcctNewPw(e.target.value)} autoComplete="new-password" />
+              </label>
+              <label>Confirm New Password
+                <input type="password" value={acctConfirmPw} onChange={(e) => setAcctConfirmPw(e.target.value)} autoComplete="new-password" />
+              </label>
+              <div className="button-row">
+                <button onClick={async () => {
+                  setAcctMsg(""); setAcctMsgOk(false);
+                  if (!acctCurrentPw || !acctNewPw || !acctConfirmPw) { setAcctMsg("All fields are required"); return; }
+                  if (acctNewPw !== acctConfirmPw) { setAcctMsg("New password and confirmation do not match"); return; }
+                  try {
+                    const data = await fetchJson<{ ok: boolean; message?: string; error?: string }>("/api/account/change-password", {
+                      method: "POST", body: JSON.stringify({ currentPassword: acctCurrentPw, newPassword: acctNewPw, confirmPassword: acctConfirmPw })
+                    });
+                    if (data.ok) {
+                      setAcctMsg(data.message || "Password changed");
+                      setAcctMsgOk(true);
+                      setAcctCurrentPw(""); setAcctNewPw(""); setAcctConfirmPw("");
+                    } else {
+                      setAcctMsg(data.error || "Failed to change password");
+                    }
+                  } catch (err) {
+                    setAcctMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                }}>Change Password</button>
+              </div>
+              {acctMsg && <p className={acctMsgOk ? "panel-status" : "error-text"}>{acctMsg}</p>}
+            </div>}
+            {settingsTab === "users" && userRole === "admin" && <div>
+              <p><strong>User Management</strong></p>
+              <hr />
+              <p><strong>Create User</strong></p>
+              <label>Username
+                <input type="text" value={createUsername} onChange={(e) => setCreateUsername(e.target.value)} autoComplete="off" />
+              </label>
+              <label>Password
+                <input type="password" value={createPassword} onChange={(e) => setCreatePassword(e.target.value)} autoComplete="new-password" />
+              </label>
+              <div className="button-row">
+                <button onClick={async () => {
+                  setCreateMsg(""); setCreateMsgOk(false);
+                  if (!createUsername || !createPassword) { setCreateMsg("Username and password are required"); return; }
+                  if (createPassword.length < 4) { setCreateMsg("Password must be at least 4 characters"); return; }
+                  try {
+                    const data = await fetchJson<{ ok: boolean; user?: { username: string; role: string }; error?: string }>("/api/admin/users", {
+                      method: "POST", body: JSON.stringify({ username: createUsername, password: createPassword })
+                    });
+                    if (data.ok) {
+                      setCreateMsg(`User "${data.user?.username}" created`);
+                      setCreateMsgOk(true);
+                      setCreateUsername(""); setCreatePassword("");
+                      void fetchUsers();
+                    } else {
+                      setCreateMsg(data.error || "Failed to create user");
+                    }
+                  } catch (err) {
+                    setCreateMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                }}>Create User</button>
+              </div>
+              {createMsg && <p className={createMsgOk ? "panel-status" : "error-text"}>{createMsg}</p>}
+              <hr />
+              <p><strong>Users</strong></p>
+              {userList.length === 0 && <p>No users found.</p>}
+              {userList.map((u) => (
+                <div key={u.id} className="provider-card" style={{ marginBottom: 8 }}>
+                  <div><strong>{u.username}</strong> ({u.role}) {u.disabled ? <span className="error-text">Disabled</span> : ""}</div>
+                  <div className="button-row compact" style={{ marginTop: 4 }}>
+                    <button onClick={async () => {
+                      const pw = window.prompt("New password for " + u.username + ":");
+                      if (!pw) return;
+                      try {
+                        const data = await fetchJson<{ ok: boolean; message?: string; error?: string }>(`/api/admin/users/${u.id}/reset-password`, {
+                          method: "POST", body: JSON.stringify({ newPassword: pw })
+                        });
+                        setResetPwMsg(data.ok ? (data.message || "Password reset") : (data.error || "Failed"));
+                        setResetPwMsgOk(data.ok);
+                      } catch (err) {
+                        setResetPwMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+                        setResetPwMsgOk(false);
+                      }
+                    }}>Reset Password</button>
+                    {u.role !== "admin" && !u.disabled && (
+                      <button onClick={async () => {
+                        if (!window.confirm(`Disable user "${u.username}"?`)) return;
+                        try {
+                          const data = await fetchJson<{ ok: boolean; message?: string; error?: string }>(`/api/admin/users/${u.id}`, {
+                            method: "DELETE"
+                          });
+                          if (data.ok) void fetchUsers();
+                          else setCreateMsg(data.error || "Failed to disable user");
+                        } catch (err) {
+                          setCreateMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+                        }
+                      }}>Disable</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {resetPwMsg && <p className={resetPwMsgOk ? "panel-status" : "error-text"}>{resetPwMsg}</p>}
             </div>}
             {settingsTab === "debug" && <div>
               <p><strong>Version:</strong> {SBUILD_APP_NAME} {SBUILD_VERSION}</p>

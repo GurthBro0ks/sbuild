@@ -365,3 +365,239 @@ test("/api/images/folder accepts project/images and rejects unsafe paths", async
     assert.ok((body.error || "").length > 0);
   }
 });
+
+// --- Auth tests (with enabled auth) ---
+
+function createAuthTestServer() {
+  const app = createApp({ enableAuth: true, usersFilePath: path.join(os.tmpdir(), `sbuild-auth-test-users-${Date.now()}.json`) });
+  const server = app.listen(0);
+  const addr = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${addr.port}`;
+  return { baseUrl, server, close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))) };
+}
+
+async function loginAs(server: ReturnType<typeof createAuthTestServer>, username: string, password: string): Promise<string> {
+  const loginRes = await fetch(`${server.baseUrl}/login`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username, password }).toString(),
+    redirect: "manual"
+  });
+  const setCookie = loginRes.headers.get("set-cookie") || "";
+  const match = setCookie.match(/sbuild_session=([^;]+)/);
+  return match ? match[1] : "";
+}
+
+test("auth: login with admin credentials returns session cookie", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    assert.ok(sessionToken.length > 0, "should get session token");
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: login with wrong password returns 401", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const loginRes = await fetch(`${server.baseUrl}/login`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "admin", password: "wrong" }).toString(),
+      redirect: "manual"
+    });
+    assert.equal(loginRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: GET /api/account/me returns current user info", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    const meRes = await fetch(`${server.baseUrl}/api/account/me`, {
+      headers: { cookie: `sbuild_session=${sessionToken}` }
+    });
+    assert.equal(meRes.status, 200);
+    const body = await meRes.json() as { ok: boolean; user: { username: string; role: string } };
+    assert.equal(body.ok, true);
+    assert.equal(body.user.username, "admin");
+    assert.equal(body.user.role, "admin");
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: unauth GET /api/account/me returns 401", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const meRes = await fetch(`${server.baseUrl}/api/account/me`);
+    assert.equal(meRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: change password with correct current password succeeds", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    const changeRes = await fetch(`${server.baseUrl}/api/account/change-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${sessionToken}` },
+      body: JSON.stringify({ currentPassword: "admin123", newPassword: "newpass123", confirmPassword: "newpass123" })
+    });
+    assert.equal(changeRes.status, 200);
+    const body = await changeRes.json() as { ok: boolean; message: string };
+    assert.equal(body.ok, true);
+
+    // Verify login with new password works
+    const newSessionToken = await loginAs(server, "admin", "newpass123");
+    assert.ok(newSessionToken.length > 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: change password with wrong current password fails", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    const changeRes = await fetch(`${server.baseUrl}/api/account/change-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${sessionToken}` },
+      body: JSON.stringify({ currentPassword: "wrongpass", newPassword: "newpass123", confirmPassword: "newpass123" })
+    });
+    assert.equal(changeRes.status, 403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: change password with mismatched confirmation fails", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    const changeRes = await fetch(`${server.baseUrl}/api/account/change-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${sessionToken}` },
+      body: JSON.stringify({ currentPassword: "admin123", newPassword: "newpass123", confirmPassword: "different" })
+    });
+    assert.equal(changeRes.status, 400);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: admin can list users and create non-admin user", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    const listRes = await fetch(`${server.baseUrl}/api/admin/users`, {
+      headers: { cookie: `sbuild_session=${adminSession}` }
+    });
+    assert.equal(listRes.status, 200);
+    const listBody = await listRes.json() as { ok: boolean; users: Array<{ username: string; role: string }> };
+    assert.equal(listBody.ok, true);
+    assert.ok(listBody.users.length >= 1);
+    assert.equal(listBody.users[0].username, "admin");
+
+    const createRes = await fetch(`${server.baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ username: "operator", password: "op12345" })
+    });
+    assert.equal(createRes.status, 200);
+    const createBody = await createRes.json() as { ok: boolean; user: { username: string; role: string } };
+    assert.equal(createBody.ok, true);
+    assert.equal(createBody.user.username, "operator");
+    assert.equal(createBody.user.role, "user");
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: non-admin user cannot access admin APIs", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+
+    // Create a normal user
+    await fetch(`${server.baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ username: "operator", password: "op12345" })
+    });
+
+    // Login as normal user
+    const userSession = await loginAs(server, "operator", "op12345");
+    assert.ok(userSession.length > 0);
+
+    // Try to access admin API
+    const listRes = await fetch(`${server.baseUrl}/api/admin/users`, {
+      headers: { cookie: `sbuild_session=${userSession}` }
+    });
+    assert.equal(listRes.status, 403);
+
+    // Verify account/me shows user role
+    const meRes = await fetch(`${server.baseUrl}/api/account/me`, {
+      headers: { cookie: `sbuild_session=${userSession}` }
+    });
+    assert.equal(meRes.status, 200);
+    const meBody = await meRes.json() as { ok: boolean; user: { username: string; role: string } };
+    assert.equal(meBody.user.role, "user");
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: admin can disable non-admin user", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    await fetch(`${server.baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ username: "operator", password: "op12345" })
+    });
+
+    const listRes = await fetch(`${server.baseUrl}/api/admin/users`, {
+      headers: { cookie: `sbuild_session=${adminSession}` }
+    });
+    const listBody = await listRes.json() as { ok: boolean; users: Array<{ id: string; username: string }> };
+    const userId = listBody.users.find((u) => u.username === "operator")?.id;
+    assert.ok(userId);
+
+    const deleteRes = await fetch(`${server.baseUrl}/api/admin/users/${userId}`, {
+      method: "DELETE",
+      headers: { cookie: `sbuild_session=${adminSession}` }
+    });
+    assert.equal(deleteRes.status, 200);
+
+    // Verify user no longer shows in list
+    const listAfterRes = await fetch(`${server.baseUrl}/api/admin/users`, {
+      headers: { cookie: `sbuild_session=${adminSession}` }
+    });
+    const listAfterBody = await listAfterRes.json() as { ok: boolean; users: Array<{ username: string; disabled?: boolean }> };
+    const disabledUser = listAfterBody.users.find((u) => u.username === "operator");
+    assert.equal(disabledUser?.disabled, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: publish still returns 401 without auth", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const publishRes = await fetch(`${server.baseUrl}/api/publish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+    assert.equal(publishRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});

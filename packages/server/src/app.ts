@@ -295,6 +295,20 @@ function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }
 
+import {
+  SBuildUser,
+  createUser,
+  disableUser,
+  findUserByUsername,
+  findUserById,
+  hashPassword as hashUserPassword,
+  listUsers,
+  migrateFromEnv,
+  setUsersFilePath,
+  updateUserPassword,
+  verifyPassword as verifyUserPassword,
+} from "./lib/userStore.js";
+
 type AuthConfig = {
   enabled: boolean;
   username: string;
@@ -304,6 +318,7 @@ type AuthConfig = {
 
 type SessionPayload = {
   u: string;
+  r: string;
   exp: number;
 };
 
@@ -311,9 +326,6 @@ const sessionCookieName = "sbuild_session";
 const sessionTtlMs = 1000 * 60 * 60 * 12;
 
 function readAuthConfig(): AuthConfig {
-  if (process.env.NODE_ENV === "test") {
-    return { enabled: false, username: "", passwordHash: "", sessionSecret: "" };
-  }
   const username = String(process.env.SBUILD_AUTH_USERNAME || "").trim();
   const passwordHash = String(process.env.SBUILD_AUTH_PASSWORD_HASH || "").trim();
   const sessionSecret = String(process.env.SBUILD_SESSION_SECRET || "").trim();
@@ -431,10 +443,17 @@ async function sendEditorFallback(
   }
 }
 
-export function createApp(options?: { editorDistPath?: string }): express.Express {
+export function createApp(options?: { editorDistPath?: string; usersFilePath?: string; enableAuth?: boolean }): express.Express {
   const app = express();
+  if (options?.usersFilePath) setUsersFilePath(options.usersFilePath);
+  if (options?.enableAuth) {
+    process.env.SBUILD_AUTH_USERNAME = process.env.SBUILD_AUTH_USERNAME || "admin";
+    process.env.SBUILD_AUTH_PASSWORD_HASH = process.env.SBUILD_AUTH_PASSWORD_HASH || hashUserPassword("admin123");
+    process.env.SBUILD_SESSION_SECRET = process.env.SBUILD_SESSION_SECRET || "test-secret";
+  }
   const auth = readAuthConfig();
   const resolvedEditorDistPath = options?.editorDistPath || editorDistDir;
+  if (auth.enabled) migrateFromEnv();
   const editorIndexPath = path.join(resolvedEditorDistPath, "index.html");
   const editorAssetsPath = path.join(resolvedEditorDistPath, "assets");
   app.use(cors());
@@ -516,11 +535,15 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     }
     const username = String(req.body?.username || "").trim();
     const password = String(req.body?.password || "");
-    if (username !== auth.username || !verifyPassword(password, auth.passwordHash)) {
+
+    migrateFromEnv();
+
+    const user = findUserByUsername(username);
+    if (!user || !verifyUserPassword(password, user.passwordHash)) {
       res.status(401).type("html").send(renderLoginPage("Invalid username or password."));
       return;
     }
-    const token = signSession({ u: username, exp: Date.now() + sessionTtlMs }, auth.sessionSecret);
+    const token = signSession({ u: user.username, r: user.role, exp: Date.now() + sessionTtlMs }, auth.sessionSecret);
     res.setHeader("Set-Cookie", `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=43200`);
     res.redirect(302, "/");
   });
@@ -530,12 +553,145 @@ export function createApp(options?: { editorDistPath?: string }): express.Expres
     res.redirect(302, "/login");
   });
 
+  function getSession(req: express.Request): SessionPayload | null {
+    const token = parseCookies(req.headers.cookie)[sessionCookieName];
+    return token ? verifySession(token, auth.sessionSecret) : null;
+  }
+
+  function requireAdminMw(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (!auth.enabled) { next(); return; }
+    const session = getSession(req);
+    if (!session) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    if (session.r !== "admin") {
+      res.status(403).json({ ok: false, error: "Admin access required" });
+      return;
+    }
+    next();
+  }
+
+  app.get("/api/account/me", (req, res) => {
+    if (!auth.enabled) {
+      res.json({ ok: true, user: { username: "dev", role: "admin" } });
+      return;
+    }
+    const session = getSession(req);
+    if (!session) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    res.json({ ok: true, user: { username: session.u, role: session.r } });
+  });
+
+  app.post("/api/account/change-password", (req, res) => {
+    if (!auth.enabled) {
+      res.json({ ok: true, message: "Auth disabled (dev mode)" });
+      return;
+    }
+    const session = getSession(req);
+    if (!session) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    const confirmPassword = String(req.body?.confirmPassword || "");
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      res.status(400).json({ ok: false, error: "currentPassword, newPassword, and confirmPassword are required" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      res.status(400).json({ ok: false, error: "New password and confirmation do not match" });
+      return;
+    }
+    if (newPassword.length < 4) {
+      res.status(400).json({ ok: false, error: "New password must be at least 4 characters" });
+      return;
+    }
+    const user = findUserByUsername(session.u);
+    if (!user) {
+      res.status(404).json({ ok: false, error: "User not found" });
+      return;
+    }
+    if (!verifyUserPassword(currentPassword, user.passwordHash)) {
+      res.status(403).json({ ok: false, error: "Current password is incorrect" });
+      return;
+    }
+    if (!updateUserPassword(user.id, newPassword)) {
+      res.status(500).json({ ok: false, error: "Failed to update password" });
+      return;
+    }
+    res.json({ ok: true, message: "Password changed successfully" });
+  });
+
+  app.get("/api/admin/users", requireAdminMw, (_req, res) => {
+    const users = listUsers();
+    res.json({ ok: true, users });
+  });
+
+  app.post("/api/admin/users", requireAdminMw, (req, res) => {
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    if (!username || !password) {
+      res.status(400).json({ ok: false, error: "username and password are required" });
+      return;
+    }
+    if (password.length < 4) {
+      res.status(400).json({ ok: false, error: "Password must be at least 4 characters" });
+      return;
+    }
+    try {
+      const user = createUser(username, password, "user");
+      res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role, createdAt: user.createdAt } });
+    } catch (err) {
+      res.status(409).json({ ok: false, error: String(err) });
+    }
+  });
+
+  app.post("/api/admin/users/:id/reset-password", requireAdminMw, (req, res) => {
+    const newPassword = String(req.body?.newPassword || "");
+    if (!newPassword || newPassword.length < 4) {
+      res.status(400).json({ ok: false, error: "newPassword must be at least 4 characters" });
+      return;
+    }
+    const success = updateUserPassword(req.params.id, newPassword);
+    if (!success) {
+      res.status(404).json({ ok: false, error: "User not found" });
+      return;
+    }
+    res.json({ ok: true, message: "Password reset successfully" });
+  });
+
+  app.delete("/api/admin/users/:id", requireAdminMw, (req, res) => {
+    try {
+      const success = disableUser(req.params.id);
+      if (!success) {
+        res.status(404).json({ ok: false, error: "User not found" });
+        return;
+      }
+      res.json({ ok: true, message: "User disabled" });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String(err) });
+    }
+  });
+
   app.use((req, res, next) => {
     if (!auth.enabled) {
       next();
       return;
     }
     if (req.path === "/health" || req.path === "/login" || req.path === "/logout") {
+      next();
+      return;
+    }
+    if (req.path.startsWith("/api/account") || req.path.startsWith("/api/admin")) {
+      const session = getSession(req);
+      if (!session) {
+        res.status(401).json({ ok: false, error: "Authentication required" });
+        return;
+      }
       next();
       return;
     }

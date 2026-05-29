@@ -1682,7 +1682,8 @@ test("preview remains read-only and publish remains dry-run", () => {
 });
 
 test("mobile-toolbar-gap-repair marker remains after context menu fix", () => {
-=======
+});
+
 test("left sidebar includes + New Page button", () => {
   assert.match(appSource, /btn-new-page/);
   assert.match(appSource, /\+ New Page/);
@@ -1804,7 +1805,6 @@ test("mobile Preview read-only preserved", () => {
 });
 
 test("mobile-toolbar-gap-repair marker still present after Website Manager", () => {
->>>>>>> a0a0368 (feat: Website Manager MVP with page CRUD, templates, nav, and server persistence)
   assert.match(appSource, /mobile-toolbar-gap-repair/);
   assert.match(appSource, /action-controls-offset/);
 });
