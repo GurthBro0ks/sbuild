@@ -1,37 +1,40 @@
 RESULT: PASS
 
 Project: /opt/slimy/sbuild
-human QA status before fix: ce8cc7a rejected, action controls clipped
-commit before: ce8cc7a
-commit after: bbb36166308a00e8b7a38513a81d16e71d472917
 
-files changed/staged:
+checkpoint being preserved:
+- accepted pushed commit 22da5eb5933a4a940b95a6e82469c369beaf6192
+- accepted source fix bbb3616
+
+commit before: 22da5eb
+commit after: pending local commit
+
+files changed:
 - packages/editor/src/App.tsx
+- packages/editor/src/styles.css
 - packages/editor/src/ui-contract.test.js
 
-root cause of zero debug measurements:
-- Mobile toolbar measurement effect ran before the editor layout (`project && selectedPage`) existed, hit the early-return path (`!topbarRef.current`), zeroed all debug values, and never re-ran because it only depended on `isMobileViewport`.
+root cause / polish target:
+- Mobile topbar was functionally correct but too visually dense/stacked, making iPhone ergonomics feel cramped despite accepted offset behavior.
 
-root cause of clipped action controls:
-- With measurement stuck at zero, `--mobile-topbar-h` was not set to the actual visible toolbar height. The mobile spacer then fell back to its default height while the fixed toolbar was taller, so the top of the `Duplicate/Delete/Up/Down` strip sat under the toolbar/status area.
+exact UI polish performed:
+- Structured topbar into explicit mobile rows:
+  - `topbar-mobile-row-main` (menu, logo, preview/edit, paint)
+  - `topbar-mobile-row-actions` (images, AI, settings, save, revert, build, publish)
+  - `topbar-mobile-row-status` (status pill)
+- Added mobile grid density styling:
+  - topbar uses compact grid with tighter `gap: 4px`
+  - predictable row templates (`main`, `actions`, `status`)
+  - compact but tappable button sizing (`min-height: 36px`)
+  - logo truncation/ellipsis for cleaner compact row behavior
+- Preserved debug marker visibility and publish action visibility.
 
-exact fix:
-- In `App.tsx`, changed toolbar measurement lifecycle to depend on physical mobile viewport + layout readiness (`mobileLayoutReady = Boolean(project && selectedPage)`), not preview device mode.
-- Added robust re-measure triggers: double `requestAnimationFrame`, delayed timeout, `ResizeObserver` on topbar/status/spacer/canvas-controls, and listeners for `resize`, `orientationchange`, and `visualViewport` resize/scroll.
-- Added explicit missing-measurement diagnostics (`measurementMissing`) instead of silently presenting misleading all-zero values.
-- Added marker `action-controls-offset active` in debug panel and mobile strip while preserving `mobile-toolbar-gap-repair active`.
+final offset owner:
+- spacer .topbar-mobile-spacer using --mobile-toolbar-h
 
-final offset owner: spacer
-whether action controls are now inside/after offset owner: YES (`topbar-mobile-spacer` appears before `workspace` and `canvas-controls`)
-
-debug marker status:
-- present: `mobile-toolbar-gap-repair active`
-- present: `action-controls-offset active`
-- absent: `mobile-toolbar-spacer-v3 active`
-
-expected non-zero runtime values:
-- On visible mobile topbar: `toolbarH`, `spacerH`, `topbarBottom`, and `ccTop` should be non-zero.
-- If measurement is unavailable, debug reports `measurementMissing=true` instead of fake zero metrics.
+duplicate-offset fix intact: yes
+action-controls-offset intact: yes
+rejected mobile-toolbar-spacer-v3 absent: yes
 
 validation results:
 - pnpm -r typecheck: PASS
@@ -39,66 +42,47 @@ validation results:
 - pnpm -r lint: PASS
 - pnpm -r test: PASS
 - bash scripts/smoke-sbuild.sh: PASS
-- curl http://127.0.0.1:3137/health: ok, publishAllowed=false
-- curl POST /api/publish unauthenticated: 401 Authentication required
+- curl -fsS http://127.0.0.1:3137/health: PASS
+- curl -fsS https://sbuilder.blackfishfarms.com/health: PASS
+- curl -i -sS -X POST http://127.0.0.1:3137/api/publish -H 'content-type: application/json' -d '{}': 401 expected
 
-accepted commit before push: bbb36166308a00e8b7a38513a81d16e71d472917
-final HEAD: bbb36166308a00e8b7a38513a81d16e71d472917
-origin/main after push: bbb36166308a00e8b7a38513a81d16e71d472917
-pushed: YES
-proof directory: /tmp/proof_sbuild_mobile_toolbar_acceptance_push_20260529T095240Z
-human iPhone QA accepted: yes
+health publishAllowed false: yes
+publish auth/dry-run result: preserved (unauthenticated publish blocked, dry-run unchanged)
 
-debug values from accepted screenshot:
-- toolbarH=171
-- spacerH=171
-- topbarBottom=171
-- ccTop=179
-- gapPx=8
-- dup=false
-- topPad=8
-- missing=false
-
-root cause fixed:
-- mobile measurement ran too early and did not rerun after editor layout readiness
-
-final offset owner:
-- spacer .topbar-mobile-spacer using --mobile-toolbar-h
-
-duplicate-offset fix intact: yes
-active markers:
-- mobile-toolbar-gap-repair
-- action-controls-offset
-rejected marker absent:
-- mobile-toolbar-spacer-v3
-
-health publishAllowed false: YES
-publish auth/dry-run result: unauthenticated publish is blocked (401), dry-run guard unchanged
-
-Caddy/DNS/WordPress untouched: YES
+Caddy/DNS/WordPress untouched: yes
 
 remaining dirty files:
+- packages/editor/src/App.tsx
+- packages/editor/src/styles.css
+- packages/editor/src/ui-contract.test.js
 - project/project.json
 - project/image-folder.json
 
-next suggested phase:
-- mobile toolbar density pass (compact grouping) while preserving current spacer measurement contract and dry-run/auth safety.
+pushed: NO
 
 manual iPhone QA checklist:
 1. Open https://sbuilder.blackfishfarms.com
 2. Login
 3. Open Settings/About and confirm new commit
-4. Confirm top toolbar/title/buttons are visible
-5. Confirm blue status pill is readable
-6. Confirm Duplicate/Delete/Up/Down action controls are fully visible and not hidden under toolbar/status
-7. Confirm no giant blank gap returned
-8. Confirm canvas debug/device controls start close under toolbar/status
-9. Confirm debug says mobile-toolbar-gap-repair active
-10. Confirm debug says action-controls-offset active
-11. Confirm it does not say mobile-toolbar-spacer-v3 active
-12. Confirm debug values are not all fake zero when toolbar is visible
-13. Confirm gapPx is small and positive, ideally 8-32px
-14. Open/close Settings and confirm gap does not grow
-15. Trigger status changes and confirm gap does not grow
-16. Confirm Desktop row layout still works
-17. Confirm Publish remains dry-run
+4. Confirm toolbar is more compact than before
+5. Confirm hamburger/title/version are visible
+6. Confirm Preview and Paint are visible/tappable
+7. Confirm Images, AI, Settings, Save, Revert, Build are visible/tappable
+8. Confirm Publish is visible/tappable
+9. Confirm blue status pill is readable
+10. Confirm Duplicate/Delete/Up/Down controls are fully visible below toolbar/status
+11. Confirm no giant blank gap returned
+12. Confirm debug says mobile-toolbar-gap-repair active
+13. Confirm debug says action-controls-offset active
+14. Confirm it does not say mobile-toolbar-spacer-v3 active
+15. Confirm debug values are real/non-zero:
+    toolbarH > 0
+    spacerH > 0
+    gapPx small positive
+    dup=false
+    missing=false
+16. Open/close Settings and confirm gap does not grow
+17. Trigger status changes and confirm gap does not grow
+18. Scroll and confirm toolbar remains usable
+19. Confirm Desktop row layout still works
+20. Confirm Publish remains dry-run

@@ -250,6 +250,15 @@ test("main editor debug strip shows mobile-toolbar-gap-repair values", () => {
   assert.match(appSource, /missing=\{debugMeasurementMissing/);
 });
 
+test("mobile topbar keeps explicit grouped rows for density and action visibility", () => {
+  assert.match(appSource, /topbar-mobile-row topbar-mobile-row-main/);
+  assert.match(appSource, /topbar-mobile-row topbar-mobile-row-actions/);
+  assert.match(appSource, /topbar-mobile-row topbar-mobile-row-status/);
+  assert.match(appSource, />Publish<\/button>/);
+  assert.match(appSource, /previewMode \? "Edit" : "Preview"/);
+  assert.match(appSource, />Paint<\/button>/);
+});
+
 test("gap detection flags duplicate offset when gapPx exceeds 48px", () => {
   assert.match(appSource, /setDebugDuplicateOffset\(gapPx\s*>\s*48\)/);
 });
@@ -833,6 +842,14 @@ test("mobile topbar is fixed with higher z-index and safe-area", () => {
 
 test("mobile topbar uses safe-area-aware top padding floor", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*padding-top:\s*max\(8px,\s*env\(safe-area-inset-top,\s*0px\)\)/);
+});
+
+test("mobile topbar has compact density grid rules", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*display:\s*grid/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar[\s\S]*gap:\s*4px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-mobile-row-main[\s\S]*grid-template-columns/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar-mobile-row-actions[\s\S]*repeat\(4/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.topbar button[\s\S]*min-height:\s*36px/);
 });
 
 test("context menu includes AI Assistant action for site header", () => {

@@ -3292,19 +3292,25 @@ export function App() {
   return (
     <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""}`}>
       <header ref={topbarRef} className="topbar">
-        <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-        <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
-        <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-        <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
-        <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
-        <button onClick={() => openAiDrawer()}>AI</button>
-        <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
-        <button onClick={() => void saveProject()}>Save</button>
-        <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
-        <button onClick={() => void runBuild()}>Build</button>
-        <button onClick={() => void runPublish()}>Publish</button>
-        <div ref={statusPillRef} className="topbar-status" data-status-row="topbar-status-pill">
-          <span className="status-pill-text">Status: {withSavedStatusText(status, dirty)} &middot; {status}</span>
+        <div className="topbar-mobile-row topbar-mobile-row-main">
+          <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
+          <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
+          <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
+          <button onClick={() => setPaintMode((p) => !p)} className={paintMode ? "active" : ""}>Paint</button>
+        </div>
+        <div className="topbar-mobile-row topbar-mobile-row-actions">
+          <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
+          <button onClick={() => openAiDrawer()}>AI</button>
+          <button onClick={() => { setSettingsOpen(true); setSettingsTab("general"); setStatus("Settings opened"); }}>Settings</button>
+          <button onClick={() => void saveProject()}>Save</button>
+          <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
+          <button onClick={() => void runBuild()}>Build</button>
+          <button onClick={() => void runPublish()}>Publish</button>
+        </div>
+        <div className="topbar-mobile-row topbar-mobile-row-status">
+          <div ref={statusPillRef} className="topbar-status" data-status-row="topbar-status-pill">
+            <span className="status-pill-text">Status: {withSavedStatusText(status, dirty)} &middot; {status}</span>
+          </div>
         </div>
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
