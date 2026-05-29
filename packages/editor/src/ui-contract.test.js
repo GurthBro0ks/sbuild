@@ -392,13 +392,13 @@ test("width and row badges are wrap-safe and do not rely on overlap-prone absolu
 });
 
 test("row and layout context menu actions select context block id before applying", () => {
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); openResizeLayoutForBlock\(contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); startNewRow\(contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\);/);
+  assert.match(appSource, /openResizeLayoutForBlock\(contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); startNewRow\(contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\)/);
 });
 
 test("place-with-row actions close context menu and set explicit status text", () => {
@@ -406,15 +406,15 @@ test("place-with-row actions close context menu and set explicit status text", (
   assert.match(appSource, /Place with block below/);
   assert.match(appSource, /function closeTransientOverlays\(\)/);
   assert.match(appSource, /setContextMenu\(null\);\s*setRightDrawerMobileOpen\(false\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); placeWithNext\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
   assert.match(appSource, /setStatus\("Placed block with block above"\)/);
   assert.match(appSource, /setStatus\("Placed block with block below"\)/);
 });
 
 test("remove from row action remains available and clears row membership", () => {
   assert.match(appSource, /Remove from row \/ Leave row/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); closeTransientOverlays\(\);/);
   assert.match(appSource, /leaveRowForBlock\(selectedPage\.blocks, idx\)/);
   assert.match(appSource, /setStatus\("Removed block from row"\)/);
 });
@@ -439,8 +439,8 @@ test("canvas frame tags mobile viewport class for mobile-only row visual overrid
 test("move up and move down actions remain present after row operations", () => {
   assert.match(appSource, /Move Up/);
   assert.match(appSource, /Move Down/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); closeTransientOverlays\(\);/);
-  assert.match(appSource, /selectBlock\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); closeTransientOverlays\(\);/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); closeTransientOverlays\(\);/);
 });
 
 test("row action status text and context menu closing behavior remain explicit", () => {
@@ -1514,4 +1514,146 @@ test("publish login gate smoke expectations remain correct", () => {
   assert.match(appSource, /dryRun/);
   assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
   assert.match(smokeSource, /unauth \/api\/publish expected 401/);
+});
+
+test("context menu ellipsis button does not directly call any drawer-opening function", () => {
+  const ctxBtnIdx = appSource.indexOf('className="context-btn"');
+  assert.ok(ctxBtnIdx > 0, "context-btn exists");
+  const btnSection = appSource.substring(ctxBtnIdx, ctxBtnIdx + 200);
+  assert.match(btnSection, /openContextMenu\(e, block\.id\)/);
+  assert.doesNotMatch(btnSection, /setRightCollapsed\(false\)/);
+  assert.doesNotMatch(btnSection, /setRightDrawerMobileOpen\(true\)/);
+  assert.doesNotMatch(btnSection, /openBlockDrawer/);
+});
+
+test("selectBlockQuiet function exists for non-drawer context actions", () => {
+  assert.match(appSource, /function selectBlockQuiet\(blockId: string\)/);
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\)/);
+});
+
+test("selectBlockQuiet does not set rightCollapsed or rightDrawerMobileOpen", () => {
+  const quietIdx = appSource.indexOf("function selectBlockQuiet(blockId: string)");
+  assert.ok(quietIdx > 0, "selectBlockQuiet function exists");
+  const fnSection = appSource.substring(quietIdx, quietIdx + 200);
+  assert.doesNotMatch(fnSection, /setRightCollapsed/);
+  assert.doesNotMatch(fnSection, /setRightDrawerMobileOpen/);
+});
+
+test("context menu Edit Properties calls openBlockDrawer which opens drawer", () => {
+  assert.match(appSource, /openBlockDrawer\(contextMenu\.blockId\); setContextMenu\(null\);[\s\S]*?Edit Properties/);
+});
+
+test("context menu AI Assistant calls openAiDrawer which opens drawer", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\); setContextMenu\(null\);[\s\S]*?AI Assistant/);
+});
+
+test("context menu Resize/Layout calls openResizeLayoutForBlock which opens drawer", () => {
+  assert.match(appSource, /openResizeLayoutForBlock\(contextMenu\.blockId\); setContextMenu\(null\);[\s\S]*?Resize\/Layout/);
+  const resizeFnIdx = appSource.indexOf("function openResizeLayoutForBlock(blockId: string)");
+  assert.ok(resizeFnIdx > 0, "openResizeLayoutForBlock function exists");
+  const fnSection = appSource.substring(resizeFnIdx, resizeFnIdx + 600);
+  assert.match(fnSection, /setRightDrawerMobileOpen\(true\)/);
+  assert.match(fnSection, /setRightCollapsed\(false\)/);
+});
+
+test("context menu Image Manager opens drawer to images tab", () => {
+  assert.match(appSource, /setRightTab\("images"\); setRightDrawerMobileOpen\(true\); setRightCollapsed\(false\); setImageManagerOpen\(true\)[\s\S]{0,200}Image Manager/);
+});
+
+test("context menu Duplicate does not force-open drawer", () => {
+  const dupIdx = appSource.indexOf("duplicateBlock(contextMenu.blockId); setContextMenu(null)");
+  assert.ok(dupIdx > 0, "Duplicate context action exists");
+  const dupLine = appSource.substring(dupIdx, dupIdx + 120);
+  assert.doesNotMatch(dupLine, /setRightCollapsed\(false\)/);
+  assert.doesNotMatch(dupLine, /setRightDrawerMobileOpen\(true\)/);
+});
+
+test("context menu Delete does not force-open drawer", () => {
+  const delIdx = appSource.indexOf("deleteBlock(contextMenu.blockId); setContextMenu(null)");
+  assert.ok(delIdx > 0, "Delete context action exists");
+  const delLine = appSource.substring(delIdx, delIdx + 120);
+  assert.doesNotMatch(delLine, /setRightCollapsed\(false\)/);
+  assert.doesNotMatch(delLine, /setRightDrawerMobileOpen\(true\)/);
+});
+
+test("context menu Move Up uses selectBlockQuiet without drawer opening", () => {
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("up", contextMenu\.blockId\); closeTransientOverlays\(\);[\s\S]*?Move Up/);
+});
+
+test("context menu Move Down uses selectBlockQuiet without drawer opening", () => {
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); moveBlock\("down", contextMenu\.blockId\); closeTransientOverlays\(\);[\s\S]*?Move Down/);
+});
+
+test("context menu Start new row uses selectBlockQuiet without drawer opening", () => {
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); startNewRow\(contextMenu\.blockId\); closeTransientOverlays\(\);[\s\S]*?Start new row/);
+});
+
+test("context menu Place with block above uses selectBlockQuiet without drawer opening", () => {
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); placeWithPrevious\(contextMenu\.blockId\); closeTransientOverlays\(\);[\s\S]*?Place with block above/);
+});
+
+test("context menu Remove from row uses selectBlockQuiet without drawer opening", () => {
+  assert.match(appSource, /selectBlockQuiet\(contextMenu\.blockId\); removeFromRow\(contextMenu\.blockId\); closeTransientOverlays\(\);[\s\S]*?Remove from row/);
+});
+
+test("desktop right panel restore button still opens panel", () => {
+  assert.match(appSource, /right-drawer-restore-btn[\s\S]{0,100}onClick=\{\(\) => setRightCollapsed\(false\)/);
+});
+
+test("paint toolbar uses sticky positioning", () => {
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*position:\s*sticky/);
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*top:\s*0/);
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*z-index:\s*15/);
+});
+
+test("paint toolbar has mobile-aware sticky top offset", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*top:\s*calc\(var\(--mobile-topbar-h/);
+});
+
+test("paint overlay SVG does not use viewBox scaling", () => {
+  const overlayIdx = appSource.indexOf('className={`paint-overlay');
+  assert.ok(overlayIdx > 0, "paint-overlay SVG exists");
+  const overlayLine = appSource.substring(overlayIdx, overlayIdx + 300);
+  assert.doesNotMatch(overlayLine, /viewBox/);
+  assert.doesNotMatch(overlayLine, /preserveAspectRatio/);
+});
+
+test("paint overlay covers full canvas-frame with inset 0 positioning", () => {
+  assert.match(cssSource, /\.paint-overlay[\s\S]*position:\s*absolute/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]*inset:\s*0/);
+});
+
+test("paint overlay captures pointer events in exclusive paint mode", () => {
+  assert.match(appSource, /onPointerDown=\{paintExclusiveMode \? beginPaint : undefined\}/);
+  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*pointer-events:\s*auto/);
+});
+
+test("paint mode disables contentEditable and block selection", () => {
+  assert.match(appSource, /const canEditBlocks = !previewMode && !paintMode;/);
+  assert.match(appSource, /contentEditable=\{canEditBlocks\}/);
+  assert.match(appSource, /draggable=\{canEditBlocks\}/);
+});
+
+test("paint exclusive mode applies user-select none", () => {
+  assert.match(cssSource, /\.canvas-frame\.paint-exclusive[\s\S]*user-select:\s*none/);
+});
+
+test("paint toolbar is only present in paint mode not preview", () => {
+  assert.match(appSource, /\{paintMode && !previewMode && \(/);
+  assert.match(appSource, /className="paint-toolbar"/);
+});
+
+test("preview remains read-only and publish remains dry-run", () => {
+  assert.match(appSource, /if \(previewMode\) return;/);
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /dryRun/);
+});
+
+test("mobile-toolbar-gap-repair marker remains after context menu fix", () => {
+  assert.match(appSource, /mobile-toolbar-gap-repair/);
+  assert.match(appSource, /action-controls-offset/);
+});
+
+test("mobile-toolbar-spacer-v3 marker still absent after context menu fix", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
 });

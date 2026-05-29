@@ -1306,6 +1306,14 @@ export function App() {
     if (!isMobileViewport) setRightCollapsed(false);
   }
 
+  function selectBlockQuiet(blockId: string) {
+    setSelectedBlockId(blockId);
+    setSelectedGalleryIndex(null);
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
+    lastFocusedTextBlockId.current = blockId;
+  }
+
   function selectSiteHeaderContainer() {
     if (previewMode || paintMode) return;
     setSelectedSitePart("site-header");
@@ -1924,6 +1932,8 @@ export function App() {
     setSelectedNavIndex(null);
     setRightTab("properties");
     setPropertiesTab("resize");
+    setRightDrawerMobileOpen(true);
+    setRightCollapsed(false);
     setLayoutHighlight(true);
     setResizeStatus(`Resize/Layout controls open for ${block.type} ${block.id}`);
     setStatus(`Resize/Layout controls open for ${block.type} ${block.id}`);
@@ -3754,7 +3764,7 @@ export function App() {
             )})}
 
             {(paintMode || paintAppliedStrokes.length > 0) && (
-              <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} viewBox="0 0 1200 1200" preserveAspectRatio="none" onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
+              <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
                 {paintAppliedStrokes.map((stroke) => (
                   <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
@@ -3847,18 +3857,18 @@ export function App() {
             <>
               <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Assistant</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); startNewRow(contextMenu.blockId); closeTransientOverlays(); }}>Start new row</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); closeTransientOverlays(); }}>Place with block above</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); placeWithNext(contextMenu.blockId); closeTransientOverlays(); }}>Place with block below</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); removeFromRow(contextMenu.blockId); closeTransientOverlays(); }}>Remove from row / Leave row</button>
+              <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); setRightTab("images"); setRightDrawerMobileOpen(true); setRightCollapsed(false); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); startNewRow(contextMenu.blockId); closeTransientOverlays(); }}>Start new row</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); closeTransientOverlays(); }}>Place with block above</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); placeWithNext(contextMenu.blockId); closeTransientOverlays(); }}>Place with block below</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); removeFromRow(contextMenu.blockId); closeTransientOverlays(); }}>Remove from row / Leave row</button>
               <button onClick={() => { resetBlockColorsToTheme(contextMenu.blockId); setContextMenu(null); }}>Reset block colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => { duplicateBlock(contextMenu.blockId); setContextMenu(null); }}>Duplicate</button>
               <button onClick={() => { deleteBlock(contextMenu.blockId); setContextMenu(null); }}>Delete</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("up", contextMenu.blockId); closeTransientOverlays(); }}>Move Up</button>
-              <button onClick={() => { selectBlock(contextMenu.blockId); moveBlock("down", contextMenu.blockId); closeTransientOverlays(); }}>Move Down</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); moveBlock("up", contextMenu.blockId); closeTransientOverlays(); }}>Move Up</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); moveBlock("down", contextMenu.blockId); closeTransientOverlays(); }}>Move Down</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>

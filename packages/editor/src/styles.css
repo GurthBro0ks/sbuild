@@ -1084,6 +1084,9 @@ button:disabled {
   color: var(--editor-text-muted);
 }
 .paint-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);
   border-radius: 10px;
@@ -1093,6 +1096,13 @@ button:disabled {
   align-items: center;
   flex-wrap: wrap;
   margin: 8px 0;
+}
+
+@media (max-width: 768px) {
+  .paint-toolbar {
+    top: calc(var(--mobile-topbar-h, 110px) + 4px);
+    z-index: 25;
+  }
 }
 
 .paint-toolbar input[type="color"] {
