@@ -875,7 +875,6 @@ export function App() {
     setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
     setDirty(true);
     setStatus("Page deleted");
-    setWebsiteManagerOpen(false);
   }
 
   function handleRenamePage(pageId: string, newTitle: string) {

@@ -1789,6 +1789,22 @@ test("delete page selects fallback when deleting selected page", () => {
   assert.match(appSource, /setSelectedPageId\(fallbackId\)/);
 });
 
+test("delete page keeps Website Manager open after confirm", () => {
+  assert.doesNotMatch(appSource, /setStatus\("Page deleted"\);\s*setWebsiteManagerOpen\(false\)/);
+  assert.match(appSource, /setStatus\("Page deleted"\)/);
+  assert.match(appSource, /setWebsiteManagerOpen\(false\)/);
+});
+
+test("delete page still shows confirm dialog", () => {
+  assert.match(appSource, /confirm\(`Delete/);
+});
+
+test("Website Manager close button and backdrop still close modal", () => {
+  assert.match(appSource, /modal-backdrop.*onClick=\{\(\) => setWebsiteManagerOpen\(false\)\}/);
+  assert.match(appSource, /modal-close.*onClick=\{\(\) => setWebsiteManagerOpen\(false\)\}/);
+  assert.match(appSource, /onClick=\{\(\) => setWebsiteManagerOpen\(false\)\}[\s\S]*?Close/);
+});
+
 test("page creation updates site nav", () => {
   assert.match(appSource, /const navItems = buildNavItems\(nextPages\)/);
   assert.match(appSource, /site: { \.\.\.project\.site, nav: navItems }/);
