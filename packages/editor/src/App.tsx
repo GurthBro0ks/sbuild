@@ -1075,6 +1075,14 @@ export function App() {
     }
   }, [isMobileViewport]);
 
+  useEffect(() => {
+    if (userRole !== null && userRole !== "admin") {
+      if (settingsTab === "keys" || settingsTab === "users") {
+        setSettingsTab("general");
+      }
+    }
+  }, [userRole, settingsTab]);
+
   const topbarRef = useRef<HTMLElement>(null);
   const statusPillRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
@@ -3519,20 +3527,22 @@ export function App() {
                 </div>
               ))}
 
-              <h4>Image API Keys</h4>
-              <p className="hint">Keys are stored locally, not in project.json.</p>
-              <label>Image Generation API Key
-                <input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." />
-              </label>
-              <label>Image Analysis API Key
-                <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
-              </label>
-              <div className="button-row">
-                <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
-                <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
-                <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
-              </div>
-              {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
+              {userRole === "admin" && <>
+                <h4>Image API Keys</h4>
+                <p className="hint">Keys are stored locally, not in project.json.</p>
+                <label>Image Generation API Key
+                  <input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." />
+                </label>
+                <label>Image Analysis API Key
+                  <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
+                </label>
+                <div className="button-row">
+                  <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
+                  <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
+                  <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
+                </div>
+                {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
+              </>}
 
               <h4>Navigation Editor</h4>
               {project.site.nav.map((item, i) => (
@@ -4095,7 +4105,9 @@ export function App() {
             <div className="tabs">
               <button className={settingsTab === "general" ? "selected" : ""} onClick={() => setSettingsTab("general")}>General</button>
               <button className={settingsTab === "providers" ? "selected" : ""} onClick={() => setSettingsTab("providers")}>AI Providers</button>
-              <button className={settingsTab === "keys" ? "selected" : ""} onClick={() => setSettingsTab("keys")}>Image/API Keys</button>
+              {userRole === "admin" && (
+                <button className={settingsTab === "keys" ? "selected" : ""} onClick={() => setSettingsTab("keys")}>Image/API Keys</button>
+              )}
               <button className={settingsTab === "deploy" ? "selected" : ""} onClick={() => setSettingsTab("deploy")}>Deploy Safety</button>
               <button className={settingsTab === "account" ? "selected" : ""} onClick={() => { setSettingsTab("account"); setAcctMsg(""); setAcctMsgOk(false); }}>Account Management</button>
               {userRole === "admin" && (
@@ -4138,7 +4150,7 @@ export function App() {
               <p className="hint"><strong>C) Image/API keys</strong> are masked and never stored in project.json.</p>
               {providerCheckMessage && <p className="panel-status">{providerCheckMessage}</p>}
             </div>}
-            {settingsTab === "keys" && <div>
+            {settingsTab === "keys" && userRole === "admin" && <div>
               <p className="hint">Keys are saved in local ignored secret config, never project.json.</p>
               <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." /></label>
               <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." /></label>

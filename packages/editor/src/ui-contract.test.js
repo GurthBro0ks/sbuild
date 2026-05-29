@@ -1881,3 +1881,32 @@ test("modal and drawer inputs use 16px font-size to prevent iOS zoom", () => {
 test("new page flow step 1 input does not use autoFocus to prevent iOS zoom", () => {
   assert.doesNotMatch(appSource, /autoFocus[\s\S]*My New Page/);
 });
+
+test("admin-only: Image/API Keys tab button is wrapped in userRole admin check", () => {
+  assert.match(appSource, /\{userRole === "admin" &&[\s\S]*Image\/API Keys<\/button>/);
+});
+
+test("admin-only: Image/API Keys content panel is wrapped in userRole admin check", () => {
+  assert.match(appSource, /\{settingsTab === "keys" && userRole === "admin" && <div>/);
+});
+
+test("admin-only: right panel Image API Keys section is wrapped in userRole admin check", () => {
+  assert.match(appSource, /\{userRole === "admin" && <>[\s\S]*<h4>Image API Keys<\/h4>/);
+});
+
+test("admin-only: User Management tab button is wrapped in userRole admin check", () => {
+  assert.match(appSource, /\{userRole === "admin" &&[\s\S]*User Management<\/button>/);
+});
+
+test("admin-only: User Management content panel is wrapped in userRole admin check", () => {
+  assert.match(appSource, /\{settingsTab === "users" && userRole === "admin" && <div>/);
+});
+
+test("admin-only: tab guard effect redirects non-admin away from keys/users tabs", () => {
+  assert.match(appSource, /if \(userRole !== null && userRole !== "admin"\)[\s\S]*if \(settingsTab === "keys" \|\| settingsTab === "users"\)[\s\S]*setSettingsTab\("general"\)/);
+});
+
+test("admin-only: non-admin can still see Account Management tab", () => {
+  assert.match(appSource, /Account Management<\/button>/);
+  assert.match(appSource, /\{settingsTab === "account" && <div>/);
+});

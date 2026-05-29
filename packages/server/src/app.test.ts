@@ -601,3 +601,103 @@ test("auth: publish still returns 401 without auth", async () => {
     await server.close();
   }
 });
+
+test("auth: unauth GET /api/secrets/status returns 401", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/api/secrets/status`);
+    assert.equal(res.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: unauth POST /api/secrets/image-keys returns 401", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: "sk-test" })
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: non-admin user GET /api/secrets/status returns 403", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    await fetch(`${server.baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ username: "operator", password: "op12345" })
+    });
+    const userSession = await loginAs(server, "operator", "op12345");
+    assert.ok(userSession.length > 0);
+
+    const res = await fetch(`${server.baseUrl}/api/secrets/status`, {
+      headers: { cookie: `sbuild_session=${userSession}` }
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: non-admin user POST /api/secrets/image-keys returns 403", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    await fetch(`${server.baseUrl}/api/admin/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ username: "operator", password: "op12345" })
+    });
+    const userSession = await loginAs(server, "operator", "op12345");
+    assert.ok(userSession.length > 0);
+
+    const res = await fetch(`${server.baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${userSession}` },
+      body: JSON.stringify({ imageGenApiKey: "sk-test" })
+    });
+    assert.equal(res.status, 403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: admin user can GET /api/secrets/status", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    const res = await fetch(`${server.baseUrl}/api/secrets/status`, {
+      headers: { cookie: `sbuild_session=${adminSession}` }
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean };
+    assert.equal(body.ok, true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: admin user can POST /api/secrets/image-keys", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const adminSession = await loginAs(server, "admin", "admin123");
+    const res = await fetch(`${server.baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+      body: JSON.stringify({ imageGenApiKey: "sk-admin-test" })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; message: string };
+    assert.equal(body.ok, true);
+  } finally {
+    await server.close();
+  }
+});

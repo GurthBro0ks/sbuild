@@ -1230,7 +1230,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({ ok: true, ...auth });
   });
 
-  app.get("/api/secrets/status", async (_req, res) => {
+  app.get("/api/secrets/status", requireAdminMw, async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
     res.json({
       ok: true,
@@ -1247,7 +1247,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     });
   });
 
-  app.post("/api/secrets/image-keys", async (req, res) => {
+  app.post("/api/secrets/image-keys", requireAdminMw, async (req, res) => {
     const genKey = String(req.body?.imageGenApiKey || "").trim();
     const analyzeKey = String(req.body?.imageAnalyzeApiKey || "").trim();
     const secrets = await loadSecrets();
