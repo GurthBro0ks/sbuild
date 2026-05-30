@@ -2376,39 +2376,58 @@ button:disabled {
   color: var(--editor-accent);
 }
 
-/* ===== AI TOP MENU ===== */
-.ai-top-menu {
+/* ===== AI CHAT PANEL (floating overlay, not in-flow toolbar) ===== */
+.ai-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 90;
+}
+.ai-panel {
+  position: fixed;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  width: 420px;
+  height: min(80vh, 640px);
   background: var(--editor-panel-bg);
-  border-bottom: 2px solid var(--editor-accent);
+  border: 1px solid var(--editor-border);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
-  max-height: 50vh;
-  min-height: 180px;
   overflow: hidden;
-  position: relative;
-  z-index: 45;
-  flex-shrink: 0;
+  z-index: 91;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
 }
-.ai-top-menu-header {
+.ai-panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--editor-border);
   background: var(--editor-panel-bg-2);
+  flex-shrink: 0;
 }
-.ai-top-menu-tabs {
+.ai-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--editor-text);
+  margin: 0;
+  white-space: nowrap;
+}
+.ai-panel-tabs {
   display: flex;
   gap: 4px;
   flex: 1;
+  justify-content: center;
 }
-.ai-top-menu-tabs button {
-  padding: 5px 12px;
-  font-size: 13px;
+.ai-panel-tabs button {
+  padding: 5px 10px;
+  font-size: 12px;
   border-radius: 6px;
   white-space: nowrap;
 }
-.ai-top-menu-close {
+.ai-panel-close {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -2419,14 +2438,14 @@ button:disabled {
   border-radius: 6px;
   flex-shrink: 0;
 }
-.ai-top-menu-body {
+.ai-panel-body {
   padding: 0;
   overflow: hidden;
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-.ai-top-menu-tab-content {
+.ai-panel-tab-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2486,6 +2505,16 @@ button:disabled {
   font-size: 13px;
   padding: 20px 0;
 }
+.ai-chat-greeting {
+  align-self: flex-start;
+  max-width: 90%;
+}
+.ai-chat-greeting .ai-chat-msg-text {
+  background: var(--editor-panel-bg-2);
+  color: var(--editor-text);
+  border-bottom-left-radius: 4px;
+  font-style: italic;
+}
 .ai-chat-msg {
   display: flex;
   flex-direction: column;
@@ -2531,6 +2560,7 @@ button:disabled {
   padding: 4px 12px;
   border-top: 1px solid var(--editor-border);
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 .ai-apply-btn {
@@ -2543,12 +2573,21 @@ button:disabled {
   border: none;
   cursor: pointer;
 }
-.ai-apply-btn:hover {
+.ai-apply-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ai-apply-btn:hover:not(:disabled) {
   opacity: 0.9;
+}
+.ai-apply-reason {
+  font-size: 11px;
+  color: var(--editor-text-muted);
+  font-style: italic;
 }
 .ai-chat-input-area {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--editor-border);
@@ -2565,6 +2604,10 @@ button:disabled {
   color: var(--editor-input-text);
   outline: none;
   font-family: inherit;
+  resize: none;
+  min-height: 36px;
+  max-height: 100px;
+  line-height: 1.4;
 }
 .ai-chat-input:focus {
   border-color: var(--editor-accent);
@@ -2582,6 +2625,7 @@ button:disabled {
   border: none;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .ai-chat-send:disabled {
   opacity: 0.5;
@@ -2596,6 +2640,7 @@ button:disabled {
   border: 1px solid var(--editor-button-border);
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .ai-chat-target {
   display: flex;
@@ -2659,20 +2704,29 @@ button:disabled {
 }
 
 @media (max-width: 768px) {
-  .ai-top-menu {
+  .ai-panel {
     position: fixed;
+    top: auto;
     bottom: 0;
     left: 0;
     right: 0;
-    top: auto;
-    max-height: 70vh;
+    width: 100%;
+    height: 85vh;
+    max-height: 85vh;
+    transform: none;
+    border-radius: 16px 16px 0 0;
     border-bottom: none;
     border-top: 2px solid var(--editor-accent);
-    border-radius: 16px 16px 0 0;
-    z-index: 95;
     box-shadow: 0 -4px 24px rgba(0, 0, 0, .2);
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
-  .ai-top-menu-tabs button {
+  .ai-panel-backdrop {
+    z-index: 90;
+  }
+  .ai-panel {
+    z-index: 95;
+  }
+  .ai-panel-tabs button {
     padding: 6px 8px;
     font-size: 11px;
   }

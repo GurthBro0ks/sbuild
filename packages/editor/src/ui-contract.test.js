@@ -2097,12 +2097,12 @@ test("AI Top Menu: topbar AI button toggles aiTopMenuOpen", () => {
 });
 
 test("AI Top Menu: panel has three tabs (AI Chat, AI Image Gen, AI Image Enhance)", () => {
-  const menuIdx = appSource.indexOf("ai-top-menu");
-  assert.ok(menuIdx > 0, "ai-top-menu class exists");
-  const menuSection = appSource.substring(menuIdx, menuIdx + 3000);
-  assert.match(menuSection, /AI Chat/);
-  assert.match(menuSection, /AI Image Gen/);
-  assert.match(menuSection, /AI Image Enhance/);
+  const panelIdx = appSource.indexOf("ai-panel-tabs");
+  assert.ok(panelIdx > 0, "ai-panel-tabs class exists");
+  const panelSection = appSource.substring(panelIdx, panelIdx + 4000);
+  assert.match(panelSection, /AI Chat/);
+  assert.match(panelSection, /AI Image Gen/);
+  assert.match(panelSection, /AI Image Enhance/);
 });
 
 test("AI Top Menu: tabs switch without closing panel", () => {
@@ -2130,22 +2130,21 @@ test("AI Chat: Apply Suggestion only shown in Edit mode with valid proposal", ()
   assert.match(appSource, /aiHasProposal/);
   const applyIdx = appSource.indexOf("Apply Suggestion");
   assert.ok(applyIdx > 0, "Apply Suggestion button exists");
-  const applySection = appSource.substring(applyIdx - 200, applyIdx + 200);
-  assert.match(applySection, /canEditBlocks|!previewMode.*!paintMode/);
+  const applySection = appSource.substring(applyIdx - 300, applyIdx + 300);
+  assert.match(applySection, /!previewMode.*!paintMode|canEditBlocks/);
 });
 
 test("AI Chat: Apply Suggestion disabled in Preview and Markup modes", () => {
-  const applyIdx = appSource.indexOf("ai-chat-action-bar");
-  assert.ok(applyIdx > 0, "ai-chat-action-bar exists");
-  const applySection = appSource.substring(applyIdx - 100, applyIdx + 300);
-  assert.match(applySection, /!previewMode/);
-  assert.match(applySection, /!paintMode/);
+  const actionIdx = appSource.indexOf("ai-chat-action-bar");
+  assert.ok(actionIdx > 0, "ai-chat-action-bar exists");
+  const actionSection = appSource.substring(actionIdx - 100, actionIdx + 600);
+  assert.match(actionSection, /!previewMode/);
+  assert.match(actionSection, /!paintMode/);
 });
 
 test("AI Chat: mode notice shown in Preview and Markup modes", () => {
   assert.match(appSource, /ai-chat-mode-notice/);
-  assert.match(appSource, /Planning mode/);
-  assert.match(appSource, /read-only/);
+  assert.match(appSource, /Planning only/);
 });
 
 test("AI Chat: chat-style message bubbles exist", () => {
@@ -2187,29 +2186,29 @@ test("AI Image Enhance: shows select image first when no target", () => {
 });
 
 test("AI Top Menu: close button exists", () => {
-  assert.match(appSource, /ai-top-menu-close/);
+  assert.match(appSource, /ai-panel-close/);
   assert.match(appSource, /setAiTopMenuOpen\(false\)/);
 });
 
 test("AI Top Menu: CSS styles exist for panel", () => {
-  assert.match(cssSource, /\.ai-top-menu\b/);
-  assert.match(cssSource, /\.ai-top-menu-tabs/);
-  assert.match(cssSource, /\.ai-top-menu-body/);
-  assert.match(cssSource, /\.ai-top-menu-close/);
+  assert.match(cssSource, /\.ai-panel\b/);
+  assert.match(cssSource, /\.ai-panel-tabs/);
+  assert.match(cssSource, /\.ai-panel-body/);
+  assert.match(cssSource, /\.ai-panel-close/);
 });
 
 test("AI Top Menu: mobile responsive CSS exists", () => {
   const mobileIdx = cssSource.indexOf("@media (max-width: 768px)");
   assert.ok(mobileIdx > 0, "mobile media query exists");
   const mobileSection = cssSource.substring(mobileIdx);
-  assert.match(mobileSection, /\.ai-top-menu[\s\S]*?position:\s*fixed/);
+  assert.match(mobileSection, /\.ai-panel[\s\S]*?position:\s*fixed/);
 });
 
 test("AI Top Menu: theme isolation — uses editor CSS variables", () => {
-  const aiMenuIdx = cssSource.indexOf(".ai-top-menu {");
-  assert.ok(aiMenuIdx > 0, ".ai-top-menu CSS block exists");
-  const aiMenuCss = cssSource.substring(aiMenuIdx, aiMenuIdx + 400);
-  assert.match(aiMenuCss, /var\(--editor-/);
+  const panelIdx = cssSource.indexOf(".ai-panel {");
+  assert.ok(panelIdx > 0, ".ai-panel CSS block exists");
+  const panelCss = cssSource.substring(panelIdx, panelIdx + 400);
+  assert.match(panelCss, /var\(--editor-/);
 });
 
 test("AI Top Menu: available in Preview and Markup modes", () => {
@@ -2238,4 +2237,55 @@ test("AI Chat: mobile input uses 16px font to prevent zoom", () => {
   assert.ok(mobileIdx > 0, "mobile media query exists");
   const mobileSection = cssSource.substring(mobileIdx);
   assert.match(mobileSection, /\.ai-chat-input[\s\S]*?font-size:\s*16px/);
+});
+
+test("AI Chat: initial greeting bubble appears", () => {
+  assert.match(appSource, /ai-chat-greeting/);
+  assert.match(appSource, /Tell me what you want to change/);
+});
+
+test("AI Chat: sending hello does not enable Apply Suggestion", () => {
+  const suggestIdx = appSource.indexOf("/api/ai/suggest");
+  assert.ok(suggestIdx > 0, "suggest endpoint called");
+  assert.match(appSource, /!aiHasProposal/);
+  assert.match(appSource, /disabled=\{!aiHasProposal\}/);
+});
+
+test("AI Chat: Apply Suggestion shows disabled reason in Preview mode", () => {
+  assert.match(appSource, /ai-apply-reason/);
+  assert.match(appSource, /Preview mode.*switch to Edit/);
+});
+
+test("AI Chat: Apply Suggestion shows disabled reason in Markup mode", () => {
+  assert.match(appSource, /Markup mode.*switch to Edit/);
+});
+
+test("AI Top Menu: panel is floating overlay, not in-flow toolbar", () => {
+  assert.match(cssSource, /\.ai-panel[\s\S]*?position:\s*fixed/);
+  assert.match(cssSource, /\.ai-panel-backdrop/);
+  assert.doesNotMatch(cssSource, /\.ai-top-menu\b/);
+});
+
+test("AI Top Menu: backdrop click closes panel", () => {
+  assert.match(appSource, /ai-panel-backdrop/);
+  assert.match(appSource, /ai-panel-backdrop.*onClick.*setAiTopMenuOpen\(false\)/);
+});
+
+test("AI Top Menu: sBuild AI title in header", () => {
+  assert.match(appSource, /ai-panel-title/);
+  assert.match(appSource, /sBuild AI/);
+});
+
+test("AI Chat: textarea input for multiline messages", () => {
+  const inputIdx = appSource.indexOf('className="ai-chat-input"');
+  assert.ok(inputIdx > 0, "ai-chat-input class exists");
+  const inputSection = appSource.substring(Math.max(0, inputIdx - 500), inputIdx + 500);
+  assert.match(inputSection, /textarea/);
+});
+
+test("AI Top Menu: mobile safe-area bottom padding", () => {
+  const mobileIdx = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileIdx > 0, "mobile media query exists");
+  const mobileSection = cssSource.substring(mobileIdx);
+  assert.match(mobileSection, /safe-area-inset-bottom/);
 });

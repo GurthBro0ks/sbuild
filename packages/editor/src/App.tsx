@@ -4003,22 +4003,26 @@ export function App() {
       )}
 
       {aiTopMenuOpen && (
-        <div className="ai-top-menu" role="dialog" aria-label="AI panel">
-          <div className="ai-top-menu-header">
-            <div className="ai-top-menu-tabs">
+        <div className="ai-panel-backdrop" onClick={() => setAiTopMenuOpen(false)} />
+      )}
+      {aiTopMenuOpen && (
+        <div className="ai-panel" role="dialog" aria-label="AI panel" onClick={(e) => e.stopPropagation()}>
+          <div className="ai-panel-header">
+            <span className="ai-panel-title">sBuild AI</span>
+            <div className="ai-panel-tabs">
               <button onClick={() => setAiTopMenuTab("chat")} className={aiTopMenuTab === "chat" ? "selected" : ""}>AI Chat</button>
               <button onClick={() => setAiTopMenuTab("image-gen")} className={aiTopMenuTab === "image-gen" ? "selected" : ""}>AI Image Gen</button>
               <button onClick={() => setAiTopMenuTab("image-enhance")} className={aiTopMenuTab === "image-enhance" ? "selected" : ""}>AI Image Enhance</button>
             </div>
-            <button className="ai-top-menu-close" onClick={() => setAiTopMenuOpen(false)} aria-label="Close AI panel">✕</button>
+            <button className="ai-panel-close" onClick={() => setAiTopMenuOpen(false)} aria-label="Close AI panel">✕</button>
           </div>
-          <div className="ai-top-menu-body">
+          <div className="ai-panel-body">
             {aiTopMenuTab === "chat" && (
-              <div className="ai-top-menu-tab-content ai-chat-layout">
+              <div className="ai-panel-tab-content ai-chat-layout">
                 {(previewMode || paintMode) && (
                   <div className="ai-chat-mode-notice">
-                    {previewMode && "Planning mode: chat is read-only. No edits can be applied."}
-                    {paintMode && "Planning mode: chat with optional markup context. No edits can be applied."}
+                    {previewMode && "Planning only — preview mode will not edit the page."}
+                    {paintMode && "Planning only — markup can be referenced, but changes are not applied here."}
                   </div>
                 )}
                 {!previewMode && !paintMode && (
@@ -4035,7 +4039,9 @@ export function App() {
                 )}
                 <div className="ai-chat-messages">
                   {chatHistory.length === 0 && (
-                    <div className="ai-chat-empty">Ask AI to improve copy, layout, or content.</div>
+                    <div className="ai-chat-greeting">
+                      <div className="ai-chat-msg-text">Tell me what you want to change. I can help with copy, layout, images, or planning.</div>
+                    </div>
                   )}
                   {chatHistory.map((msg, i) => (
                     <div key={i} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
@@ -4045,19 +4051,28 @@ export function App() {
                   ))}
                   {aiProposalPending && <div className="ai-chat-msg ai-chat-msg-assistant"><div className="ai-chat-msg-role">AI</div><div className="ai-chat-msg-text ai-chat-typing">Thinking...</div></div>}
                 </div>
-                {!previewMode && !paintMode && aiHasProposal && (
+                {!previewMode && !paintMode && (
                   <div className="ai-chat-action-bar">
-                    <button onClick={applyAiProposal} className="ai-apply-btn">Apply Suggestion</button>
+                    <button onClick={applyAiProposal} disabled={!aiHasProposal} className="ai-apply-btn">Apply Suggestion</button>
+                    {!aiHasProposal && chatHistory.length > 0 && aiProposalPending === false && (
+                      <span className="ai-apply-reason">No structured proposal to apply</span>
+                    )}
+                  </div>
+                )}
+                {(previewMode || paintMode) && aiHasProposal && (
+                  <div className="ai-chat-action-bar">
+                    <button disabled className="ai-apply-btn">Apply Suggestion</button>
+                    <span className="ai-apply-reason">{previewMode ? "Preview mode — switch to Edit to apply" : "Markup mode — switch to Edit to apply"}</span>
                   </div>
                 )}
                 <div className="ai-chat-input-area">
-                  <input
-                    type="text"
+                  <textarea
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) { e.preventDefault(); void aiAskSuggest(); } }}
                     placeholder="Type a message..."
                     className="ai-chat-input"
+                    rows={1}
                   />
                   <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()} className="ai-chat-send">Send</button>
                   <button onClick={clearAiChat} className="ai-chat-clear" title="Clear conversation">Clear</button>
@@ -4065,7 +4080,7 @@ export function App() {
               </div>
             )}
             {aiTopMenuTab === "image-gen" && (
-              <div className="ai-top-menu-tab-content">
+              <div className="ai-panel-tab-content">
                 <div className="ai-imggen-target">
                   <span>Target: {hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
                   <div className="ai-chat-target-buttons">
@@ -4084,7 +4099,7 @@ export function App() {
               </div>
             )}
             {aiTopMenuTab === "image-enhance" && (
-              <div className="ai-top-menu-tab-content">
+              <div className="ai-panel-tab-content">
                 {hasSelectedImageTarget() ? (
                   <div className="ai-enhance-source">
                     <span>Source: {blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} — {selectedImageSourceForEnhance() ? selectedImageSourceForEnhance().split("/").pop() : "no image set"}</span>
