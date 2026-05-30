@@ -1325,8 +1325,8 @@ test("paint mode has explicit toolbar lifecycle controls", () => {
   assert.match(appSource, /aria-label="Brush size"/);
   assert.match(appSource, />Clear<\/button>/);
   assert.match(appSource, />Keep Markup<\/button>/);
-  assert.match(appSource, />Discard<\/button>/);
-  assert.match(appSource, /Markup is session-only \(not saved to your website\)\./);
+  assert.match(appSource, />Discard Markup<\/button>/);
+  assert.match(appSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
 });
 
 test("paint toolbar only renders in paint mode and never in preview", () => {
@@ -1960,4 +1960,24 @@ test("mobile workspace gets padding when paint is active", () => {
 
 test("mobile paint toolbar has top offset below mobile topbar", () => {
   assert.match(cssSource, /@media.*max-width:\s*768px[\s\S]*\.paint-toolbar[\s\S]*top:\s*max\(var\(--mobile-topbar-h/);
+});
+
+test("canvas-frame isolates editor theme from site preview by resetting --editor-* vars", () => {
+  assert.match(cssSource, /\.canvas-frame[\s\S]*--editor-bg: #f9f9f9/);
+  assert.match(cssSource, /\.canvas-frame[\s\S]*--editor-accent: #2b6dff/);
+  assert.match(cssSource, /\.canvas-frame[\s\S]*--editor-text: #222222/);
+  assert.match(cssSource, /\.canvas-frame[\s\S]*--editor-border: #e0e0e0/);
+  assert.doesNotMatch(cssSource, /\.canvas-frame[\s\S]*--editor-bg: initial/);
+});
+
+test("paint-overlay has width/height 100% and touch-action none when capturing", () => {
+  assert.match(cssSource, /\.paint-overlay[\s\S]*width:\s*100%/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]*height:\s*100%/);
+  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*touch-action:\s*none/);
+  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*user-select:\s*none/);
+});
+
+test("markup toolbar shows click-drag instruction", () => {
+  assert.match(appSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
+  assert.match(appSource, />Discard Markup<\/button>/);
 });

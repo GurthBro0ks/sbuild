@@ -3637,8 +3637,8 @@ export function App() {
           <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
           <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Keep Markup</button>
           <button disabled className="paint-ai-attach-btn">Attach to AI (coming soon)</button>
-          <button onClick={discardPaintAndExit}>Discard</button>
-          <span className="paint-toolbar-note">Markup is session-only (not saved to your website).</span>
+          <button onClick={discardPaintAndExit}>Discard Markup</button>
+          <span className="paint-toolbar-note">Click and drag to draw. Markup is only for AI notes and is not published.</span>
         </div>
       )}
 

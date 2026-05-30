@@ -768,6 +768,25 @@ button:disabled {
   color: var(--sbuild-text, #1f2a24);
   padding: 10px;
   /* Site theme variables are applied inline here */
+  /* Isolate site preview from editor theme — use light editor defaults inside canvas */
+  --editor-bg: #f9f9f9;
+  --editor-panel-bg: #ffffff;
+  --editor-panel-bg-2: #f3f3f3;
+  --editor-border: #e0e0e0;
+  --editor-text: #222222;
+  --editor-text-muted: #666666;
+  --editor-accent: #2b6dff;
+  --editor-muted: #888888;
+  --editor-button-bg: #ffffff;
+  --editor-button-text: #222222;
+  --editor-button-border: #e0e0e0;
+  --editor-status-bg: #eef5ff;
+  --editor-status-text: #222222;
+  --editor-input-bg: #ffffff;
+  --editor-input-text: #222222;
+  --editor-danger: #c44;
+  --editor-highlight: #2b6dff;
+  --editor-surface: #f5f5f5;
 }
 .canvas-frame.tablet { max-width: 820px; }
 .canvas-frame.phone { max-width: 430px; }
@@ -1064,6 +1083,8 @@ button:disabled {
 .paint-overlay {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -1071,6 +1092,9 @@ button:disabled {
   pointer-events: auto;
   cursor: crosshair;
   z-index: 20;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .canvas-frame.paint-exclusive,
