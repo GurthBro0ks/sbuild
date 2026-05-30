@@ -1908,27 +1908,56 @@ export function App() {
     setAiImgGenResult("");
   }
 
+  function getSelectedEnhanceSource(): {
+    kind: "image-block" | "gallery-image" | "background" | "gallery-empty" | "none";
+    blockId?: string;
+    blockType?: string;
+    imageIndex?: number;
+    src?: string;
+    label: string;
+    reason?: string;
+  } {
+    const block = selectedBlock;
+    if (!block) {
+      return { kind: "none", label: "No block selected", reason: "Select an image block, gallery image, or background first." };
+    }
+    if (block.type === "gallery" && selectedGalleryIndex !== null) {
+      const galleryData = block.data as GalleryBlockData;
+      const slot = galleryData.images[selectedGalleryIndex];
+      if (slot && slot.src) {
+        return { kind: "gallery-image", blockId: block.id, blockType: "gallery", imageIndex: selectedGalleryIndex, src: slot.src, label: `Gallery image ${selectedGalleryIndex + 1}` };
+      }
+      return { kind: "gallery-empty", blockId: block.id, blockType: "gallery", imageIndex: selectedGalleryIndex, label: `Gallery image ${selectedGalleryIndex + 1}`, reason: "Selected gallery image has no image set." };
+    }
+    if (block.type === "image") {
+      const imageData = block.data as ImageBlockData;
+      if (imageData.src) {
+        return { kind: "image-block", blockId: block.id, blockType: "image", src: imageData.src, label: "Image block" };
+      }
+      return { kind: "none", blockId: block.id, blockType: "image", label: "Image block — no image set", reason: "Select an image block, gallery image, or background first." };
+    }
+    if (block.type === "hero") {
+      const bgImage = block.styles?.backgroundImage || "";
+      if (bgImage) {
+        return { kind: "background", blockId: block.id, blockType: "hero", src: bgImage, label: "Hero background" };
+      }
+    }
+    const bgImage = block.styles?.backgroundImage || "";
+    if (bgImage) {
+      return { kind: "background", blockId: block.id, blockType: block.type, src: bgImage, label: `${blockTypeLabels[block.type] || block.type} background` };
+    }
+    return { kind: "none", label: "No image source", reason: "Select an image block, gallery image, or background first." };
+  }
+
   function hasSelectedImageTarget(): boolean {
     if (!selectedBlock) return false;
     return selectedBlock.type === "image" || selectedBlock.type === "hero" || selectedBlock.type === "gallery";
   }
 
-  function selectedImageSourceForEnhance(): string {
-    if (!selectedBlock) return "";
-    if (selectedBlock.type === "image") {
-      const bd = selectedBlock.data as ImageBlockData;
-      return bd?.src || "";
-    }
-    if (selectedBlock.type === "hero") {
-      return selectedBlock.styles?.backgroundImage || "";
-    }
-    return "";
-  }
-
   async function aiEnhanceImage() {
-    const sourceImage = selectedImageSourceForEnhance();
-    if (!sourceImage) {
-      setAiEnhanceStatus("Select an image block or background first.");
+    const source = getSelectedEnhanceSource();
+    if (!source.src) {
+      setAiEnhanceStatus(source.reason || "Select an image block, gallery image, or background first.");
       return;
     }
     setAiEnhanceStatus("Processing image...");
@@ -1936,7 +1965,7 @@ export function App() {
     const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; editedImageUrl?: string; error?: string }>("/api/images/edit", {
       method: "POST",
       body: JSON.stringify({
-        imagePath: sourceImage,
+        imagePath: source.src,
         editType: aiEnhanceType,
         instruction: aiEnhancePrompt,
         targetContext: currentTargetContext()
@@ -4100,13 +4129,18 @@ export function App() {
             )}
             {aiTopMenuTab === "image-enhance" && (
               <div className="ai-panel-tab-content">
-                {hasSelectedImageTarget() ? (
-                  <div className="ai-enhance-source">
-                    <span>Source: {blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} — {selectedImageSourceForEnhance() ? selectedImageSourceForEnhance().split("/").pop() : "no image set"}</span>
-                  </div>
-                ) : (
-                  <p className="ai-status-msg ai-no-target">Select an image block or background first.</p>
-                )}
+                {(() => {
+                  const es = getSelectedEnhanceSource();
+                  if (es.kind !== "none") {
+                    return (
+                      <div className="ai-enhance-source">
+                        <span>Source: {es.label}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
+                        {es.reason && <p className="ai-status-msg">{es.reason}</p>}
+                      </div>
+                    );
+                  }
+                  return <p className="ai-status-msg ai-no-target">{es.reason || "Select an image block, gallery image, or background first."}</p>;
+                })()}
                 <div className="ai-enhance-options">
                   <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
                     <option value="enhance">Enhance</option>
@@ -4117,7 +4151,7 @@ export function App() {
                 </div>
                 <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." className="mobile-field-stack" />
                 <div className="button-row ai-button-row">
-                  <button onClick={() => void aiEnhanceImage()} disabled={!hasSelectedImageTarget()}>Analyze/Enhance</button>
+                  <button onClick={() => void aiEnhanceImage()} disabled={!getSelectedEnhanceSource().src}>Analyze/Enhance</button>
                   <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
                   <button onClick={clearAiEnhance}>Clear</button>
                 </div>

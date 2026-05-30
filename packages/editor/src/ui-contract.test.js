@@ -2178,11 +2178,50 @@ test("AI Image Gen: shows missing-provider message safely", () => {
   assert.match(appSource, /Generate Image/);
 });
 
-test("AI Image Enhance: shows select image first when no target", () => {
-  assert.match(appSource, /hasSelectedImageTarget/);
-  assert.match(appSource, /Select an image block or background first/);
-  assert.match(appSource, /aiEnhanceImage/);
-  assert.match(appSource, /Analyze\/Enhance/);
+test("AI Image Enhance: uses getSelectedEnhanceSource helper for source detection", () => {
+  assert.match(appSource, /function getSelectedEnhanceSource/);
+  assert.match(appSource, /kind: "gallery-image"/);
+  assert.match(appSource, /kind: "gallery-empty"/);
+  assert.match(appSource, /kind: "image-block"/);
+  assert.match(appSource, /kind: "background"/);
+  assert.match(appSource, /kind: "none"/);
+  assert.match(appSource, /Select an image block, gallery image, or background first/);
+  assert.match(appSource, /Selected gallery image has no image set/);
+});
+
+test("AI Image Enhance: shows source label when image target detected", () => {
+  assert.match(appSource, /es\.label/);
+  assert.match(appSource, /Source:/);
+  assert.match(appSource, /Gallery image/);
+  assert.match(appSource, /Image block/);
+  assert.match(appSource, /background/);
+});
+
+test("AI Image Enhance: shows no-image-set reason for gallery with empty slot", () => {
+  assert.match(appSource, /gallery-empty/);
+  assert.match(appSource, /Selected gallery image has no image set/);
+  assert.match(appSource, /es\.reason/);
+});
+
+test("AI Image Enhance: Analyze/Enhance disabled when no src available", () => {
+  assert.match(appSource, /getSelectedEnhanceSource\(\)\.src/);
+  assert.match(appSource, /disabled=\{!getSelectedEnhanceSource\(\)\.src\}/);
+});
+
+test("AI Image Enhance: Apply Enhanced Image disabled until result exists", () => {
+  assert.match(appSource, /disabled=\{!aiEnhanceResult\}/);
+  assert.match(appSource, /applyAiEnhancedImage/);
+});
+
+test("AI Image Enhance: aiEnhanceImage uses getSelectedEnhanceSource", () => {
+  assert.match(appSource, /async function aiEnhanceImage/);
+  assert.match(appSource, /source = getSelectedEnhanceSource\(\)/);
+  assert.match(appSource, /source\.reason/);
+});
+
+test("AI Image Enhance: missing key message from server is displayed, not source-missing", () => {
+  assert.match(appSource, /Image enhancement unavailable/);
+  assert.match(appSource, /data\.message \|\| data\.error/);
 });
 
 test("AI Top Menu: close button exists", () => {
