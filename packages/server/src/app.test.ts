@@ -44,9 +44,15 @@ async function startTempServer(editorDistPath: string): Promise<{ baseUrl: strin
 async function withNoOpenAIKey<T>(fn: () => Promise<T>): Promise<T> {
   const oldA = process.env.SBUILD_OPENAI_API_KEY;
   const oldB = process.env.OPENAI_API_KEY;
+  const oldChat = process.env.SBUILD_OPENAI_CHAT_API_KEY;
+  const oldImage = process.env.SBUILD_OPENAI_IMAGE_API_KEY;
+  const oldAnalyze = process.env.SBUILD_OPENAI_ANALYZE_API_KEY;
   let existingSecrets: string | null = null;
   delete process.env.SBUILD_OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
+  delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
+  delete process.env.SBUILD_OPENAI_IMAGE_API_KEY;
+  delete process.env.SBUILD_OPENAI_ANALYZE_API_KEY;
   try {
     existingSecrets = await fs.readFile(secretsFile, "utf8");
     await fs.rm(secretsFile, { force: true });
@@ -65,6 +71,31 @@ async function withNoOpenAIKey<T>(fn: () => Promise<T>): Promise<T> {
     else process.env.SBUILD_OPENAI_API_KEY = oldA;
     if (oldB === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = oldB;
+    if (oldChat === undefined) delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
+    else process.env.SBUILD_OPENAI_CHAT_API_KEY = oldChat;
+    if (oldImage === undefined) delete process.env.SBUILD_OPENAI_IMAGE_API_KEY;
+    else process.env.SBUILD_OPENAI_IMAGE_API_KEY = oldImage;
+    if (oldAnalyze === undefined) delete process.env.SBUILD_OPENAI_ANALYZE_API_KEY;
+    else process.env.SBUILD_OPENAI_ANALYZE_API_KEY = oldAnalyze;
+  }
+}
+
+async function withTemporarySecretsFileContent<T>(content: string, fn: () => Promise<T>): Promise<T> {
+  let existingSecrets: string | null = null;
+  try {
+    existingSecrets = await fs.readFile(secretsFile, "utf8");
+  } catch {
+    existingSecrets = null;
+  }
+  await fs.writeFile(secretsFile, content, "utf8");
+  try {
+    return await fn();
+  } finally {
+    if (existingSecrets === null) {
+      await fs.rm(secretsFile, { force: true });
+    } else {
+      await fs.writeFile(secretsFile, existingSecrets, "utf8");
+    }
   }
 }
 
@@ -156,18 +187,35 @@ test("/api/project remains available with editor static serving", async () => {
 
 test("/api/secrets/image-keys updates /api/secrets/status source safely", async () => {
   const key = `local-key-${Date.now()}-demo`;
+  const chatKey = `local-chat-${Date.now()}-demo`;
   const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ imageGenApiKey: key })
+    body: JSON.stringify({ imageGenApiKey: key, chatApiKey: chatKey })
   });
   assert.equal(saveResponse.status, 200);
 
   const statusResponse = await fetch(`${baseUrl}/api/secrets/status`);
   assert.equal(statusResponse.status, 200);
-  const body = await statusResponse.json() as {
+  const rawText = await statusResponse.text();
+  assert.ok(!rawText.includes(key));
+  assert.ok(!rawText.includes(chatKey));
+  const body = JSON.parse(rawText) as {
+    channels?: {
+      chat?: { configured?: boolean; source?: string };
+      imageGen?: { configured?: boolean; source?: string };
+      imageAnalyze?: { configured?: boolean; source?: string };
+    };
+    chat?: { configured?: boolean; source?: string; maskedKey?: string | null };
     imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
   };
+  assert.equal(body.channels?.chat?.configured, true);
+  assert.ok(body.channels?.chat?.source === "local" || body.channels?.chat?.source === "env");
+  assert.equal(body.channels?.imageGen?.configured, true);
+  assert.ok(body.channels?.imageGen?.source === "local" || body.channels?.imageGen?.source === "env");
+  assert.equal(body.chat?.configured, true);
+  assert.ok(body.chat?.source === "local" || body.chat?.source === "env");
+  assert.ok((body.chat?.maskedKey || "").length >= 4);
   assert.equal(body.imageGen?.configured, true);
   assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
   assert.ok((body.imageGen?.maskedKey || "").length >= 4);
@@ -200,6 +248,88 @@ test("/api/status uses local secret key source when env key is missing", async (
     if (oldB === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = oldB;
   }
+});
+
+test("/api/status reports chat API source and model", async () => {
+  const oldChat = process.env.SBUILD_OPENAI_CHAT_API_KEY;
+  const oldOpenAI = process.env.OPENAI_API_KEY;
+  delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chatApiKey: `local-chat-${Date.now()}-status` })
+    });
+    assert.equal(saveResponse.status, 200);
+
+    const statusResponse = await fetch(`${baseUrl}/api/status`);
+    assert.equal(statusResponse.status, 200);
+    const body = await statusResponse.json() as {
+      ok: boolean;
+      status?: {
+        chatApi?: string;
+        chatModel?: string;
+        chat?: { configured?: boolean; source?: string; status?: string };
+        imageGen?: { configured?: boolean; source?: string; status?: string };
+        imageAnalyze?: { configured?: boolean; source?: string; status?: string };
+      };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.status?.chatApi, "configured-local");
+    assert.ok(typeof body.status?.chatModel === "string" && body.status.chatModel.length > 0);
+    assert.equal(typeof body.status?.chat?.configured, "boolean");
+    assert.equal(typeof body.status?.imageGen?.configured, "boolean");
+    assert.equal(typeof body.status?.imageAnalyze?.configured, "boolean");
+  } finally {
+    if (oldChat === undefined) delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
+    else process.env.SBUILD_OPENAI_CHAT_API_KEY = oldChat;
+    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldOpenAI;
+  }
+});
+
+test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/providers/status`);
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: boolean;
+    channels?: {
+      chat?: { configured?: boolean; source?: string; status?: string };
+      imageGen?: { configured?: boolean; source?: string; status?: string };
+      imageAnalyze?: { configured?: boolean; source?: string; status?: string };
+    };
+    providers?: Array<{ name: string; status: string; message?: string }>;
+  };
+  assert.equal(body.ok, true);
+  assert.equal(typeof body.channels?.chat?.configured, "boolean");
+  assert.equal(typeof body.channels?.imageGen?.configured, "boolean");
+  assert.equal(typeof body.channels?.imageAnalyze?.configured, "boolean");
+  const chatProvider = (body.providers || []).find((provider) => provider.name === "AI Chat Provider");
+  assert.ok(chatProvider);
+  assert.ok(["connected", "not_configured", "unknown", "error"].includes(String(chatProvider?.status || "")));
+  assert.ok(typeof chatProvider?.message === "string");
+});
+
+test("/api/status handles malformed local secrets file safely", async () => {
+  await withTemporarySecretsFileContent("{ not-json ", async () => {
+    const response = await fetch(`${baseUrl}/api/status`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      ok: boolean;
+      status?: {
+        imageApi?: string;
+        imageAnalyzeApi?: string;
+        imageGen?: { configured?: boolean; source?: string };
+        imageAnalyze?: { configured?: boolean; source?: string };
+      };
+    };
+    assert.equal(body.ok, true);
+    assert.ok(typeof body.status?.imageApi === "string");
+    assert.ok(typeof body.status?.imageAnalyzeApi === "string");
+    assert.equal(typeof body.status?.imageGen?.configured, "boolean");
+    assert.equal(typeof body.status?.imageAnalyze?.configured, "boolean");
+  });
 });
 
 test("/api/ai/providers/test supports image-analyze provider", async () => {
@@ -829,7 +959,7 @@ test("POST /api/ai/suggest with site targetKind includes site context prefix", a
   });
 });
 
-test("POST /api/ai/suggest returns hasProposal=false for mock provider", async () => {
+test("POST /api/ai/suggest returns stable hasProposal/provider fields", async () => {
   await withNoOpenAIKey(async () => {
     const response = await fetch(`${baseUrl}/api/ai/suggest`, {
       method: "POST",
@@ -844,8 +974,11 @@ test("POST /api/ai/suggest returns hasProposal=false for mock provider", async (
     assert.equal(response.status, 200);
     const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string };
     assert.equal(body.ok, true);
-    assert.equal(body.hasProposal, false);
-    assert.equal(body.provider, "mock");
+    assert.equal(typeof body.hasProposal, "boolean");
+    assert.equal(typeof body.provider, "string");
+    if (body.provider === "none") {
+      assert.equal(body.hasProposal, false);
+    }
   });
 });
 

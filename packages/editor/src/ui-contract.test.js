@@ -208,6 +208,23 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /dryRun/);
 });
 
+test("provider and key panels expose chat provider and chat key status", () => {
+  assert.match(appSource, /AI Chat API Key/);
+  assert.match(appSource, /Chat source:/);
+  assert.match(appSource, /Chat key:/);
+  assert.match(appSource, /normalizeSecretStatus/);
+  assert.match(appSource, /normalizeProviderStatus/);
+  assert.match(appSource, /status\.imageApi/);
+  assert.match(appSource, /status\.imageAnalyzeApi/);
+  assert.match(appSource, /status\.chatApi/);
+  assert.match(appSource, /DEFAULT_SECRET_STATUS/);
+  assert.match(appSource, /setSecretStatus\(DEFAULT_SECRET_STATUS\)/);
+  assert.match(appSource, /Provider status unavailable — refresh or check Settings\./);
+  assert.doesNotMatch(appSource, /secretStatus\?\.chat\.source/);
+  assert.doesNotMatch(appSource, /secretStatus\?\.imageGen\.source/);
+  assert.doesNotMatch(appSource, /secretStatus\?\.imageAnalyze\.source/);
+});
+
 test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
   assert.match(smokeSource, /unauth \/api\/publish expected 401/);

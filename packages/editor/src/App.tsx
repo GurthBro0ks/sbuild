@@ -25,7 +25,6 @@ import {
   BlockPartStyles,
   PartStyle,
   SBuildProviderStatus,
-  SBuildSecretConfig,
   SBuildBuildInfo,
   SBUILD_VERSION,
   SBUILD_APP_NAME,
@@ -54,6 +53,19 @@ type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about" | "account" | "users";
 type ChatItem = { role: "user" | "assistant"; text: string };
+type ProviderSource = "missing" | "local" | "env" | "configured" | "not_configured" | "unknown";
+type ChannelStatus = {
+  source: ProviderSource;
+  configured: boolean;
+  statusText: string;
+  maskedKey: string | null;
+  message?: string;
+};
+type SecretStatus = {
+  chat: ChannelStatus;
+  imageGen: ChannelStatus;
+  imageAnalyze: ChannelStatus;
+};
 type AiTopMenuTab = "chat" | "image-gen" | "image-enhance";
 type AiChatTarget = "block" | "page" | "site";
 type PaintPoint = { x: number; y: number };
@@ -200,6 +212,157 @@ function toRowRenderItems(blocks: Block[]): RowRenderItem[] {
 }
 
 function apiBase(): string { return ""; }
+
+function toRecord(input: unknown): Record<string, unknown> {
+  return input && typeof input === "object" ? input as Record<string, unknown> : {};
+}
+
+function toProviderSource(input: unknown): ProviderSource {
+  const value = String(input || "").trim().toLowerCase();
+  if (!value) return "unknown";
+  if (value.includes("configured-local") || value === "local") return "local";
+  if (value.includes("configured-env") || value === "env") return "env";
+  if (value === "missing" || value.includes("missing-key")) return "missing";
+  if (value === "not_configured") return "not_configured";
+  if (value === "configured") return "configured";
+  if (value === "unknown") return "unknown";
+  if (value.includes("local")) return "local";
+  if (value.includes("env")) return "env";
+  if (value.includes("missing")) return "missing";
+  if (value.includes("not_configured")) return "not_configured";
+  if (value.includes("configured")) return "configured";
+  return "unknown";
+}
+
+function sourceIsConfigured(source: ProviderSource): boolean {
+  return source === "local" || source === "env" || source === "configured";
+}
+
+function sourceStatusText(source: ProviderSource, configured: boolean): string {
+  if (configured) return source === "unknown" ? "Configured" : `Configured (${source})`;
+  if (source === "missing" || source === "not_configured") return "Not configured";
+  return "Provider status unavailable — refresh or check Settings.";
+}
+
+function normalizeChannel(input: {
+  sourceHints: unknown[];
+  configuredHint?: unknown;
+  maskedKeyHint?: unknown;
+  messageHint?: unknown;
+}): ChannelStatus {
+  let source: ProviderSource = "unknown";
+  for (const hint of input.sourceHints) {
+    const next = toProviderSource(hint);
+    if (next !== "unknown") {
+      source = next;
+      break;
+    }
+  }
+  const configured = typeof input.configuredHint === "boolean"
+    ? input.configuredHint
+    : sourceIsConfigured(source);
+  const maskedKey = typeof input.maskedKeyHint === "string" && input.maskedKeyHint.trim()
+    ? input.maskedKeyHint
+    : null;
+  const message = typeof input.messageHint === "string" ? input.messageHint : undefined;
+  return {
+    source,
+    configured,
+    statusText: sourceStatusText(source, configured),
+    maskedKey,
+    message
+  };
+}
+
+function normalizeSecretStatus(raw: unknown): SecretStatus {
+  const root = toRecord(raw);
+  const status = toRecord(root.status);
+  const chat = toRecord(root.chat);
+  const imageGen = toRecord(root.imageGen);
+  const imageAnalyze = toRecord(root.imageAnalyze);
+  return {
+    chat: normalizeChannel({
+      sourceHints: [chat.source, root.chatKeySource, status.chatApi, status.chat],
+      configuredHint: chat.configured,
+      maskedKeyHint: chat.maskedKey,
+      messageHint: chat.message
+    }),
+    imageGen: normalizeChannel({
+      sourceHints: [imageGen.source, root.imageGenKeySource, status.imageApi, status.imageGen],
+      configuredHint: imageGen.configured,
+      maskedKeyHint: imageGen.maskedKey,
+      messageHint: imageGen.message
+    }),
+    imageAnalyze: normalizeChannel({
+      sourceHints: [imageAnalyze.source, root.imageAnalyzeKeySource, status.imageAnalyzeApi, status.imageAnalyze],
+      configuredHint: imageAnalyze.configured,
+      maskedKeyHint: imageAnalyze.maskedKey,
+      messageHint: imageAnalyze.message
+    })
+  };
+}
+
+function normalizedProviderState(input: unknown): SBuildProviderStatus["status"] {
+  const value = String(input || "").trim().toLowerCase();
+  if (value === "connected") return "connected";
+  if (value === "not_configured") return "not_configured";
+  if (value === "error") return "error";
+  if (value === "unknown") return "unknown";
+  return "unknown";
+}
+
+function providerStateFromChannel(channel: ChannelStatus): SBuildProviderStatus["status"] {
+  return channel.configured ? "connected" : (channel.source === "missing" || channel.source === "not_configured") ? "not_configured" : "unknown";
+}
+
+type NormalizedProviderStatus = {
+  name: string;
+  status: SBuildProviderStatus["status"];
+  message: string;
+};
+
+function upsertProviderStatus(list: NormalizedProviderStatus[], next: NormalizedProviderStatus): NormalizedProviderStatus[] {
+  const index = list.findIndex((item) => item.name === next.name);
+  if (index >= 0) {
+    const copy = [...list];
+    copy[index] = next;
+    return copy;
+  }
+  return [...list, next];
+}
+
+function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): NormalizedProviderStatus[] {
+  const root = toRecord(raw);
+  const rawProviders = Array.isArray(root.providers) ? root.providers : [];
+  let providers = rawProviders
+    .map((item) => toRecord(item))
+    .filter((item) => typeof item.name === "string" && String(item.name).trim().length > 0)
+    .map((item) => ({
+      name: String(item.name),
+      status: normalizedProviderState(item.status),
+      message: typeof item.message === "string" && item.message.trim().length > 0
+        ? item.message
+        : "Provider status unavailable — refresh or check Settings."
+    }));
+  providers = upsertProviderStatus(providers, {
+    name: "AI Chat Provider",
+    status: providerStateFromChannel(secrets.chat),
+    message: secrets.chat.statusText
+  });
+  providers = upsertProviderStatus(providers, {
+    name: "Image Generation API",
+    status: providerStateFromChannel(secrets.imageGen),
+    message: secrets.imageGen.statusText
+  });
+  providers = upsertProviderStatus(providers, {
+    name: "Image Analysis API",
+    status: providerStateFromChannel(secrets.imageAnalyze),
+    message: secrets.imageAnalyze.statusText
+  });
+  return providers;
+}
+
+const DEFAULT_SECRET_STATUS = normalizeSecretStatus({});
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${url}`, { headers: { "Content-Type": "application/json" }, ...init });
@@ -860,7 +1023,7 @@ export function App() {
   const siteHeaderLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
   const [themeApplied, setThemeApplied] = useState("");
   const [providerStatus, setProviderStatus] = useState<SBuildProviderStatus[]>([]);
-  const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
+  const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "", chatApiKey: "" });
   const [secretStatusMsg, setSecretStatusMsg] = useState("");
   const [resizeStatus, setResizeStatus] = useState("");
   const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>("fields");
@@ -927,7 +1090,7 @@ export function App() {
   const [selectedSitePart, setSelectedSitePart] = useState<string | null>(null);
   const [selectedNavIndex, setSelectedNavIndex] = useState<number | null>(null);
   const [layoutHighlight, setLayoutHighlight] = useState(false);
-  const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
+  const [secretStatus, setSecretStatus] = useState<SecretStatus>(DEFAULT_SECRET_STATUS);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
   const [aiTopMenuOpen, setAiTopMenuOpen] = useState(false);
@@ -1215,10 +1378,12 @@ export function App() {
     void loadProject();
     void loadFonts();
     void loadImages();
-    void loadProviders();
-    void loadSecretsStatus();
     void loadBuildInfo();
     void loadPhotoFolder();
+    void (async () => {
+      const secrets = await loadSecretsStatus();
+      await loadProviders(secrets);
+    })();
   }, []);
 
   useEffect(() => {
@@ -1530,19 +1695,31 @@ export function App() {
     }
   }
 
-  async function loadProviders() {
+  async function loadProviders(secretsSnapshot: SecretStatus = secretStatus) {
     try {
-      const data = await fetchJson<{ ok: boolean; providers: SBuildProviderStatus[] }>("/api/ai/providers/status");
-      setProviderStatus(data.providers || []);
-    } catch { setProviderStatus([]); }
+      const data = await fetchJson<unknown>("/api/ai/providers/status");
+      setProviderStatus(normalizeProviderStatus(data, secretsSnapshot));
+    } catch {
+      setProviderStatus(normalizeProviderStatus({}, secretsSnapshot));
+    }
   }
 
-  async function loadSecretsStatus() {
+  async function loadSecretsStatus(): Promise<SecretStatus> {
     try {
-      const data = await fetchJson<{ ok: boolean; imageGen: { source: "env" | "local" | "missing" }; imageAnalyze: { source: "env" | "local" | "missing" } }>("/api/secrets/status");
-      setSecretStatus({ imageGenKeySource: data.imageGen.source, imageAnalyzeKeySource: data.imageAnalyze.source });
+      const data = await fetchJson<unknown>("/api/secrets/status");
+      const normalized = normalizeSecretStatus(data);
+      setSecretStatus(normalized);
+      return normalized;
     } catch {
-      setSecretStatus(null);
+      try {
+        const fallback = await fetchJson<unknown>("/api/status");
+        const normalized = normalizeSecretStatus(fallback);
+        setSecretStatus(normalized);
+        return normalized;
+      } catch {
+        setSecretStatus(DEFAULT_SECRET_STATUS);
+        return DEFAULT_SECRET_STATUS;
+      }
     }
   }
 
@@ -2905,13 +3082,20 @@ export function App() {
     try {
       await fetchJson("/api/secrets/image-keys", {
         method: "POST",
-        body: JSON.stringify({ imageGenApiKey: secretInputs.imageGenApiKey, imageAnalyzeApiKey: secretInputs.imageAnalyzeApiKey })
+        body: JSON.stringify({
+          imageGenApiKey: secretInputs.imageGenApiKey,
+          imageAnalyzeApiKey: secretInputs.imageAnalyzeApiKey,
+          chatApiKey: secretInputs.chatApiKey
+        })
       });
       setSecretStatusMsg("Keys saved locally.");
       setStatus("Secret key saved");
-      setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "" });
-      await loadProviders();
-      await loadSecretsStatus();
+      setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "", chatApiKey: "" });
+      const refreshedSecrets = await loadSecretsStatus();
+      await loadProviders(refreshedSecrets);
+      if (refreshedSecrets.imageGen.configured) {
+        setAiImgGenStatus(`Image generation provider ready (${refreshedSecrets.imageGen.source}).`);
+      }
     } catch (error) {
       setSecretStatusMsg(`Failed: ${String(error)}`);
     }
@@ -3933,11 +4117,17 @@ export function App() {
                 <label>Image Analysis API Key
                   <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
                 </label>
+                <label>AI Chat API Key
+                  <input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder="sk-..." />
+                </label>
                 <div className="button-row">
                   <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
                   <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
                   <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
                 </div>
+                <p className="panel-status">Chat source: {secretStatus.chat.source} · {secretStatus.chat.statusText} · Chat key: {secretStatus.chat.maskedKey || "not saved"}</p>
+                <p className="panel-status">Image gen source: {secretStatus.imageGen.source} · {secretStatus.imageGen.statusText} · Key: {secretStatus.imageGen.maskedKey || "not saved"}</p>
+                <p className="panel-status">Image analyze source: {secretStatus.imageAnalyze.source} · {secretStatus.imageAnalyze.statusText} · Key: {secretStatus.imageAnalyze.maskedKey || "not saved"}</p>
                 {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
               </>}
 
@@ -4686,8 +4876,11 @@ export function App() {
               <p className="hint">Keys are saved in local ignored secret config, never project.json.</p>
               <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." /></label>
               <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." /></label>
+              <label>AI Chat API Key<input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder="sk-..." /></label>
               <div className="button-row"><button onClick={() => void saveSecrets()}>Save Keys</button><button onClick={() => void testProvider("image-gen")}>Test Keys</button></div>
-              <p className="panel-status">Image gen source: {secretStatus?.imageGenKeySource || "missing"} · Image analyze source: {secretStatus?.imageAnalyzeKeySource || "missing"}</p>
+              <p className="panel-status">Chat source: {secretStatus.chat.source} · {secretStatus.chat.statusText} · Chat key: {secretStatus.chat.maskedKey || "not saved"}</p>
+              <p className="panel-status">Image gen source: {secretStatus.imageGen.source} · {secretStatus.imageGen.statusText} · Key: {secretStatus.imageGen.maskedKey || "not saved"}</p>
+              <p className="panel-status">Image analyze source: {secretStatus.imageAnalyze.source} · {secretStatus.imageAnalyze.statusText} · Key: {secretStatus.imageAnalyze.maskedKey || "not saved"}</p>
               {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
             </div>}
             {settingsTab === "deploy" && <div>

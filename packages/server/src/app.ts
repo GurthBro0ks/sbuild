@@ -69,7 +69,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
     publishAllowed: process.env.SBUILD_ALLOW_PUBLISH === "1",
   };
 }
-import { applyDeterministicPaintFix, chatWithFallback, wizardFallback } from "./lib/ai.js";
+import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
 import {
   backupsDir,
@@ -780,8 +780,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   });
 
   app.post("/api/ai/chat", async (req, res) => {
-    const prompt = String(req.body?.prompt || "");
-    const result = await chatWithFallback(prompt);
+    const prompt = String(req.body?.prompt || "").trim();
+    if (!prompt) {
+      res.status(400).json({ ok: false, error: "prompt is required" });
+      return;
+    }
+    const result = await chatWithProviders(prompt);
     res.json({ ok: true, ...result });
   });
 
@@ -802,8 +806,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           ? `You are editing a ${blockType} block. `
           : "You are editing a block. ";
     const fullPrompt = `${contextPrefix}${prompt}`;
-    const result = await chatWithFallback(fullPrompt);
-    const hasProposal = result.provider !== "mock"
+    const result = await chatWithProviders(fullPrompt);
+    const hasProposal = result.available
       && targetKind === "block"
       && Boolean(blockId)
       && Boolean(blockType);
@@ -818,6 +822,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ok: true,
       suggestion: result.response,
       provider: result.provider,
+      source: result.source,
       hasProposal,
       targetKind,
       blockId,
@@ -1254,9 +1259,214 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return { genKey, genSource, analyzeKey, analyzeSource };
   }
 
+  async function getChatApiKeyStatus(): Promise<{ chatKey: string; chatSource: "env" | "local" | "missing" }> {
+    const envChat = process.env.SBUILD_OPENAI_CHAT_API_KEY || process.env.OPENAI_API_KEY || "";
+    const secrets = await loadSecrets();
+    const localChat = String((secrets as Record<string, unknown>).chatApiKey || "").trim();
+    const localAnalyze = String((secrets as Record<string, unknown>).imageAnalyzeApiKey || "").trim();
+    const localGen = String((secrets as Record<string, unknown>).imageGenApiKey || "").trim();
+    const chatKey = envChat || localChat || localAnalyze || localGen;
+    const chatSource: "env" | "local" | "missing" = envChat ? "env" : (localChat || localAnalyze || localGen) ? "local" : "missing";
+    return { chatKey, chatSource };
+  }
+
+  type ChatProviderResult = {
+    provider: string;
+    source: "local" | "env" | "missing";
+    available: boolean;
+    response: string;
+    model?: string;
+    message?: string;
+  };
+
+  async function getOllamaStatus(): Promise<{ reachable: boolean; model: string | null; message: string }> {
+    const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+    const preferredModel = String(process.env.SBUILD_OLLAMA_MODEL || "").trim();
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      const response = await fetch(`${endpoint}/api/tags`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!response.ok) {
+        return { reachable: false, model: null, message: `Ollama unreachable (${response.status}).` };
+      }
+      const payload = (await response.json().catch(() => ({}))) as { models?: Array<{ name?: string }> };
+      const models = (payload.models || []).map((m) => String(m.name || "").trim()).filter(Boolean);
+      if (models.length === 0) {
+        return { reachable: true, model: null, message: "Ollama reachable but no local models installed." };
+      }
+      const model = preferredModel && models.includes(preferredModel) ? preferredModel : models[0];
+      return { reachable: true, model, message: `Ollama ready with model ${model}.` };
+    } catch {
+      return { reachable: false, model: null, message: "Ollama not reachable on localhost." };
+    }
+  }
+
+  async function chatWithProviders(prompt: string): Promise<ChatProviderResult> {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt) {
+      return {
+        provider: "none",
+        source: "missing",
+        available: false,
+        response: "AI chat unavailable: prompt is empty.",
+        message: "prompt is required"
+      };
+    }
+
+    const ollama = await getOllamaStatus();
+    if (ollama.reachable && ollama.model) {
+      try {
+        const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+        const response = await fetch(`${endpoint}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: ollama.model,
+            stream: false,
+            messages: [{ role: "user", content: cleanPrompt }]
+          })
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          message?: { content?: string };
+        };
+        const text = String(payload.message?.content || "").trim();
+        if (response.ok && text) {
+          return {
+            provider: "ollama",
+            source: "local",
+            available: true,
+            response: text,
+            model: ollama.model,
+            message: ollama.message
+          };
+        }
+      } catch {
+        // Fall through to API-key provider.
+      }
+    }
+
+    const chatKey = await getChatApiKeyStatus();
+    if (!chatKey.chatKey) {
+      return {
+        provider: "none",
+        source: "missing",
+        available: false,
+        response: "AI chat unavailable: no local model found and API key not configured.",
+        message: ollama.message
+      };
+    }
+
+    const chatBase = (process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+    const chatModel = process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini";
+    try {
+      const response = await fetch(`${chatBase}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${chatKey.chatKey}`
+        },
+        body: JSON.stringify({
+          model: chatModel,
+          messages: [
+            { role: "system", content: "You are a concise website editing assistant for sBuild." },
+            { role: "user", content: cleanPrompt }
+          ]
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const text = String(payload.choices?.[0]?.message?.content || "").trim();
+      if (response.ok && text) {
+        return {
+          provider: "openai-compatible",
+          source: chatKey.chatSource,
+          available: true,
+          response: text,
+          model: chatModel,
+          message: `Chat ready via ${chatBase}`
+        };
+      }
+      return {
+        provider: "openai-compatible",
+        source: chatKey.chatSource,
+        available: false,
+        response: "AI chat unavailable: provider returned no content.",
+        model: chatModel,
+        message: payload.error?.message || `Chat provider returned ${response.status}`
+      };
+    } catch {
+      return {
+        provider: "openai-compatible",
+        source: chatKey.chatSource,
+        available: false,
+        response: "AI chat unavailable: provider request failed.",
+        model: chatModel,
+        message: "Chat provider request failed"
+      };
+    }
+  }
+
+  async function getChatProviderStatus(): Promise<{ status: "connected" | "not_configured"; source: "local" | "env" | "missing"; provider: string; model?: string; message: string }> {
+    const ollama = await getOllamaStatus();
+    if (ollama.reachable && ollama.model) {
+      return {
+        status: "connected",
+        source: "local",
+        provider: "ollama",
+        model: ollama.model,
+        message: ollama.message
+      };
+    }
+    const chatKey = await getChatApiKeyStatus();
+    if (chatKey.chatSource !== "missing") {
+      return {
+        status: "connected",
+        source: chatKey.chatSource,
+        provider: "openai-compatible",
+        model: process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
+        message: `Chat API key configured from ${chatKey.chatSource}.`
+      };
+    }
+    return {
+      status: "not_configured",
+      source: "missing",
+      provider: "none",
+      message: ollama.message
+    };
+  }
+
+  function channelSummaryFromSource(source: "env" | "local" | "missing"): { source: "env" | "local" | "missing"; configured: boolean; status: "connected" | "not_configured" } {
+    return {
+      source,
+      configured: source !== "missing",
+      status: source === "missing" ? "not_configured" : "connected"
+    };
+  }
+
   app.get("/api/ai/providers/status", async (_req, res) => {
     const openCode = detectOpenCode();
     const keyStatus = await getImageApiKeyStatus();
+    const chatStatus = await getChatProviderStatus();
+    const channels = {
+      chat: {
+        ...channelSummaryFromSource(chatStatus.source),
+        provider: chatStatus.provider,
+        model: chatStatus.model,
+        message: chatStatus.message
+      },
+      imageGen: {
+        ...channelSummaryFromSource(keyStatus.genSource as "env" | "local" | "missing"),
+        message: keyStatus.genSource !== "missing" ? `Key configured from ${keyStatus.genSource}` : "Missing image generation API key."
+      },
+      imageAnalyze: {
+        ...channelSummaryFromSource(keyStatus.analyzeSource as "env" | "local" | "missing"),
+        message: keyStatus.analyzeSource !== "missing" ? `Key configured from ${keyStatus.analyzeSource}` : "Missing image analysis API key."
+      }
+    };
     const providers = [
       {
         name: "OpenCode CLI",
@@ -1288,9 +1498,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         name: "Image Analysis API",
         status: keyStatus.analyzeSource !== "missing" ? "connected" : "not_configured",
         message: keyStatus.analyzeSource !== "missing" ? `Key configured from ${keyStatus.analyzeSource}` : "Missing. Set OPENAI_API_KEY or enter below."
+      },
+      {
+        name: "AI Chat Provider",
+        status: chatStatus.status,
+        message: chatStatus.status === "connected"
+          ? `${chatStatus.provider}${chatStatus.model ? ` (${chatStatus.model})` : ""} via ${chatStatus.source}`
+          : chatStatus.message
       }
     ];
-    res.json({ ok: true, providers });
+    res.json({ ok: true, providers, channels });
   });
 
   app.post("/api/ai/providers/test", async (req, res) => {
@@ -1328,8 +1545,29 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   app.get("/api/secrets/status", requireAdminMw, async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
+    const chatStatus = await getChatApiKeyStatus();
+    const channels = {
+      chat: {
+        ...channelSummaryFromSource(chatStatus.chatSource),
+        maskedKey: chatStatus.chatKey ? maskKey(chatStatus.chatKey) : null
+      },
+      imageGen: {
+        ...channelSummaryFromSource(keyStatus.genSource as "env" | "local" | "missing"),
+        maskedKey: keyStatus.genKey ? maskKey(keyStatus.genKey) : null
+      },
+      imageAnalyze: {
+        ...channelSummaryFromSource(keyStatus.analyzeSource as "env" | "local" | "missing"),
+        maskedKey: keyStatus.analyzeKey ? maskKey(keyStatus.analyzeKey) : null
+      }
+    };
     res.json({
       ok: true,
+      channels,
+      chat: {
+        configured: chatStatus.chatSource !== "missing",
+        source: chatStatus.chatSource,
+        maskedKey: chatStatus.chatKey ? maskKey(chatStatus.chatKey) : null
+      },
       imageGen: {
         configured: keyStatus.genSource !== "missing",
         source: keyStatus.genSource,
@@ -1346,9 +1584,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   app.post("/api/secrets/image-keys", requireAdminMw, async (req, res) => {
     const genKey = String(req.body?.imageGenApiKey || "").trim();
     const analyzeKey = String(req.body?.imageAnalyzeApiKey || "").trim();
+    const chatKey = String(req.body?.chatApiKey || "").trim();
     const secrets = await loadSecrets();
     if (genKey) secrets.imageGenApiKey = genKey;
     if (analyzeKey) secrets.imageAnalyzeApiKey = analyzeKey;
+    if (chatKey) secrets.chatApiKey = chatKey;
     await saveSecrets(secrets);
     res.json({ ok: true, message: "Keys stored locally. Not committed to project." });
   });
@@ -1413,6 +1653,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   app.get("/api/status", async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
+    const chatKeyStatus = await getChatApiKeyStatus();
+    const ollamaStatus = await getOllamaStatus();
     let editorDistExists = false;
     try {
       await fs.access(editorIndexPath);
@@ -1420,12 +1662,35 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     } catch {
       editorDistExists = false;
     }
+    const imageGenChannel = {
+      ...channelSummaryFromSource(keyStatus.genSource as "env" | "local" | "missing"),
+      message: keyStatus.genSource === "missing" ? "Image generation API key missing." : `Image generation configured from ${keyStatus.genSource}.`
+    };
+    const imageAnalyzeChannel = {
+      ...channelSummaryFromSource(keyStatus.analyzeSource as "env" | "local" | "missing"),
+      message: keyStatus.analyzeSource === "missing" ? "Image analysis API key missing." : `Image analysis configured from ${keyStatus.analyzeSource}.`
+    };
+    const chatSource: "env" | "local" | "missing" = ollamaStatus.reachable && ollamaStatus.model ? "local" : chatKeyStatus.chatSource;
+    const chatChannel = {
+      ...channelSummaryFromSource(chatSource),
+      model: ollamaStatus.reachable && ollamaStatus.model ? ollamaStatus.model : (process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini"),
+      message: ollamaStatus.reachable && ollamaStatus.model ? `Ollama ready with model ${ollamaStatus.model}.` : chatSource === "missing" ? "Chat API key missing." : `Chat configured from ${chatSource}.`
+    };
     res.json({
       ok: true,
       status: {
+        chatApi: ollamaStatus.reachable && ollamaStatus.model
+          ? "configured-local"
+          : chatKeyStatus.chatSource === "missing"
+            ? "missing-key"
+            : `configured-${chatKeyStatus.chatSource}`,
+        chatModel: ollamaStatus.reachable && ollamaStatus.model ? ollamaStatus.model : (process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini"),
         imageApi: keyStatus.genSource === "missing" ? "missing-key" : `configured-${keyStatus.genSource}`,
         imageAnalyzeApi: keyStatus.analyzeSource === "missing" ? "missing-key" : `configured-${keyStatus.analyzeSource}`,
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",
+        chat: chatChannel,
+        imageGen: imageGenChannel,
+        imageAnalyze: imageAnalyzeChannel,
         imagePipeline: imagePipelineSourceMarker(),
         projectPath: projectFile,
         distPath: distDir,
