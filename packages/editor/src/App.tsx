@@ -1876,17 +1876,21 @@ export function App() {
     if (!prompt) { setAiImgGenStatus("Enter an image prompt first."); return; }
     setAiImgGenStatus("Generating image...");
     setAiImgGenResult("");
-    const targetContext = currentTargetContext();
-    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
-      method: "POST",
-      body: JSON.stringify({ prompt, targetContext, explicitSize: undefined })
-    });
-    if (!data.ok || !data.imageUrl) {
-      setAiImgGenStatus(data.message || data.error || "Image generation unavailable.");
-      return;
+    try {
+      const targetContext = currentTargetContext();
+      const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
+        method: "POST",
+        body: JSON.stringify({ prompt, targetContext, explicitSize: undefined })
+      });
+      if (!data.ok || !data.imageUrl) {
+        setAiImgGenStatus(data.message || data.error || "Image generation unavailable.");
+        return;
+      }
+      setAiImgGenResult(data.imageUrl);
+      setAiImgGenStatus(`Image generated.${(data.warnings || []).join(" ")}`);
+    } catch (error) {
+      setAiImgGenStatus(`Image generation unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
-    setAiImgGenResult(data.imageUrl);
-    setAiImgGenStatus(`Image generated.${(data.warnings || []).join(" ")}`);
   }
 
   function aiUseImageInBlock() {
@@ -1962,21 +1966,25 @@ export function App() {
     }
     setAiEnhanceStatus("Processing image...");
     setAiEnhanceResult("");
-    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; editedImageUrl?: string; error?: string }>("/api/images/edit", {
-      method: "POST",
-      body: JSON.stringify({
-        imagePath: source.src,
-        editType: aiEnhanceType,
-        instruction: aiEnhancePrompt,
-        targetContext: currentTargetContext()
-      })
-    });
-    if (!data.ok || !data.editedImageUrl) {
-      setAiEnhanceStatus(data.message || data.error || "Image enhancement unavailable.");
-      return;
+    try {
+      const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; editedImageUrl?: string; error?: string }>("/api/ai/image-edit", {
+        method: "POST",
+        body: JSON.stringify({
+          imagePath: source.src,
+          editType: aiEnhanceType,
+          instruction: aiEnhancePrompt,
+          targetContext: currentTargetContext()
+        })
+      });
+      if (!data.ok || !data.editedImageUrl) {
+        setAiEnhanceStatus(data.message || data.error || "Image enhancement unavailable.");
+        return;
+      }
+      setAiEnhanceResult(data.editedImageUrl);
+      setAiEnhanceStatus("Enhanced image ready.");
+    } catch (error) {
+      setAiEnhanceStatus(`Image enhancement unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
-    setAiEnhanceResult(data.editedImageUrl);
-    setAiEnhanceStatus("Enhanced image ready.");
   }
 
   function applyAiEnhancedImage() {

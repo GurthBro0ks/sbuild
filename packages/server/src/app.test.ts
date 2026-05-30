@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
-import { projectFile } from "./lib/paths.js";
+import { projectFile, secretsFile } from "./lib/paths.js";
 
 let baseUrl = "";
 let closeServer: (() => Promise<void>) | null = null;
@@ -44,11 +44,23 @@ async function startTempServer(editorDistPath: string): Promise<{ baseUrl: strin
 async function withNoOpenAIKey<T>(fn: () => Promise<T>): Promise<T> {
   const oldA = process.env.SBUILD_OPENAI_API_KEY;
   const oldB = process.env.OPENAI_API_KEY;
+  let existingSecrets: string | null = null;
   delete process.env.SBUILD_OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
+    existingSecrets = await fs.readFile(secretsFile, "utf8");
+    await fs.rm(secretsFile, { force: true });
+  } catch {
+    existingSecrets = null;
+  }
+  try {
     return await fn();
   } finally {
+    if (existingSecrets === null) {
+      await fs.rm(secretsFile, { force: true });
+    } else {
+      await fs.writeFile(secretsFile, existingSecrets, "utf8");
+    }
     if (oldA === undefined) delete process.env.SBUILD_OPENAI_API_KEY;
     else process.env.SBUILD_OPENAI_API_KEY = oldA;
     if (oldB === undefined) delete process.env.OPENAI_API_KEY;
@@ -143,7 +155,7 @@ test("/api/project remains available with editor static serving", async () => {
 });
 
 test("/api/secrets/image-keys updates /api/secrets/status source safely", async () => {
-  const key = `sk-local-${Date.now()}-demo`;
+  const key = `local-key-${Date.now()}-demo`;
   const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -159,6 +171,64 @@ test("/api/secrets/image-keys updates /api/secrets/status source safely", async 
   assert.equal(body.imageGen?.configured, true);
   assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
   assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+});
+
+test("/api/status uses local secret key source when env key is missing", async () => {
+  const oldA = process.env.SBUILD_OPENAI_API_KEY;
+  const oldB = process.env.OPENAI_API_KEY;
+  delete process.env.SBUILD_OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: `local-key-${Date.now()}-status` })
+    });
+    assert.equal(saveResponse.status, 200);
+
+    const statusResponse = await fetch(`${baseUrl}/api/status`);
+    assert.equal(statusResponse.status, 200);
+    const body = await statusResponse.json() as {
+      ok: boolean;
+      status?: { imageApi?: string };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.status?.imageApi, "configured-local");
+  } finally {
+    if (oldA === undefined) delete process.env.SBUILD_OPENAI_API_KEY;
+    else process.env.SBUILD_OPENAI_API_KEY = oldA;
+    if (oldB === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = oldB;
+  }
+});
+
+test("/api/ai/providers/test supports image-analyze provider", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/providers/test`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider: "image-analyze" })
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: boolean; status?: string; message?: string };
+  assert.ok(typeof body.status === "string");
+  assert.ok(typeof body.message === "string");
+});
+
+test("/api/ai/memory sanitizes key-like strings", async () => {
+  const postResponse = await fetch(`${baseUrl}/api/ai/memory`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ summary: "token=local-token-123 and apiKey: abc123" })
+  });
+  assert.equal(postResponse.status, 200);
+
+  const getResponse = await fetch(`${baseUrl}/api/ai/memory`);
+  assert.equal(getResponse.status, 200);
+  const body = await getResponse.json() as { ok: boolean; memory?: { summaries?: string[] } };
+  assert.equal(body.ok, true);
+  const last = body.memory?.summaries?.slice(-1)[0] || "";
+  assert.ok(last.includes("apiKey: [redacted]"));
+  assert.ok(!last.includes("apiKey: abc123"));
 });
 
 test("/api/ai/opencode/auth-status returns safe status payload", async () => {

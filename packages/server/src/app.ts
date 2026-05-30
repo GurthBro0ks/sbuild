@@ -902,7 +902,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     sizeDecision = withExplicitSize(sizeDecision, req.body?.explicitSize ?? req.body?.size);
     const warnings: string[] = [...sizeDecision.warnings];
 
-    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const keyStatus = await getImageApiKeyStatus();
+    const key = keyStatus.genKey;
     if (!key) {
       warnings.push("OpenAI key missing. Generation unavailable.");
       res.status(200).json({
@@ -1035,7 +1036,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
 
     const originalImageUrl = projectImageUrlFromAbsolute(sourcePath);
-    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const keyStatus = await getImageApiKeyStatus();
+    const key = keyStatus.analyzeKey;
     const model = process.env.SBUILD_IMAGE_EDIT_MODEL || process.env.SBUILD_IMAGE_MODEL || "gpt-image-1";
     const editedDir = await ensureImageSubdir("edited");
     const suffix = randomSuffix();
@@ -1302,6 +1304,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       res.json({ ok: true, status: "connected", message: "Key present. Live test not implemented in prototype." });
       return;
     }
+    if (provider === "image-analyze") {
+      const keyStatus = await getImageApiKeyStatus();
+      if (keyStatus.analyzeSource === "missing") {
+        res.json({ ok: false, status: "not_configured", message: "No image analysis API key found." });
+        return;
+      }
+      res.json({ ok: true, status: "connected", message: "Key present. Live test not implemented in prototype." });
+      return;
+    }
     if (provider === "opencode") {
       const openCode = detectOpenCode();
       res.json({ ok: openCode.detected, status: openCode.detected ? "connected" : "not_configured", message: openCode.message });
@@ -1401,7 +1412,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   });
 
   app.get("/api/status", async (_req, res) => {
-    const key = process.env.SBUILD_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const keyStatus = await getImageApiKeyStatus();
     let editorDistExists = false;
     try {
       await fs.access(editorIndexPath);
@@ -1412,7 +1423,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({
       ok: true,
       status: {
-        imageApi: key ? "configured" : "missing-key",
+        imageApi: keyStatus.genSource === "missing" ? "missing-key" : `configured-${keyStatus.genSource}`,
+        imageAnalyzeApi: keyStatus.analyzeSource === "missing" ? "missing-key" : `configured-${keyStatus.analyzeSource}`,
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",
         imagePipeline: imagePipelineSourceMarker(),
         projectPath: projectFile,
