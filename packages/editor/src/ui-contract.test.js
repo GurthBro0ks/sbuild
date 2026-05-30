@@ -615,9 +615,8 @@ test("all contentEditable blocks stop propagation on pointer events", () => {
   assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
 });
 
-test("top toolbar AI button calls openAiDrawer handler", () => {
-  assert.match(appSource, /openAiDrawer\(\)/);
-  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,40}>AI<\/button>/);
+test("top toolbar AI button calls toggleAiTopMenu handler", () => {
+  assert.match(appSource, /toggleAiTopMenu\(\)[\s\S]{0,300}?title="AI Top Menu">AI<\/button>/);
 });
 
 test("openAiDrawer opens right drawer on mobile via setRightDrawerMobileOpen", () => {
@@ -822,10 +821,8 @@ test("AI target and style selectedPart are independent concepts", () => {
   assert.match(appSource, /function computeAiTarget[\s\S]{0,800}selectedSitePart/);
 });
 
-test("top toolbar AI button uses openAiDrawer, not raw setRightTab", () => {
-  // Already tested above, but double-check the button calls openAiDrawer, not setRightTab("ai") directly
-  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,40}>AI<\/button>/);
-  assert.doesNotMatch(appSource, /onClick=\{\(\) => setRightTab\("ai"\)\}>AI/);
+test("top toolbar AI button uses toggleAiTopMenu, not raw setRightTab", () => {
+  assert.match(appSource, /toggleAiTopMenu\(\)[\s\S]{0,300}?title="AI Top Menu">AI<\/button>/);
 });
 
 test("top toolbar has sticky positioning with safe-area support", () => {
@@ -855,11 +852,12 @@ test("mobile topbar has compact density grid rules", () => {
 
 test("context menu includes AI Assistant action for site header", () => {
   assert.match(appSource, /contextMenu\.isSiteHeader \? \([\s\S]*AI Assistant/);
-  assert.match(appSource, /openAiDrawer\(\)[\s\S]{0,80}AI Assistant/);
+  assert.match(appSource, /setAiTopMenuOpen\(true\)[\s\S]{0,200}AI Assistant/);
 });
 
-test("context menu AI action calls openAiDrawer not raw setRightTab", () => {
-  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)[\s\S]{0,60}AI Edit/);
+test("context menu AI action calls openAiDrawer and opens AI Top Menu", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\)[\s\S]{0,300}?AI Edit/);
+  assert.match(appSource, /setAiTopMenuOpen\(true\)[\s\S]{0,100}AI Edit/);
   assert.doesNotMatch(appSource, /setRightTab\("ai"\)[\s\S]{0,60}AI Edit/);
 });
 
@@ -911,8 +909,9 @@ test("block context menu AI Assistant calls openAiDrawer with exact block id", (
   assert.ok(aiAssistantLine.includes("contextMenu.blockId"), "AI Assistant uses contextMenu.blockId");
 });
 
-test("block context menu AI Assistant closes context menu", () => {
-  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)[\s\S]{0,40}AI Assistant/);
+test("block context menu AI Assistant closes context menu and opens AI Top Menu", () => {
+  assert.match(appSource, /openAiDrawer\(contextMenu\.blockId\);\s*setContextMenu\(null\)[\s\S]{0,300}?AI Assistant/);
+  assert.match(appSource, /setAiTopMenuOpen\(true\)[\s\S]{0,300}?AI Assistant/);
 });
 
 test("mobile topbar spacer div exists for fixed toolbar offset", () => {
@@ -2089,4 +2088,103 @@ test("Existing Settings, Website Manager, Preview, Markup tests still pass patte
   assert.match(appSource, /Markup/);
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /dryRun/);
+});
+
+test("AI Top Menu: topbar AI button toggles aiTopMenuOpen", () => {
+  assert.match(appSource, /toggleAiTopMenu/);
+  assert.match(appSource, /setAiTopMenuOpen/);
+  assert.match(appSource, /aiTopMenuOpen.*active/);
+});
+
+test("AI Top Menu: panel has three tabs (AI Chat, AI Image Gen, AI Image Enhance)", () => {
+  const menuIdx = appSource.indexOf("ai-top-menu");
+  assert.ok(menuIdx > 0, "ai-top-menu class exists");
+  const menuSection = appSource.substring(menuIdx, menuIdx + 3000);
+  assert.match(menuSection, /AI Chat/);
+  assert.match(menuSection, /AI Image Gen/);
+  assert.match(menuSection, /AI Image Enhance/);
+});
+
+test("AI Top Menu: tabs switch without closing panel", () => {
+  assert.match(appSource, /setAiTopMenuTab\("chat"\)/);
+  assert.match(appSource, /setAiTopMenuTab\("image-gen"\)/);
+  assert.match(appSource, /setAiTopMenuTab\("image-enhance"\)/);
+  assert.doesNotMatch(appSource, /setAiTopMenuTab.*setAiTopMenuOpen\(false\)/);
+});
+
+test("AI Chat: target selector has Selected Block, Current Page, Whole Site", () => {
+  assert.match(appSource, /aiChatTarget.*block/);
+  assert.match(appSource, /setAiChatTarget\("page"\)/);
+  assert.match(appSource, /setAiChatTarget\("site"\)/);
+  assert.match(appSource, /Selected Block/);
+  assert.match(appSource, /Current Page/);
+  assert.match(appSource, /Whole Site/);
+});
+
+test("AI Chat: Ask AI calls suggest endpoint", () => {
+  assert.match(appSource, /\/api\/ai\/suggest/);
+  assert.match(appSource, /aiAskSuggest/);
+});
+
+test("AI Chat: Apply Suggestion disabled until valid proposal", () => {
+  const applyIdx = appSource.indexOf("Apply Suggestion");
+  assert.ok(applyIdx > 0, "Apply Suggestion button exists");
+  const applySection = appSource.substring(applyIdx - 100, applyIdx + 100);
+  assert.match(applySection, /disabled=\{!aiProposal\}/);
+});
+
+test("AI Chat: markup attach appears only when markup exists", () => {
+  assert.match(appSource, /paintAppliedStrokes\.length > 0/);
+  assert.match(appSource, /Attach Markup/);
+  assert.match(appSource, /no markup/);
+});
+
+test("AI Image Gen: shows missing-provider message safely", () => {
+  assert.match(appSource, /aiGenerateImage/);
+  assert.match(appSource, /aiImgGenStatus/);
+  assert.match(appSource, /Generate Image/);
+});
+
+test("AI Image Enhance: shows select image first when no target", () => {
+  assert.match(appSource, /hasSelectedImageTarget/);
+  assert.match(appSource, /Select an image block or background first/);
+  assert.match(appSource, /aiEnhanceImage/);
+  assert.match(appSource, /Analyze\/Enhance/);
+});
+
+test("AI Top Menu: close button exists", () => {
+  assert.match(appSource, /ai-top-menu-close/);
+  assert.match(appSource, /setAiTopMenuOpen\(false\)/);
+});
+
+test("AI Top Menu: CSS styles exist for panel", () => {
+  assert.match(cssSource, /\.ai-top-menu\b/);
+  assert.match(cssSource, /\.ai-top-menu-tabs/);
+  assert.match(cssSource, /\.ai-top-menu-body/);
+  assert.match(cssSource, /\.ai-top-menu-close/);
+});
+
+test("AI Top Menu: mobile responsive CSS exists", () => {
+  const mobileIdx = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileIdx > 0, "mobile media query exists");
+  const mobileSection = cssSource.substring(mobileIdx);
+  assert.match(mobileSection, /\.ai-top-menu[\s\S]*?position:\s*fixed/);
+});
+
+test("AI Top Menu: theme isolation — uses editor CSS variables", () => {
+  const aiMenuIdx = cssSource.indexOf(".ai-top-menu {");
+  assert.ok(aiMenuIdx > 0, ".ai-top-menu CSS block exists");
+  const aiMenuCss = cssSource.substring(aiMenuIdx, aiMenuIdx + 400);
+  assert.match(aiMenuCss, /var\(--editor-/);
+});
+
+test("AI Top Menu: preview mode and paint mode hide the panel", () => {
+  const panelIdx = appSource.indexOf("aiTopMenuOpen && !previewMode && !paintMode");
+  assert.ok(panelIdx > 0, "AI panel gated by previewMode and paintMode");
+});
+
+test("AI Chat: applying suggestion mutates local state but does not auto-save", () => {
+  assert.match(appSource, /applyAiProposal/);
+  assert.match(appSource, /setDirty\(true\)/);
+  assert.match(appSource, /Save to persist/);
 });

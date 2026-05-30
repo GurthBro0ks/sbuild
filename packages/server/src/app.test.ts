@@ -701,3 +701,60 @@ test("auth: admin user can POST /api/secrets/image-keys", async () => {
     await server.close();
   }
 });
+
+test("POST /api/ai/suggest returns structured response", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Make the heading more catchy",
+        targetKind: "block",
+        blockId: "test-block-1",
+        blockType: "hero"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      ok: boolean;
+      suggestion?: string;
+      provider?: string;
+      targetKind?: string;
+      blockId?: string;
+      blockType?: string;
+    };
+    assert.equal(body.ok, true);
+    assert.ok(body.suggestion, "suggestion field exists");
+    assert.equal(body.targetKind, "block");
+    assert.equal(body.blockId, "test-block-1");
+    assert.equal(body.blockType, "hero");
+  });
+});
+
+test("POST /api/ai/suggest returns 400 when prompt is empty", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "" })
+  });
+  assert.equal(response.status, 400);
+  const body = await response.json() as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.ok(body.error);
+});
+
+test("POST /api/ai/suggest with site targetKind includes site context prefix", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Suggest a better color scheme",
+        targetKind: "site"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; targetKind?: string };
+    assert.equal(body.targetKind, "site");
+  });
+});

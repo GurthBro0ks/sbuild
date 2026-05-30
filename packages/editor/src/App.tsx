@@ -54,6 +54,8 @@ type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about" | "account" | "users";
 type ChatItem = { role: "user" | "assistant"; text: string };
+type AiTopMenuTab = "chat" | "image-gen" | "image-enhance";
+type AiChatTarget = "block" | "page" | "site";
 type PaintPoint = { x: number; y: number };
 type PaintTool = "brush" | "eraser";
 type PaintDrawMode = "free" | "line";
@@ -907,6 +909,7 @@ export function App() {
       setRightCollapsed(true);
       setPaintMode(false);
       setPaintActivePoints([]);
+      setAiTopMenuOpen(false);
       lastFocusedTextBlockId.current = "";
     } else {
       setLeftCollapsed(prePreviewLeftCollapsed);
@@ -927,6 +930,21 @@ export function App() {
   const [secretStatus, setSecretStatus] = useState<SBuildSecretConfig | null>(null);
   const [providerCheckMessage, setProviderCheckMessage] = useState("");
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
+  const [aiTopMenuOpen, setAiTopMenuOpen] = useState(false);
+  const [aiTopMenuTab, setAiTopMenuTab] = useState<AiTopMenuTab>("chat");
+  const [aiChatTarget, setAiChatTarget] = useState<AiChatTarget>("block");
+  const [aiProposal, setAiProposal] = useState("");
+  const [aiProposalBlockId, setAiProposalBlockId] = useState("");
+  const [aiProposalBlockType, setAiProposalBlockType] = useState("");
+  const [aiProposalPending, setAiProposalPending] = useState(false);
+  const [aiImgGenPrompt, setAiImgGenPrompt] = useState("");
+  const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("block");
+  const [aiImgGenStatus, setAiImgGenStatus] = useState("");
+  const [aiImgGenResult, setAiImgGenResult] = useState("");
+  const [aiEnhanceType, setAiEnhanceType] = useState("enhance");
+  const [aiEnhancePrompt, setAiEnhancePrompt] = useState("");
+  const [aiEnhanceStatus, setAiEnhanceStatus] = useState("");
+  const [aiEnhanceResult, setAiEnhanceResult] = useState("");
   const [buildInfo, setBuildInfo] = useState<SBuildBuildInfo | null>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
@@ -1753,6 +1771,190 @@ export function App() {
       return;
     }
     setStatus("Select a block to use AI");
+  }
+
+  function toggleAiTopMenu() {
+    if (previewMode || paintMode) {
+      setStatus("AI is not available in Preview or Markup mode");
+      return;
+    }
+    setAiTopMenuOpen((prev) => !prev);
+  }
+
+  function aiChatTargetLabel(): string {
+    if (aiChatTarget === "site") return "Whole Site";
+    if (aiChatTarget === "page") return `Current Page (${selectedPage?.title || "unknown"})`;
+    const target = computeAiTarget();
+    if (target.kind === "block") return `Selected Block (${blockTypeLabels[target.blockType as BlockType] || target.blockType || "unknown"})`;
+    if (target.kind === "site-header") return "Selected Block (site header)";
+    return "Selected Block (none)";
+  }
+
+  async function aiAskSuggest() {
+    const prompt = chatInput.trim();
+    if (!prompt) return;
+    setAiProposalPending(true);
+    setAiProposal("");
+    setChatHistory((h) => [...h, { role: "user", text: prompt }]);
+    setChatInput("");
+    try {
+      const target = computeAiTarget();
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string }>("/api/ai/suggest", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt,
+          targetKind: aiChatTarget,
+          blockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "",
+          blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : ""
+        })
+      });
+      if (data.ok && data.suggestion) {
+        setAiProposal(data.suggestion);
+        setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
+        setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
+        setChatHistory((h) => [...h, { role: "assistant", text: data.suggestion! }]);
+      } else {
+        const msg = data.error || "AI suggestion unavailable. Provider may not be configured.";
+        setAiProposal("");
+        setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
+      }
+    } catch {
+      const msg = "AI suggestion unavailable. Provider may not be configured.";
+      setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
+    } finally {
+      setAiProposalPending(false);
+    }
+  }
+
+  function applyAiProposal() {
+    if (!aiProposal) return;
+    const targetId = aiProposalBlockId || selectedBlockId;
+    if (!targetId) {
+      setStatus("No block selected to apply suggestion to");
+      return;
+    }
+    if (!selectedPage) return;
+    const mutator = (b: Block) => {
+      const bd = b.data as Record<string, unknown>;
+      if (typeof bd.heading === "string") {
+        return { ...b, data: { ...bd, heading: aiProposal } };
+      }
+      if (typeof bd.body === "string") {
+        return { ...b, data: { ...bd, body: aiProposal } };
+      }
+      if (typeof bd.text === "string") {
+        return { ...b, data: { ...bd, text: aiProposal } };
+      }
+      return b;
+    };
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, targetId, mutator) });
+    setDirty(true);
+    setLastAction("ai-apply-proposal");
+    setStatus("AI suggestion applied to local editor state. Save to persist.");
+    setAiProposal("");
+    setAiProposalBlockId("");
+    setAiProposalBlockType("");
+  }
+
+  function clearAiChat() {
+    setAiProposal("");
+    setAiProposalBlockId("");
+    setAiProposalBlockType("");
+    setChatHistory([]);
+    setChatInput("");
+  }
+
+  async function aiGenerateImage() {
+    const prompt = aiImgGenPrompt.trim();
+    if (!prompt) { setAiImgGenStatus("Enter an image prompt first."); return; }
+    setAiImgGenStatus("Generating image...");
+    setAiImgGenResult("");
+    const targetContext = currentTargetContext();
+    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
+      method: "POST",
+      body: JSON.stringify({ prompt, targetContext, explicitSize: undefined })
+    });
+    if (!data.ok || !data.imageUrl) {
+      setAiImgGenStatus(data.message || data.error || "Image generation unavailable.");
+      return;
+    }
+    setAiImgGenResult(data.imageUrl);
+    setAiImgGenStatus(`Image generated.${(data.warnings || []).join(" ")}`);
+  }
+
+  function aiUseImageInBlock() {
+    if (!aiImgGenResult) return;
+    const block = selectedBlock;
+    if (!block || (block.type !== "image" && block.type !== "hero" && block.type !== "gallery")) {
+      setAiImgGenStatus("Select an image, hero, or gallery block first.");
+      return;
+    }
+    applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+    setDirty(true);
+    setLastAction("ai-use-image");
+    setAiImgGenStatus("Image applied to selected block. Save to persist.");
+  }
+
+  function clearAiImageGen() {
+    setAiImgGenPrompt("");
+    setAiImgGenStatus("");
+    setAiImgGenResult("");
+  }
+
+  function hasSelectedImageTarget(): boolean {
+    if (!selectedBlock) return false;
+    return selectedBlock.type === "image" || selectedBlock.type === "hero" || selectedBlock.type === "gallery";
+  }
+
+  function selectedImageSourceForEnhance(): string {
+    if (!selectedBlock) return "";
+    if (selectedBlock.type === "image") {
+      const bd = selectedBlock.data as ImageBlockData;
+      return bd?.src || "";
+    }
+    if (selectedBlock.type === "hero") {
+      return selectedBlock.styles?.backgroundImage || "";
+    }
+    return "";
+  }
+
+  async function aiEnhanceImage() {
+    const sourceImage = selectedImageSourceForEnhance();
+    if (!sourceImage) {
+      setAiEnhanceStatus("Select an image block or background first.");
+      return;
+    }
+    setAiEnhanceStatus("Processing image...");
+    setAiEnhanceResult("");
+    const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; editedImageUrl?: string; error?: string }>("/api/images/edit", {
+      method: "POST",
+      body: JSON.stringify({
+        imagePath: sourceImage,
+        editType: aiEnhanceType,
+        instruction: aiEnhancePrompt,
+        targetContext: currentTargetContext()
+      })
+    });
+    if (!data.ok || !data.editedImageUrl) {
+      setAiEnhanceStatus(data.message || data.error || "Image enhancement unavailable.");
+      return;
+    }
+    setAiEnhanceResult(data.editedImageUrl);
+    setAiEnhanceStatus("Enhanced image ready.");
+  }
+
+  function applyAiEnhancedImage() {
+    if (!aiEnhanceResult) return;
+    applyImageToSelectedBlock(aiEnhanceResult, `AI enhanced (${aiEnhanceType})`);
+    setDirty(true);
+    setLastAction("ai-apply-enhance");
+    setAiEnhanceStatus("Enhanced image applied. Save to persist.");
+  }
+
+  function clearAiEnhance() {
+    setAiEnhanceStatus("");
+    setAiEnhanceResult("");
+    setAiEnhancePrompt("");
   }
 
   function targetSummary(): string {
@@ -3742,11 +3944,11 @@ export function App() {
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
           <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); }} className={paintMode ? "active" : ""}>Markup</button>
+          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
-          <button onClick={() => openAiDrawer()}>AI</button>
+          <button onClick={() => toggleAiTopMenu()} className={aiTopMenuOpen ? "active" : ""} title="AI Top Menu">AI</button>
           <button onClick={() => setHelpOpen(true)} title="Help / User Guide">?</button>
           <button onClick={() => {
             setSettingsOpen(true);
@@ -3790,6 +3992,101 @@ export function App() {
           <button disabled className="paint-ai-attach-btn">Attach to AI (coming soon)</button>
           <button onClick={discardPaintAndExit}>Discard Markup</button>
           <span className="paint-toolbar-note">Click and drag to draw. Markup is only for AI notes and is not published.</span>
+        </div>
+      )}
+
+      {aiTopMenuOpen && !previewMode && !paintMode && (
+        <div className="ai-top-menu" role="dialog" aria-label="AI panel">
+          <div className="ai-top-menu-header">
+            <div className="ai-top-menu-tabs">
+              <button onClick={() => setAiTopMenuTab("chat")} className={aiTopMenuTab === "chat" ? "selected" : ""}>AI Chat</button>
+              <button onClick={() => setAiTopMenuTab("image-gen")} className={aiTopMenuTab === "image-gen" ? "selected" : ""}>AI Image Gen</button>
+              <button onClick={() => setAiTopMenuTab("image-enhance")} className={aiTopMenuTab === "image-enhance" ? "selected" : ""}>AI Image Enhance</button>
+            </div>
+            <button className="ai-top-menu-close" onClick={() => setAiTopMenuOpen(false)} aria-label="Close AI panel">✕</button>
+          </div>
+          <div className="ai-top-menu-body">
+            {aiTopMenuTab === "chat" && (
+              <div className="ai-top-menu-tab-content">
+                <div className="ai-chat-target">
+                  <span className="ai-chat-target-label">Target: {aiChatTargetLabel()}</span>
+                  <div className="ai-chat-target-buttons">
+                    <button onClick={() => setAiChatTarget("block")} className={aiChatTarget === "block" ? "selected" : ""}>Selected Block</button>
+                    <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""}>Current Page</button>
+                    <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""}>Whole Site</button>
+                  </div>
+                </div>
+                {paintAppliedStrokes.length > 0 && (
+                  <div className="ai-chat-markup-attach">
+                    <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length} strokes)</button>
+                  </div>
+                )}
+                {paintAppliedStrokes.length === 0 && (
+                  <div className="ai-chat-markup-attach">
+                    <button disabled className="ai-markup-attach-btn disabled" title="Draw markup first using the Markup tool">Attach Markup (no markup — use Markup tool first)</button>
+                  </div>
+                )}
+                <div className="chat-log">
+                  {chatHistory.map((msg, i) => (
+                    <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
+                  ))}
+                </div>
+                {aiProposalPending && <p className="ai-status-msg">Thinking...</p>}
+                <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={3} placeholder="Ask AI to improve copy, layout, or content..." className="mobile-field-stack" />
+                <div className="button-row ai-button-row">
+                  <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()}>Ask AI</button>
+                  <button onClick={applyAiProposal} disabled={!aiProposal}>Apply Suggestion</button>
+                  <button onClick={clearAiChat}>Clear</button>
+                </div>
+              </div>
+            )}
+            {aiTopMenuTab === "image-gen" && (
+              <div className="ai-top-menu-tab-content">
+                <div className="ai-imggen-target">
+                  <span>Target: {hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
+                  <div className="ai-chat-target-buttons">
+                    <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
+                    <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
+                  </div>
+                </div>
+                <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." className="mobile-field-stack" />
+                <div className="button-row ai-button-row">
+                  <button onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
+                  <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
+                  <button onClick={clearAiImageGen}>Clear</button>
+                </div>
+                {aiImgGenStatus && <p className="ai-status-msg">{aiImgGenStatus}</p>}
+                {aiImgGenResult && <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />}
+              </div>
+            )}
+            {aiTopMenuTab === "image-enhance" && (
+              <div className="ai-top-menu-tab-content">
+                {hasSelectedImageTarget() ? (
+                  <div className="ai-enhance-source">
+                    <span>Source: {blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} — {selectedImageSourceForEnhance() ? selectedImageSourceForEnhance().split("/").pop() : "no image set"}</span>
+                  </div>
+                ) : (
+                  <p className="ai-status-msg ai-no-target">Select an image block or background first.</p>
+                )}
+                <div className="ai-enhance-options">
+                  <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
+                    <option value="enhance">Enhance</option>
+                    <option value="black-white">Black &amp; White</option>
+                    <option value="cleanup">Cleanup</option>
+                    <option value="crop-fit">Crop/Fit</option>
+                  </select>
+                </div>
+                <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." className="mobile-field-stack" />
+                <div className="button-row ai-button-row">
+                  <button onClick={() => void aiEnhanceImage()} disabled={!hasSelectedImageTarget()}>Analyze/Enhance</button>
+                  <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
+                  <button onClick={clearAiEnhance}>Clear</button>
+                </div>
+                {aiEnhanceStatus && <p className="ai-status-msg">{aiEnhanceStatus}</p>}
+                {aiEnhanceResult && <img src={aiEnhanceResult} alt="Enhanced" className="ai-result-image" />}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -4213,7 +4510,7 @@ export function App() {
           {contextMenu.isSiteHeader ? (
             <>
               <button onClick={() => { openSiteHeaderDrawer("site-header"); setContextMenu(null); }}>Edit Properties</button>
-              <button onClick={() => { openAiDrawer(); setContextMenu(null); }}>AI Assistant</button>
+              <button onClick={() => { openAiDrawer(); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("chat"); }}>AI Assistant</button>
               <button onClick={() => { resetBlockColorsToTheme(); setContextMenu(null); }}>Reset site header colors to theme</button>
               <button onClick={() => { if (window.confirm("Reset all blocks to current theme?")) applyThemeToAllBlocks(); setContextMenu(null); }}>Reset all blocks to theme</button>
               <button onClick={() => setContextMenu(null)}>Close</button>
@@ -4221,7 +4518,7 @@ export function App() {
           ) : (
             <>
               <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
-              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Assistant</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("chat"); }}>AI Assistant</button>
               <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); setRightTab("images"); setRightDrawerMobileOpen(true); setRightCollapsed(false); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); startNewRow(contextMenu.blockId); closeTransientOverlays(); }}>Start new row</button>
@@ -4234,9 +4531,9 @@ export function App() {
               <button onClick={() => { deleteBlock(contextMenu.blockId); setContextMenu(null); }}>Delete</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); moveBlock("up", contextMenu.blockId); closeTransientOverlays(); }}>Move Up</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); moveBlock("down", contextMenu.blockId); closeTransientOverlays(); }}>Move Down</button>
-              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>AI Edit</button>
-              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Generate Image</button>
-              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Photo</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("chat"); }}>AI Edit</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("image-gen"); }}>Generate Image</button>
+              <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("image-enhance"); }}>Edit Photo</button>
               <button onClick={() => {
                 const block = selectedPage.blocks.find((b) => b.id === contextMenu.blockId);
                 if (block) navigator.clipboard?.writeText(JSON.stringify(block, null, 2));

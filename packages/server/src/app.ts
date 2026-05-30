@@ -784,6 +784,34 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({ ok: true, ...result });
   });
 
+  app.post("/api/ai/suggest", async (req, res) => {
+    const prompt = String(req.body?.prompt || "").trim();
+    const targetKind = String(req.body?.targetKind || "block");
+    const blockId = String(req.body?.blockId || "");
+    const blockType = String(req.body?.blockType || "");
+    if (!prompt) {
+      res.status(400).json({ ok: false, error: "prompt is required" });
+      return;
+    }
+    const contextPrefix = targetKind === "site"
+      ? "You are editing the whole website project. "
+      : targetKind === "page"
+        ? "You are editing the current page. "
+        : blockType
+          ? `You are editing a ${blockType} block. `
+          : "You are editing a block. ";
+    const fullPrompt = `${contextPrefix}${prompt}`;
+    const result = await chatWithFallback(fullPrompt);
+    res.json({
+      ok: true,
+      suggestion: result.response,
+      provider: result.provider,
+      targetKind,
+      blockId,
+      blockType
+    });
+  });
+
   app.post("/api/ai/paint-fix", async (req, res) => {
     try {
       const instruction = String(req.body?.instruction || "");
