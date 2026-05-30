@@ -1926,3 +1926,38 @@ test("admin-only: non-admin can still see Account Management tab", () => {
   assert.match(appSource, /Account Management<\/button>/);
   assert.match(appSource, /\{settingsTab === "account" && <div>/);
 });
+
+test("paint mode: selectBlock and openBlockDrawer both have preview/paint guard", () => {
+  assert.match(appSource, /function selectBlock\(blockId: string\)[\s\S]{0,80}if \(previewMode \|\| paintMode\) return;/);
+  assert.match(appSource, /function openBlockDrawer\(blockId: string\)[\s\S]{0,80}if \(previewMode \|\| paintMode\) return;/);
+});
+
+test("paint mode: handleBlockPointerMove has preview/paint guard", () => {
+  assert.match(appSource, /function handleBlockPointerMove[\s\S]{0,100}if \(previewMode \|\| paintMode\) return;/);
+});
+
+test("paint mode: openSiteHeaderContextMenu has preview/paint guard", () => {
+  assert.match(appSource, /function openSiteHeaderContextMenu[\s\S]{0,100}if \(previewMode \|\| paintMode\) return;/);
+});
+
+test("paint toolbar has correct CSS positioning: static on desktop, fixed on mobile with z-index", () => {
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*position:\s*static/);
+  assert.match(cssSource, /@media.*max-width:\s*768px[\s\S]*\.paint-toolbar[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.paint-toolbar[\s\S]*z-index:\s*40/);
+});
+
+test("paint toolbar hidden when left drawer open on mobile", () => {
+  assert.match(cssSource, /\.app\.mobile-shell\.mobile-left-open \.paint-toolbar[\s\S]*display:\s*none/);
+});
+
+test("paint-active CSS class added to app shell in paint mode and not in preview", () => {
+  assert.match(appSource, /\$\{paintMode && !previewMode \? "paint-active" : ""\}/);
+});
+
+test("mobile workspace gets padding when paint is active", () => {
+  assert.match(cssSource, /\.app\.mobile-shell\.paint-active \.workspace[\s\S]*padding-top:\s*60px/);
+});
+
+test("mobile paint toolbar has top offset below mobile topbar", () => {
+  assert.match(cssSource, /@media.*max-width:\s*768px[\s\S]*\.paint-toolbar[\s\S]*top:\s*max\(var\(--mobile-topbar-h/);
+});
