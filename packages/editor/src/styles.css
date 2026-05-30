@@ -751,6 +751,7 @@ button:disabled {
   min-width: 0;
   overflow-y: auto;
   height: 100%;
+  background: var(--sbuild-editor-bg, var(--sbuild-page-bg, var(--sbuild-bg, #f6f3e9)));
 }
 .canvas-controls {
   display: flex;

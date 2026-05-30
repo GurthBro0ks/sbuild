@@ -1981,3 +1981,21 @@ test("markup toolbar shows click-drag instruction", () => {
   assert.match(appSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
   assert.match(appSource, />Discard Markup<\/button>/);
 });
+
+test("canvas-area uses site-theme background var not editor var", () => {
+  assert.match(cssSource, /\.canvas-area \{[\s\S]*?background:\s*var\(--sbuild-editor-bg/);
+});
+
+test("canvas-area site theme var is applied via applySiteTheme", () => {
+  assert.match(appSource, /querySelectorAll\("\.canvas-frame,\s*\.canvas-area/);
+  assert.match(appSource, /setProperty\("--sbuild-editor-bg"/);
+});
+
+test("row-shell does not have its own background (transparent, shows canvas-frame theme bg)", () => {
+  assert.doesNotMatch(cssSource, /\.row-shell \{[\s\}]*background:/);
+});
+
+test("canvas-frame border uses --editor-border (reset to light inside canvas)", () => {
+  assert.match(cssSource, /\.canvas-frame \{[\s\S]*?border:\s*2px dashed var\(--editor-border\)/);
+  assert.match(cssSource, /\.canvas-frame \{[\s\S]*?--editor-border: #e0e0e0/);
+});

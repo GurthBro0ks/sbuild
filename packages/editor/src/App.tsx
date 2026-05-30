@@ -1256,7 +1256,7 @@ export function App() {
     const colors = project.globalStyles.colors;
     const dark = ["Farmstand Dark", "Slimy Neon", "Midnight Orchard", "Retro Terminal"].includes(themeApplied)
       || [colors.bg, colors.surface].some((c) => /^#/.test(c) && parseInt(c.slice(1, 3), 16) < 80);
-    const frames = document.querySelectorAll(".canvas-frame, .sbuild-site-preview, .sbuild-rendered-page");
+    const frames = document.querySelectorAll(".canvas-frame, .canvas-area, .sbuild-site-preview, .sbuild-rendered-page");
     frames.forEach((el) => {
       const target = el as HTMLElement;
       target.style.setProperty("--sbuild-editor-bg", colors.pageBackground || (dark ? colors.bg : "#f3ecdc"));
