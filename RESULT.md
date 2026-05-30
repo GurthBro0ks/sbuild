@@ -1,36 +1,49 @@
-# Website Manager QA Repair — Result
+# AI Markup Theme Isolation + QA Repair — Result
 
-## Fixes
+## Summary
+Fixed AI Markup mode theme bleed where editor dark theme styling leaked into website preview. Also fixed paint overlay sizing and touch drawing reliability. Updated toolbar text for clarity.
 
-### Fix 1: Desktop right panel top row buttons clipping
-- **Root cause**: `.right-drawer` had `overflow: hidden` which clipped the right-drawer-header contents (tab row buttons) when the panel height was constrained.
-- **Fix**: Removed `overflow: hidden` from `.right-drawer`. The `.right-drawer-content` already has its own `overflow-y: auto` for scrollable content. The header with `overflow: visible; flex: 0 0 auto` now expands freely without being clipped.
+## Changes (commit fdc105f)
+
+### Fix 1: Theme Isolation (editor dark → site preview bleed)
+- **Root cause**: `.canvas-frame` relied on inherited `--editor-*` CSS vars from `.sbuild-editor-shell`. When Builder UI Theme was set to Dark, the dark `--editor-*` values cascaded into site preview blocks via CSS variable fallback chains in `.block-shell` and other site content selectors.
+- **Fix**: Added explicit light-theme `--editor-*` defaults inside `.canvas-frame` selector. This guarantees changing Builder UI Theme to Dark does NOT affect website preview colors.
+- **File**: `packages/editor/src/styles.css` (`.canvas-frame` block)
+- **Tests**: 4 new UI contract tests verifying `--editor-bg`, `--editor-accent`, `--editor-text`, `--editor-border` are reset to light values, and not set to `initial`.
+
+### Fix 2: Paint overlay sizing
+- **Root cause**: `.paint-overlay` had `position: absolute; inset: 0` but no explicit `width`/`height`, which could cause incomplete canvas coverage in some layout contexts.
+- **Fix**: Added `width: 100%; height: 100%` to `.paint-overlay`.
 - **File**: `packages/editor/src/styles.css`
-- **Test**: Updated "right panel layout prevents content clipping" to not require `overflow: hidden`. Added "right panel header tab row is not clipped by parent overflow" test verifying `overflow-y: hidden` is absent and header has `overflow: visible`.
+- **Tests**: Assertions verifying explicit width/height on `.paint-overlay`.
 
-### Fix 2: Preview mode links/nav navigation
-- **Root cause**: Nav item `<span>` `onClick` handler checked `if (previewMode) return;` and did nothing — all nav click interaction was disabled in preview.
-- **Fix**: Added preview-mode branch to nav item onClick that:
-  - Opens external URLs (`http://`, `https://`, `//`) in new tab with `noopener`
-  - Scrolls to hash anchors (`#element-id`) via `scrollIntoView`
-  - Looks up internal paths (`/page-slug`) against `project.pages` and navigates via `setSelectedPageId`
-- **File**: `packages/editor/src/App.tsx`
-- **Tests**: "preview mode nav links navigate by page slug", "preview mode nav links open external URLs in new tab", "preview mode nav links handle hash anchors", "preview mode nav click does not select or edit nav items"
+### Fix 3: Touch drawing reliability
+- **Root cause**: Paint capture overlay lacked `touch-action: none` and `user-select: none`, allowing browser touch gestures and text selection to interfere with drawing on mobile.
+- **Fix**: Added `touch-action: none`, `user-select: none`, and `-webkit-user-select: none` to `.paint-overlay.capture-active`.
+- **File**: `packages/editor/src/styles.css`
 
-### Fix 3: iPhone Safari zoom prevention
-- **Root cause**: Modal/drawer inputs had no explicit `font-size` (browser default < 16px on iOS triggers auto-zoom). New Page step 1 input used `autoFocus` causing zoom on modal open.
-- **Fix**: Added `font-size: 16px` to all `.modal input/select/textarea` and `.right-drawer input/select/textarea`. Removed `autoFocus` from new page name input.
-- **File**: `packages/editor/src/styles.css`, `packages/editor/src/App.tsx`
-- **Tests**: "modal and drawer inputs use 16px font-size to prevent iOS zoom", "new page flow step 1 input does not use autoFocus to prevent iOS zoom"
+### Fix 4: Toolbar text clarity
+- **Change**: "Discard" → "Discard Markup"; helper text now reads "Click and drag to draw. Markup is only for AI notes and is not published."
+- **Files**: `packages/editor/src/App.tsx`, `packages/editor/src/ui-contract.test.js`
 
-## Validation
-- **typecheck**: PASS
-- **build**: PASS
-- **lint**: PASS
-- **test**: PASS (editor 248/248, server 22/22)
-- **smoke**: PASS
-- **publishAllowed**: `false` (dry-run)
-- **/api/publish unauth**: `401 Authentication required`
+## Verification Evidence
+```
+pnpm --filter @sbuild/editor typecheck → PASS
+pnpm --filter @sbuild/editor build → PASS
+pnpm -r lint → PASS
+pnpm --filter @sbuild/editor test → 307/307 PASS
+pnpm -r test → editor 307/307, server 39/39, cli ok
+bash scripts/smoke-sbuild.sh → PASS
+systemctl --user restart sbuild.service → active
+curl http://127.0.0.1:3137/health → publishAllowed=false, editorDistExists=true
+curl -X POST /api/publish (unauth) → 401
+```
 
-## Proof Directory
-`/tmp/proof_sbuild_website_manager_qa_repair_20260529T221813Z`
+## Safety
+- publishAllowed remains false
+- unauth POST /api/publish returns 401
+- Runtime files (project/project.json, project/image-folder.json) NOT committed
+- No force push used
+
+## Pushed to origin/main
+- Commit fdc105f pushed to origin/main

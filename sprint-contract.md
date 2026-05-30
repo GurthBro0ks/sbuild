@@ -1,26 +1,25 @@
-# Sprint Contract: Admin Login + User Management
+# Sprint Contract: AI Markup Theme Isolation + QA Repair
 
 ## What
-Replace single shared login "sbuilder" with "admin" identity, add admin-only user management inside Settings.
+Fix AI Markup mode theme bleed: editor/dark markup styling leaks into website preview during Markup mode. Site preview must show only the selected Website Theme regardless of Builder UI Theme.
 
 ## Done Criteria
-1. [x] `SBUILD_AUTH_USERNAME` changed to `admin`; existing login flow works
-2. [x] Migration idempotent: admin user created from env on first startup
-3. [x] Account Management tab in Settings: change own password (requires current password, validates confirmation)
-4. [x] User Management tab visible only to admin users
-5. [x] Admin can create users, reset passwords, disable/delete non-admin users (not last admin)
-6. [x] Non-admin cannot see or access user-management APIs (401)
-7. [x] Publish remains dry-run; unauthenticated POST /api/publish returns 401
-8. [x] Server tests pass (auth/role tests added)
-9. [x] Typecheck, build, lint, test all pass
-10. [x] Smoke test passes (auth gates, publish safety)
+1. [x] `.canvas-frame` resets `--editor-*` CSS vars to light defaults, preventing dark editor theme from bleeding into site preview
+2. [x] Paint overlay has explicit `width: 100%; height: 100%` for full canvas coverage
+3. [x] Paint overlay capture mode has `touch-action: none` and `user-select: none` for reliable touch drawing and text selection prevention
+4. [x] Toolbar text: "Discard" → "Discard Markup"; helper text updated to "Click and drag to draw. Markup is only for AI notes and is not published."
+5. [x] 4 UI contract tests added (theme isolation, overlay sizing, touch-action, click-drag instruction)
+6. [x] 2 existing test assertions updated for new toolbar text
+7. [x] All 307/307 editor tests pass
+8. [x] Typecheck, build, lint all pass
+9. [x] Smoke test passes (auth gates, publish safety)
+10. [x] Published to origin/main
 
 ## Regression List
-- Login/logout must still work
-- Settings must open for all users
+- Editor theme switching must still work (Builder UI Theme → Dark/Light)
+- Website preview must remain unaffected by editor theme
+- Paint/markup drawing must still work
+- Preview/Edit mode isolation must be preserved
 - Publish must remain dry-run (publishAllowed=false)
 - Unauth POST /api/publish returns 401
-- Website Manager still opens
-- Preview/Edit still works
-- Paint toolbar untouched
 - No force push
