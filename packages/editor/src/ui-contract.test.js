@@ -255,7 +255,7 @@ test("mobile topbar keeps explicit grouped rows for density and action visibilit
   assert.match(appSource, /topbar-mobile-row topbar-mobile-row-status/);
   assert.match(appSource, />Publish<\/button>/);
   assert.match(appSource, /previewMode \? "Edit" : "Preview"/);
-  assert.match(appSource, />Paint<\/button>/);
+  assert.match(appSource, />Markup<\/button>/);
 });
 
 test("gap detection flags duplicate offset when gapPx exceeds 48px", () => {
@@ -1316,17 +1316,17 @@ test("preview mode CSS hides paint overlay", () => {
 
 test("paint mode has explicit toolbar lifecycle controls", () => {
   assert.match(appSource, /className="paint-toolbar"/);
-  assert.match(appSource, /role="toolbar" aria-label="Paint tools"/);
+  assert.match(appSource, /role="toolbar" aria-label="Markup tools"/);
   assert.match(appSource, />Brush<\/button>/);
   assert.match(appSource, />Eraser<\/button>/);
   assert.match(appSource, />Free Draw<\/button>/);
   assert.match(appSource, />Line<\/button>/);
-  assert.match(appSource, /aria-label="Paint color"/);
+  assert.match(appSource, /aria-label="Markup color"/);
   assert.match(appSource, /aria-label="Brush size"/);
   assert.match(appSource, />Clear<\/button>/);
-  assert.match(appSource, />Apply<\/button>/);
+  assert.match(appSource, />Keep Markup<\/button>/);
   assert.match(appSource, />Discard<\/button>/);
-  assert.match(appSource, /Apply is preview-only for this session/);
+  assert.match(appSource, /Markup is session-only \(not saved to your website\)\./);
 });
 
 test("paint toolbar only renders in paint mode and never in preview", () => {

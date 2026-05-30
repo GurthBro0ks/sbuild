@@ -2282,12 +2282,13 @@ export function App() {
 
   function beginPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
     const point = pointerPoint(e);
     if (paintTool === "eraser") {
       e.preventDefault();
       e.stopPropagation();
       setPaintDraftStrokes((strokes) => strokes.slice(0, -1));
-      setStatus("Removed last pending stroke");
+      setStatus("Removed last markup stroke");
       return;
     }
     e.preventDefault();
@@ -2311,8 +2312,9 @@ export function App() {
     setPaintActivePoints((pts) => [...pts, point]);
   }
 
-  function endPaint() {
+  function endPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode || paintTool === "eraser") return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
     if (paintActivePoints.length < 2) {
       setPaintActivePoints([]);
       return;
@@ -2327,18 +2329,18 @@ export function App() {
     };
     setPaintDraftStrokes((strokes) => [...strokes, stroke]);
     setPaintActivePoints([]);
-    setStatus("Pending paint stroke added");
+    setStatus("Markup stroke added");
   }
 
   function clearPaintDraft() {
     setPaintDraftStrokes([]);
     setPaintActivePoints([]);
-    setStatus("Pending paint cleared");
+    setStatus("Markup cleared");
   }
 
   function applyPaintOverlay() {
     if (paintDraftStrokes.length === 0) {
-      setStatus("No pending paint to apply");
+      setStatus("No markup to keep");
       return;
     }
     setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes]);
@@ -2346,14 +2348,14 @@ export function App() {
     setPaintActivePoints([]);
     setDirty(true);
     setLastAction("paint-apply-overlay");
-    setStatus("Paint overlay applied to this editor session");
+    setStatus("Markup kept in this session");
   }
 
   function discardPaintAndExit() {
     setPaintDraftStrokes([]);
     setPaintActivePoints([]);
     setPaintMode(false);
-    setStatus("Discarded pending paint");
+    setStatus("Discarded markup");
   }
 
   // Drag reorder handlers
@@ -3590,7 +3592,7 @@ export function App() {
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
           <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Paint mode off" : "Paint mode on"); }} className={paintMode ? "active" : ""}>Paint</button>
+          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
@@ -3620,21 +3622,23 @@ export function App() {
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
       {paintMode && !previewMode && (
-        <div className="paint-toolbar" role="toolbar" aria-label="Paint tools">
+        <div className="paint-toolbar" role="toolbar" aria-label="Markup tools">
+          <div className="paint-toolbar-header">AI Markup &mdash; draw notes for AI, not saved to website</div>
           <button onClick={() => setPaintTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
           <button onClick={() => setPaintTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
           <button onClick={() => setPaintDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
           <button onClick={() => setPaintDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
-          <input aria-label="Paint color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
+          <input aria-label="Markup color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
           <label className="paint-size-control">
             Size
             <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => setPaintSize(Number(e.target.value))} />
             <span>{paintSize}px</span>
           </label>
           <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
-          <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Apply</button>
+          <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Keep Markup</button>
+          <button disabled className="paint-ai-attach-btn">Attach to AI (coming soon)</button>
           <button onClick={discardPaintAndExit}>Discard</button>
-          <span className="paint-toolbar-note">Apply is preview-only for this session (not persisted to project files).</span>
+          <span className="paint-toolbar-note">Markup is session-only (not saved to your website).</span>
         </div>
       )}
 

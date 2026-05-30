@@ -1084,6 +1084,19 @@ button:disabled {
   cursor: crosshair !important;
 }
 
+.paint-toolbar-header {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--editor-text);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--editor-border);
+  margin-bottom: 4px;
+}
+.paint-ai-attach-btn {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .paint-toolbar-note {
   font-size: 11px;
   color: var(--editor-text-muted);
