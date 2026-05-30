@@ -2,6 +2,19 @@
 
 ## Unreleased / Prototype
 
+### 0.5.0-dev — Help Guide, Website Manager, User Management
+- **Added**
+  - Help/User Guide modal with accordion sections, topbar `?` button, close/backdrop/Escape dismiss — accepted desktop + mobile QA
+  - Website Manager MVP: create, rename, slug, show/hide, parent, duplicate, and delete pages
+  - Admin identity and user management: login as admin, create/reset/disable users, change password
+  - Admin-only Image/API Keys tab gated by role
+  - AI Markup mode (renamed from Paint Mode) with drawing improvements
+  - Canvas/theme isolation: prevent editor chrome colors from leaking into site preview
+- **Safety**
+  - Publish remains dry-run only; `publishAllowed=false` and unauth `/api/publish` returns 401
+- **Proof**
+  - `/tmp/proof_sbuild_help_guide_acceptance_20260530T<time>`
+
 ### 0.4.0-dev — Versioning, Transparent Styles, Visual Effects
 - **Added**
   - Formal versioning system with `SBUILD_VERSION = "0.4.0-dev"`

@@ -1,4 +1,4 @@
-export const SBUILD_VERSION = "0.4.0-dev";
+export const SBUILD_VERSION = "0.5.0-dev";
 export const SBUILD_APP_NAME = "sBuild";
 
 export interface SBuildDirtySummary {

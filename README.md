@@ -1,6 +1,6 @@
-# sBuild v2 Prototype
+# sBuild — Visual Website Builder
 
-sBuild is a local-first website builder prototype with a React editor, Express API, and JSON-to-static-site generator.
+sBuild is a local-first visual website builder with page management, user accounts, image tools, AI markup notes, and protected dry-run publishing. Features a React editor, Express API, and JSON-to-static-site generator.
 
 ## Quick Start
 
