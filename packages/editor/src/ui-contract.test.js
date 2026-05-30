@@ -2126,17 +2126,51 @@ test("AI Chat: Ask AI calls suggest endpoint", () => {
   assert.match(appSource, /aiAskSuggest/);
 });
 
-test("AI Chat: Apply Suggestion disabled until valid proposal", () => {
+test("AI Chat: Apply Suggestion only shown in Edit mode with valid proposal", () => {
+  assert.match(appSource, /aiHasProposal/);
   const applyIdx = appSource.indexOf("Apply Suggestion");
   assert.ok(applyIdx > 0, "Apply Suggestion button exists");
-  const applySection = appSource.substring(applyIdx - 100, applyIdx + 100);
-  assert.match(applySection, /disabled=\{!aiProposal\}/);
+  const applySection = appSource.substring(applyIdx - 200, applyIdx + 200);
+  assert.match(applySection, /canEditBlocks|!previewMode.*!paintMode/);
 });
 
-test("AI Chat: markup attach appears only when markup exists", () => {
+test("AI Chat: Apply Suggestion disabled in Preview and Markup modes", () => {
+  const applyIdx = appSource.indexOf("ai-chat-action-bar");
+  assert.ok(applyIdx > 0, "ai-chat-action-bar exists");
+  const applySection = appSource.substring(applyIdx - 100, applyIdx + 300);
+  assert.match(applySection, /!previewMode/);
+  assert.match(applySection, /!paintMode/);
+});
+
+test("AI Chat: mode notice shown in Preview and Markup modes", () => {
+  assert.match(appSource, /ai-chat-mode-notice/);
+  assert.match(appSource, /Planning mode/);
+  assert.match(appSource, /read-only/);
+});
+
+test("AI Chat: chat-style message bubbles exist", () => {
+  assert.match(appSource, /ai-chat-msg-\$\{msg\.role\}/);
+  assert.match(appSource, /ai-chat-msg-text/);
+  assert.match(appSource, /ai-chat-messages/);
+  assert.match(appSource, /ai-chat-msg-assistant/);
+});
+
+test("AI Chat: input pinned at bottom with Send button", () => {
+  assert.match(appSource, /ai-chat-input-area/);
+  assert.match(appSource, /ai-chat-input/);
+  assert.match(appSource, /ai-chat-send/);
+});
+
+test("AI Chat: markup attach is optional and only active when markup exists", () => {
   assert.match(appSource, /paintAppliedStrokes\.length > 0/);
   assert.match(appSource, /Attach Markup/);
-  assert.match(appSource, /no markup/);
+  const noMarkupIdx = appSource.indexOf("no markup");
+  assert.ok(noMarkupIdx < 0, "no disabled markup message in new chat UI");
+});
+
+test("AI Chat: clear conversation button exists", () => {
+  assert.match(appSource, /ai-chat-clear/);
+  assert.match(appSource, /clearAiChat/);
 });
 
 test("AI Image Gen: shows missing-provider message safely", () => {
@@ -2178,13 +2212,30 @@ test("AI Top Menu: theme isolation — uses editor CSS variables", () => {
   assert.match(aiMenuCss, /var\(--editor-/);
 });
 
-test("AI Top Menu: preview mode and paint mode hide the panel", () => {
-  const panelIdx = appSource.indexOf("aiTopMenuOpen && !previewMode && !paintMode");
-  assert.ok(panelIdx > 0, "AI panel gated by previewMode and paintMode");
+test("AI Top Menu: available in Preview and Markup modes", () => {
+  const panelIdx = appSource.indexOf("aiTopMenuOpen && (");
+  assert.ok(panelIdx > 0 || appSource.includes("aiTopMenuOpen && ("), "AI panel available in all modes");
+  const panelGate = appSource.indexOf("aiTopMenuOpen && !previewMode && !paintMode");
+  assert.ok(panelGate < 0, "AI panel no longer gated by previewMode/paintMode");
 });
 
 test("AI Chat: applying suggestion mutates local state but does not auto-save", () => {
   assert.match(appSource, /applyAiProposal/);
   assert.match(appSource, /setDirty\(true\)/);
   assert.match(appSource, /Save to persist/);
+});
+
+test("AI Chat: chat message CSS styles exist", () => {
+  assert.match(cssSource, /\.ai-chat-msg\b/);
+  assert.match(cssSource, /\.ai-chat-msg-user/);
+  assert.match(cssSource, /\.ai-chat-msg-assistant/);
+  assert.match(cssSource, /\.ai-chat-input-area/);
+  assert.match(cssSource, /\.ai-chat-send/);
+});
+
+test("AI Chat: mobile input uses 16px font to prevent zoom", () => {
+  const mobileIdx = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileIdx > 0, "mobile media query exists");
+  const mobileSection = cssSource.substring(mobileIdx);
+  assert.match(mobileSection, /\.ai-chat-input[\s\S]*?font-size:\s*16px/);
 });

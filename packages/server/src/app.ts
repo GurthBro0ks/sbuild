@@ -70,6 +70,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
   };
 }
 import { applyDeterministicPaintFix, chatWithFallback, wizardFallback } from "./lib/ai.js";
+import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
 import {
   backupsDir,
   distDir,
@@ -802,14 +803,70 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           : "You are editing a block. ";
     const fullPrompt = `${contextPrefix}${prompt}`;
     const result = await chatWithFallback(fullPrompt);
+    const hasProposal = result.provider !== "mock"
+      && targetKind === "block"
+      && Boolean(blockId)
+      && Boolean(blockType);
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (username) {
+      appendMemoryForUser(username, `Q: ${prompt.slice(0, 200)} A: ${result.response.slice(0, 200)}`);
+    }
     res.json({
       ok: true,
       suggestion: result.response,
       provider: result.provider,
+      hasProposal,
       targetKind,
       blockId,
       blockType
     });
+  });
+
+  app.get("/api/ai/memory", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const memory = getMemoryForUser(username);
+    res.json({ ok: true, memory });
+  });
+
+  app.post("/api/ai/memory", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const summary = String(req.body?.summary || "").trim();
+    if (!summary) {
+      res.status(400).json({ ok: false, error: "summary is required" });
+      return;
+    }
+    appendMemoryForUser(username, summary);
+    res.json({ ok: true });
+  });
+
+  app.delete("/api/ai/memory", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    clearMemoryForUser(username);
+    res.json({ ok: true });
   });
 
   app.post("/api/ai/paint-fix", async (req, res) => {

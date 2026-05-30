@@ -1,30 +1,29 @@
-# Sprint: AI Top Menu (Three-Tab Panel)
+# Sprint Contract: AI Top Menu UX Repair
 
-## Goal
-Replace the generic AI Assistant right-drawer panel with a proper AI Top Menu that opens below the toolbar with three tabs: AI Chat, AI Image Gen, AI Image Enhance.
+## What
+Fix AI Chat UX: mode gating, chat-style UI, Apply Suggestion safety, per-user memory.
 
 ## Done Criteria (testable)
-
-1. **Top toolbar AI button opens AI Top Menu panel** — verify: `grep 'aiTopMenuOpen' App.tsx` and UI contract test
-2. **AI Top Menu has three tabs: AI Chat, AI Image Gen, AI Image Enhance** — verify: UI contract tests check tab labels
-3. **Tabs switch without closing the panel** — verify: UI contract test
-4. **AI Chat shows target selector (Selected Block, Current Page, Whole Site)** — verify: UI contract test
-5. **Ask AI with missing provider/key shows safe setup message** — verify: UI contract test + server test
-6. **Apply Suggestion disabled until valid proposal exists** — verify: UI contract test
-7. **AI Image Gen shows missing-provider message when no key/provider** — verify: server test returns safe JSON
-8. **AI Image Enhance shows "select image first" when no image target** — verify: UI contract test
-9. **Markup attach control appears only when markup exists or shows disabled explanation** — verify: UI contract test
-10. **Theme isolation intact** — verify: existing theme bleed tests still pass
-11. **Help/User Guide still opens** — verify: existing help tests still pass
-12. **Admin-only Image/API Keys remains admin-only** — verify: existing admin tests still pass
-13. **Publish safety intact** — verify: `curl -X POST /api/publish` returns 401
-14. **All existing tests pass** — verify: `pnpm -r test` green
+1. `pnpm -r typecheck` passes
+2. `pnpm -r build` passes
+3. `pnpm -r lint` passes
+4. `pnpm -r test` passes (editor + server)
+5. `bash scripts/smoke-sbuild.sh` passes
+6. `curl http://127.0.0.1:3137/health` shows publishAllowed=false
+7. `curl -X POST /api/publish` (unauth) returns 401
+8. AI Chat opens from Edit, Preview, AND Markup modes
+9. AI Chat shows chat-style message bubbles, not toolbar form
+10. Apply Suggestion disabled for plain text, disabled in Preview/Markup, enabled only in Edit with valid proposal
+11. Per-user memory endpoint keyed by session user
+12. Manual desktop + mobile QA checklist provided
 
 ## Regression List
-- Help/User Guide modal opens and closes
-- Theme isolation (no editor↔canvas bleed)
-- Paint/Markup mode still works
-- Save/Revert still works
-- Publish dry-run still protected
-- Admin-only secrets routes still gated
-- Mobile drawer still works
+- publishAllowed stays false
+- unauth publish 401
+- Image Gen tab works
+- Image Enhance tab works
+- Website Manager unchanged
+- Settings/Account/User Management unchanged
+- Help Guide unchanged
+- Theme isolation intact
+- Save/Revert/Build/Publish toolbar unchanged

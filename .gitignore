@@ -18,3 +18,6 @@ project/backups
 .env.sbuild-auth
 .sbuild-login-credentials.txt
 project/users.json
+data/ai-memory.json
+project/project.json
+project/image-folder.json

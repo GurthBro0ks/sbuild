@@ -758,3 +758,69 @@ test("POST /api/ai/suggest with site targetKind includes site context prefix", a
     assert.equal(body.targetKind, "site");
   });
 });
+
+test("POST /api/ai/suggest returns hasProposal=false for mock provider", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "hello",
+        targetKind: "block",
+        blockId: "test-1",
+        blockType: "hero"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string };
+    assert.equal(body.ok, true);
+    assert.equal(body.hasProposal, false);
+    assert.equal(body.provider, "mock");
+  });
+});
+
+test("GET /api/ai/memory returns user memory", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/memory`);
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: boolean; memory: { summaries: string[]; lastChatAt: number } };
+  assert.equal(body.ok, true);
+  assert.ok(Array.isArray(body.memory.summaries));
+});
+
+test("POST /api/ai/memory appends summary for user", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/memory`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ summary: "test summary " + Date.now() })
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: boolean };
+  assert.equal(body.ok, true);
+});
+
+test("POST /api/ai/memory returns 400 when summary is empty", async () => {
+  const response = await fetch(`${baseUrl}/api/ai/memory`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ summary: "" })
+  });
+  assert.equal(response.status, 400);
+  const body = await response.json() as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.ok(body.error);
+});
+
+test("DELETE /api/ai/memory clears user memory", async () => {
+  await fetch(`${baseUrl}/api/ai/memory`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ summary: "to be cleared" })
+  });
+  const delResponse = await fetch(`${baseUrl}/api/ai/memory`, { method: "DELETE" });
+  assert.equal(delResponse.status, 200);
+  const delBody = await delResponse.json() as { ok: boolean };
+  assert.equal(delBody.ok, true);
+  const getResponse = await fetch(`${baseUrl}/api/ai/memory`);
+  const getBody = await getResponse.json() as { ok: boolean; memory: { summaries: string[] } };
+  assert.equal(getBody.memory.summaries.length, 0);
+});

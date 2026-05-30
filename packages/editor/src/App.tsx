@@ -937,6 +937,7 @@ export function App() {
   const [aiProposalBlockId, setAiProposalBlockId] = useState("");
   const [aiProposalBlockType, setAiProposalBlockType] = useState("");
   const [aiProposalPending, setAiProposalPending] = useState(false);
+  const [aiHasProposal, setAiHasProposal] = useState(false);
   const [aiImgGenPrompt, setAiImgGenPrompt] = useState("");
   const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("block");
   const [aiImgGenStatus, setAiImgGenStatus] = useState("");
@@ -1774,10 +1775,6 @@ export function App() {
   }
 
   function toggleAiTopMenu() {
-    if (previewMode || paintMode) {
-      setStatus("AI is not available in Preview or Markup mode");
-      return;
-    }
     setAiTopMenuOpen((prev) => !prev);
   }
 
@@ -1795,11 +1792,12 @@ export function App() {
     if (!prompt) return;
     setAiProposalPending(true);
     setAiProposal("");
+    setAiHasProposal(false);
     setChatHistory((h) => [...h, { role: "user", text: prompt }]);
     setChatInput("");
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; hasProposal?: boolean }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -1810,19 +1808,27 @@ export function App() {
       });
       if (data.ok && data.suggestion) {
         setAiProposal(data.suggestion);
+        const hasValidProposal = Boolean(data.hasProposal) && canEditBlocks;
+        setAiHasProposal(hasValidProposal);
         setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
         setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
         setChatHistory((h) => [...h, { role: "assistant", text: data.suggestion! }]);
       } else {
-        const msg = data.error || "AI suggestion unavailable. Provider may not be configured.";
+        const msg = data.error || "Prototype assistant: provider not configured. No edits were applied.";
         setAiProposal("");
+        setAiHasProposal(false);
         setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
       }
     } catch {
-      const msg = "AI suggestion unavailable. Provider may not be configured.";
+      const msg = "Prototype assistant: provider not configured. No edits were applied.";
+      setAiHasProposal(false);
       setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
     } finally {
       setAiProposalPending(false);
+      setTimeout(() => {
+        const el = document.querySelector(".ai-chat-messages");
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 50);
     }
   }
 
@@ -1860,6 +1866,7 @@ export function App() {
     setAiProposal("");
     setAiProposalBlockId("");
     setAiProposalBlockType("");
+    setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
   }
@@ -3995,7 +4002,7 @@ export function App() {
         </div>
       )}
 
-      {aiTopMenuOpen && !previewMode && !paintMode && (
+      {aiTopMenuOpen && (
         <div className="ai-top-menu" role="dialog" aria-label="AI panel">
           <div className="ai-top-menu-header">
             <div className="ai-top-menu-tabs">
@@ -4007,36 +4014,53 @@ export function App() {
           </div>
           <div className="ai-top-menu-body">
             {aiTopMenuTab === "chat" && (
-              <div className="ai-top-menu-tab-content">
-                <div className="ai-chat-target">
-                  <span className="ai-chat-target-label">Target: {aiChatTargetLabel()}</span>
-                  <div className="ai-chat-target-buttons">
-                    <button onClick={() => setAiChatTarget("block")} className={aiChatTarget === "block" ? "selected" : ""}>Selected Block</button>
-                    <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""}>Current Page</button>
-                    <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""}>Whole Site</button>
-                  </div>
-                </div>
-                {paintAppliedStrokes.length > 0 && (
-                  <div className="ai-chat-markup-attach">
-                    <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length} strokes)</button>
+              <div className="ai-top-menu-tab-content ai-chat-layout">
+                {(previewMode || paintMode) && (
+                  <div className="ai-chat-mode-notice">
+                    {previewMode && "Planning mode: chat is read-only. No edits can be applied."}
+                    {paintMode && "Planning mode: chat with optional markup context. No edits can be applied."}
                   </div>
                 )}
-                {paintAppliedStrokes.length === 0 && (
-                  <div className="ai-chat-markup-attach">
-                    <button disabled className="ai-markup-attach-btn disabled" title="Draw markup first using the Markup tool">Attach Markup (no markup — use Markup tool first)</button>
+                {!previewMode && !paintMode && (
+                  <div className="ai-chat-toolbar">
+                    <div className="ai-chat-target-buttons">
+                      <button onClick={() => setAiChatTarget("block")} className={aiChatTarget === "block" ? "selected" : ""}>Selected Block</button>
+                      <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""}>Current Page</button>
+                      <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""}>Whole Site</button>
+                    </div>
+                    {paintAppliedStrokes.length > 0 && (
+                      <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length})</button>
+                    )}
                   </div>
                 )}
-                <div className="chat-log">
+                <div className="ai-chat-messages">
+                  {chatHistory.length === 0 && (
+                    <div className="ai-chat-empty">Ask AI to improve copy, layout, or content.</div>
+                  )}
                   {chatHistory.map((msg, i) => (
-                    <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
+                    <div key={i} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
+                      <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
+                      <div className="ai-chat-msg-text">{msg.text}</div>
+                    </div>
                   ))}
+                  {aiProposalPending && <div className="ai-chat-msg ai-chat-msg-assistant"><div className="ai-chat-msg-role">AI</div><div className="ai-chat-msg-text ai-chat-typing">Thinking...</div></div>}
                 </div>
-                {aiProposalPending && <p className="ai-status-msg">Thinking...</p>}
-                <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={3} placeholder="Ask AI to improve copy, layout, or content..." className="mobile-field-stack" />
-                <div className="button-row ai-button-row">
-                  <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()}>Ask AI</button>
-                  <button onClick={applyAiProposal} disabled={!aiProposal}>Apply Suggestion</button>
-                  <button onClick={clearAiChat}>Clear</button>
+                {!previewMode && !paintMode && aiHasProposal && (
+                  <div className="ai-chat-action-bar">
+                    <button onClick={applyAiProposal} className="ai-apply-btn">Apply Suggestion</button>
+                  </div>
+                )}
+                <div className="ai-chat-input-area">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && chatInput.trim()) { e.preventDefault(); void aiAskSuggest(); } }}
+                    placeholder="Type a message..."
+                    className="ai-chat-input"
+                  />
+                  <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()} className="ai-chat-send">Send</button>
+                  <button onClick={clearAiChat} className="ai-chat-clear" title="Clear conversation">Clear</button>
                 </div>
               </div>
             )}
