@@ -1999,3 +1999,94 @@ test("canvas-frame border uses --editor-border (reset to light inside canvas)", 
   assert.match(cssSource, /\.canvas-frame \{[\s\S]*?border:\s*2px dashed var\(--editor-border\)/);
   assert.match(cssSource, /\.canvas-frame \{[\s\S]*?--editor-border: #e0e0e0/);
 });
+
+test("Help button exists in topbar", () => {
+  assert.match(appSource, /setHelpOpen\(true\)[\s\S]{0,60}Help \/ User Guide/);
+});
+
+test("Help button labeled ? appears near Settings", () => {
+  const btnIdx = appSource.indexOf("setHelpOpen(true)");
+  assert.ok(btnIdx > 0, "Help button handler exists");
+  const section = appSource.substring(btnIdx, btnIdx + 400);
+  assert.match(section, /\?<\/button>[\s\S]*Setting/);
+});
+
+test("Help modal opens and contains title", () => {
+  assert.match(appSource, /helpOpen/);
+  assert.match(appSource, /sBuild Help \/ User Guide/);
+});
+
+test("Help modal includes core term: Save", () => {
+  assert.match(appSource, /Quick Start[\s\S]*Save/);
+});
+
+test("Help modal includes core term: Preview", () => {
+  assert.match(appSource, /Modes[\s\S]*Preview/);
+});
+
+test("Help modal includes core term: Markup", () => {
+  assert.match(appSource, /Modes[\s\S]*Markup/);
+});
+
+test("Help modal includes core term: Website Manager", () => {
+  assert.match(appSource, /Pages \/ Website Manager[\s\S]*Website Manager/);
+});
+
+test("Help modal includes core term: Account Management", () => {
+  assert.match(appSource, /Accounts[\s\S]*Account Management/);
+});
+
+test("Help modal includes core term: User Management", () => {
+  assert.match(appSource, /Accounts[\s\S]*User Management/);
+});
+
+test("Help modal includes core term: Publish", () => {
+  assert.match(appSource, /Modes[\s\S]*Publish/);
+});
+
+test("Help modal has close button", () => {
+  assert.match(appSource, /Close Help/);
+  assert.match(appSource, /aria-label="Close Help"/);
+});
+
+test("Help modal Close button calls onClose", () => {
+  const closeIdx = appSource.indexOf("Close Help");
+  assert.ok(closeIdx > 0, "Close Help label exists");
+  const closeSection = appSource.substring(Math.max(0, closeIdx - 200), closeIdx + 200);
+  assert.match(closeSection, /onClick=\{onClose\}/);
+});
+
+test("Help modal backdrop click calls onClose", () => {
+  const guideIdx = appSource.indexOf("help-guide-modal");
+  assert.ok(guideIdx > 0, "help-guide-modal class exists");
+  const guideSection = appSource.substring(guideIdx - 400, guideIdx);
+  assert.match(guideSection, /modal-backdrop.*onClick=\{onClose\}/);
+});
+
+test("Help modal does not autofocus any input", () => {
+  const helpSection = appSource.substring(appSource.indexOf("function HelpGuide"), appSource.indexOf("export function App"));
+  assert.doesNotMatch(helpSection, /autoFocus|autofocus/i);
+});
+
+test("Help modal content is scrollable via CSS", () => {
+  assert.match(cssSource, /\.help-guide-modal[\s\S]*overflow-y:\s*auto/);
+  assert.match(cssSource, /\.help-guide-modal[\s\S]*max-height:\s*85vh/);
+});
+
+test("Help modal accordion sections exist and default Quick Start expanded", () => {
+  assert.match(appSource, /quick-start.*true/);
+  assert.match(appSource, /help-section-toggle/);
+});
+
+test("Help modal includes Troubleshooting section", () => {
+  assert.match(appSource, /Troubleshooting[\s\S]*Refresh/);
+});
+
+test("Existing Settings, Website Manager, Preview, Markup tests still pass pattern", () => {
+  assert.match(appSource, /Settings/);
+  assert.match(appSource, /Website Manager/);
+  assert.match(appSource, /previewMode/);
+  assert.match(appSource, /Markup/);
+  assert.match(appSource, /runPublish/);
+  assert.match(appSource, /dryRun/);
+});

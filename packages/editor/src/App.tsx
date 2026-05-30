@@ -669,6 +669,151 @@ function renderTypedBlock(block: Block, onText: (field: string, value: string) =
   }
 }
 
+function HelpGuide({ onClose }: { onClose: () => void }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    "quick-start": true,
+  });
+  function toggle(id: string) {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+  const sections = [
+    {
+      id: "quick-start",
+      title: "Quick Start",
+      content: (
+        <div>
+          <p>Pick a page from the <strong>left panel</strong>, then click a block to edit it. Use the <strong>right panel</strong> for Properties, Style, Resize, Images, AI, and Debug.</p>
+          <p>Click <strong>Save</strong> when done. Use <strong>Preview</strong> to see the site without editing controls.</p>
+        </div>
+      ),
+    },
+    {
+      id: "modes",
+      title: "Modes",
+      content: (
+        <div>
+          <p><strong>Edit:</strong> Normal site editing.</p>
+          <p><strong>Preview:</strong> Read-only view with links and navigation active.</p>
+          <p><strong>Markup:</strong> Draw notes for AI only; markup is not published to the website.</p>
+          <p><strong>Build:</strong> Local generation/build action.</p>
+          <p><strong>Publish:</strong> Currently protected / dry-run only.</p>
+        </div>
+      ),
+    },
+    {
+      id: "pages",
+      title: "Pages / Website Manager",
+      content: (
+        <div>
+          <p>Use <strong>+ New Page</strong> in the left panel to create a page. Use <strong>Website Manager</strong> to open, rename, change slug, show/hide from navigation, set parent, duplicate, or delete pages.</p>
+          <p>Parent pages organize content into groups. If a page has a parent, it still appears in the flat navigation bar for now. Hiding a page from nav removes it from the navigation bar without deleting it.</p>
+        </div>
+      ),
+    },
+    {
+      id: "blocks",
+      title: "Blocks",
+      content: (
+        <div>
+          <p>Add blocks from the left panel under <strong>Add Block</strong>. Common block types: hero, text, image, cards, hours, gallery, contact, testimonial, map, marquee, spacer, divider, html.</p>
+          <p>Use <strong>Duplicate</strong>, <strong>Delete</strong>, <strong>Up</strong>, and <strong>Down</strong> buttons above the canvas to organize blocks.</p>
+        </div>
+      ),
+    },
+    {
+      id: "styling",
+      title: "Styling",
+      content: (
+        <div>
+          <p><strong>Website Theme</strong> (in the left panel) affects the website preview and content only.</p>
+          <p><strong>Builder UI Theme</strong> (in Settings &rarr; General) affects only the editor chrome &mdash; topbar, panels, buttons.</p>
+          <p><strong>Selected block styles</strong> override theme defaults for individual blocks.</p>
+          <p><strong>Reset selected block colors</strong> resets one block. <strong>Reset blocks to this theme</strong> resets all blocks on the current page/site.</p>
+        </div>
+      ),
+    },
+    {
+      id: "images",
+      title: "Images",
+      content: (
+        <div>
+          <p>Use the <strong>Images</strong> button or <strong>Image Manager</strong> to upload images. Use the right panel <strong>Images</strong> tab to change the selected image or background.</p>
+          <p>Crop, fit, enhance, and black &amp; white options are available under the Images tab when an image or background is selected.</p>
+        </div>
+      ),
+    },
+    {
+      id: "ai-markup",
+      title: "AI / Markup",
+      content: (
+        <div>
+          <p>Use <strong>Markup</strong> to circle or point at areas before asking AI for changes. Markup is a note layer only &mdash; it is not published to the website.</p>
+          <p><strong>Attach to AI</strong> (currently disabled) will let you attach markup to an AI request when available.</p>
+          <p>AI will not publish or save anything without your confirmation.</p>
+        </div>
+      ),
+    },
+    {
+      id: "accounts",
+      title: "Accounts",
+      content: (
+        <div>
+          <p><strong>Account Management</strong> (in Settings) lets the current user change their password.</p>
+          <p><strong>Admin users</strong> see a <strong>User Management</strong> tab in Settings where they can create, reset passwords for, and manage other users.</p>
+          <p><strong>Regular users</strong> do not see User Management. The <strong>Image/API Keys</strong> tab is also admin-only.</p>
+        </div>
+      ),
+    },
+    {
+      id: "save-revert",
+      title: "Save / Revert / Safety",
+      content: (
+        <div>
+          <p><strong>Save</strong> writes changes to the project. <strong>Revert</strong> returns to the last saved state.</p>
+          <p><strong>Publish</strong> is intentionally disabled / dry-run until accepted.</p>
+          <p>If something looks wrong, check <strong>Settings &rarr; About</strong> for server health, build info, and commit info.</p>
+        </div>
+      ),
+    },
+    {
+      id: "troubleshooting",
+      title: "Troubleshooting",
+      content: (
+        <div>
+          <p><strong>Refresh</strong> the page if the UI seems stale.</p>
+          <p>Check <strong>Settings &rarr; About</strong> for server health and build/commit details.</p>
+          <p>Use <strong>Copy diagnostics</strong> in Settings &rarr; About when reporting a bug.</p>
+          <p>Report what page, block, mode, browser, and device you were using.</p>
+        </div>
+      ),
+    },
+  ];
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal help-guide-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>sBuild Help / User Guide</h3>
+          <button className="modal-close" onClick={onClose} aria-label="Close Help">✕</button>
+        </div>
+        <div className="help-guide-content">
+          {sections.map((s) => (
+            <div key={s.id} className="help-section">
+              <button className="help-section-toggle" onClick={() => toggle(s.id)}>
+                <span className="help-toggle-icon">{expanded[s.id] ? "▾" : "▸"}</span>
+                {s.title}
+              </button>
+              {expanded[s.id] && <div className="help-section-content">{s.content}</div>}
+            </div>
+          ))}
+        </div>
+        <div className="button-row" style={{ marginTop: 12 }}>
+          <button onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const [project, setProject] = useState<SBuildProject | null>(null);
   const projectRef = useRef<SBuildProject | null>(null);
@@ -719,6 +864,7 @@ export function App() {
   const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>("fields");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [helpOpen, setHelpOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [acctCurrentPw, setAcctCurrentPw] = useState("");
@@ -1203,6 +1349,10 @@ export function App() {
         setSettingsOpen(false);
         return;
       }
+      if (e.key === "Escape" && helpOpen) {
+        setHelpOpen(false);
+        return;
+      }
       if (e.key === "Escape" && imageManagerOpen) {
         setImageManagerOpen(false);
         return;
@@ -1218,7 +1368,7 @@ export function App() {
     };
     window.addEventListener("keydown", onToggle);
     return () => window.removeEventListener("keydown", onToggle);
-  }, [imageManagerOpen]);
+  }, [imageManagerOpen, helpOpen]);
 
   useEffect(() => {
     if (!resizeDrag) return;
@@ -3597,6 +3747,7 @@ export function App() {
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
           <button onClick={() => openAiDrawer()}>AI</button>
+          <button onClick={() => setHelpOpen(true)} title="Help / User Guide">?</button>
           <button onClick={() => {
             setSettingsOpen(true);
             setSettingsTab("general");
@@ -4447,6 +4598,10 @@ export function App() {
             )}
           </div>
         </div>
+      )}
+
+      {helpOpen && (
+        <HelpGuide onClose={() => setHelpOpen(false)} />
       )}
 
       {showWizard && (

@@ -2318,3 +2318,60 @@ button:disabled {
 .logout-btn:hover {
   background: #c0392b;
 }
+
+/* ===== HELP GUIDE ===== */
+.help-guide-modal {
+  width: min(680px, 94vw);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.help-guide-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.help-section {
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.help-section-toggle {
+  width: 100%;
+  text-align: left;
+  background: var(--editor-panel-bg-2);
+  border: none;
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--editor-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.help-section-toggle:hover {
+  background: var(--editor-highlight);
+  color: #fff;
+}
+.help-toggle-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.help-section-content {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--editor-border);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--editor-text);
+  background: var(--editor-panel-bg);
+}
+.help-section-content p {
+  margin: 6px 0;
+}
+.help-section-content strong {
+  color: var(--editor-accent);
+}

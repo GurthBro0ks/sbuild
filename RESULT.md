@@ -1,49 +1,82 @@
-# AI Markup Theme Isolation + QA Repair — Result
+# Theme Bleed Fix Round 2 — Result
 
 ## Summary
-Fixed AI Markup mode theme bleed where editor dark theme styling leaked into website preview. Also fixed paint overlay sizing and touch drawing reliability. Updated toolbar text for clarity.
+Fixed remaining editor theme bleed into website preview/canvas. The prior fix (commit fdc105f) added `--editor-*` CSS var defaults inside `.canvas-frame` but did not address `.canvas-area` which is the outer wrapper that visually surrounds the canvas frame. When editor theme is Dark, `.canvas-area` inherited `var(--editor-bg)` = `#1e1e1e`, causing dark background to appear between canvas-controls, panel-status, canvas-frame, and around the canvas on wide viewports.
 
-## Changes (commit fdc105f)
+## Commit
+`1a5611b` — `fix: isolate website canvas theme from editor chrome`
 
-### Fix 1: Theme Isolation (editor dark → site preview bleed)
-- **Root cause**: `.canvas-frame` relied on inherited `--editor-*` CSS vars from `.sbuild-editor-shell`. When Builder UI Theme was set to Dark, the dark `--editor-*` values cascaded into site preview blocks via CSS variable fallback chains in `.block-shell` and other site content selectors.
-- **Fix**: Added explicit light-theme `--editor-*` defaults inside `.canvas-frame` selector. This guarantees changing Builder UI Theme to Dark does NOT affect website preview colors.
-- **File**: `packages/editor/src/styles.css` (`.canvas-frame` block)
-- **Tests**: 4 new UI contract tests verifying `--editor-bg`, `--editor-accent`, `--editor-text`, `--editor-border` are reset to light values, and not set to `initial`.
+## Root Cause
+`.canvas-area` (`packages/editor/src/styles.css:747`) had **no background property**. It inherited `var(--editor-bg)` from `.sbuild-editor-shell`. This caused dark editor chrome background to show:
+- Between `.canvas-controls` / `.panel-status` / `.canvas-frame` (flex `gap: 10px`)
+- Behind `.canvas-frame` when content was shorter than container
+- On sides of `.canvas-frame` (which uses `margin: 0 auto` + `max-width: 1000px`)
+- In areas between page elements (perceived as "row gutters" and "empty areas between blocks")
 
-### Fix 2: Paint overlay sizing
-- **Root cause**: `.paint-overlay` had `position: absolute; inset: 0` but no explicit `width`/`height`, which could cause incomplete canvas coverage in some layout contexts.
-- **Fix**: Added `width: 100%; height: 100%` to `.paint-overlay`.
-- **File**: `packages/editor/src/styles.css`
-- **Tests**: Assertions verifying explicit width/height on `.paint-overlay`.
+The prior fix only reset CSS variables inside `.canvas-frame`, but the `.canvas-area` wrapper is outside `.canvas-frame` in the DOM tree, so the reset did not help.
 
-### Fix 3: Touch drawing reliability
-- **Root cause**: Paint capture overlay lacked `touch-action: none` and `user-select: none`, allowing browser touch gestures and text selection to interfere with drawing on mobile.
-- **Fix**: Added `touch-action: none`, `user-select: none`, and `-webkit-user-select: none` to `.paint-overlay.capture-active`.
-- **File**: `packages/editor/src/styles.css`
+## Fix Applied
+### `packages/editor/src/styles.css` (+1 line)
+- Added `background: var(--sbuild-editor-bg, var(--sbuild-page-bg, var(--sbuild-bg, #f6f3e9)))` to `.canvas-area`
+- This uses the site theme's page background color (e.g., `#f3ecdc` for Harvest Light) for the canvas area
 
-### Fix 4: Toolbar text clarity
-- **Change**: "Discard" → "Discard Markup"; helper text now reads "Click and drag to draw. Markup is only for AI notes and is not published."
-- **Files**: `packages/editor/src/App.tsx`, `packages/editor/src/ui-contract.test.js`
+### `packages/editor/src/App.tsx` (+1 change)
+- Extended `applySiteTheme` `querySelectorAll` to include `.canvas-area` so site-theme CSS variables (`--sbuild-editor-bg`, etc.) are set on it
 
-## Verification Evidence
-```
-pnpm --filter @sbuild/editor typecheck → PASS
-pnpm --filter @sbuild/editor build → PASS
-pnpm -r lint → PASS
-pnpm --filter @sbuild/editor test → 307/307 PASS
-pnpm -r test → editor 307/307, server 39/39, cli ok
-bash scripts/smoke-sbuild.sh → PASS
-systemctl --user restart sbuild.service → active
-curl http://127.0.0.1:3137/health → publishAllowed=false, editorDistExists=true
-curl -X POST /api/publish (unauth) → 401
-```
+## Validation Results
+| Gate | Result |
+|------|--------|
+| `pnpm -r typecheck` | PASS |
+| `pnpm -r build` | PASS |
+| `pnpm -r lint` | PASS |
+| `pnpm -r test` | 311/311 PASS (editor 311, server 39) |
+| `bash scripts/smoke-sbuild.sh` | PASS |
+| `systemctl --user is-active sbuild.service` | active |
+| `curl -fsS http://127.0.0.1:3137/health` | ok=true, publishAllowed=false |
+| `curl -fsS https://sbuilder.blackfishfarms.com/health` | ok=true, publishAllowed=false |
+| `curl -s -o /dev/null -w "%{http_code}" -X POST /api/publish` | 401 |
 
-## Safety
-- publishAllowed remains false
-- unauth POST /api/publish returns 401
-- Runtime files (project/project.json, project/image-folder.json) NOT committed
-- No force push used
+## Files Changed
+- `packages/editor/src/styles.css` — Added background to `.canvas-area`
+- `packages/editor/src/App.tsx` — Added `.canvas-area` to theme variable targets
+- `packages/editor/src/ui-contract.test.js` — Added 4 new contract tests for theme isolation
 
-## Pushed to origin/main
-- Commit fdc105f pushed to origin/main
+## Contract Tests Added
+1. `canvas-area uses site-theme background var not editor var`
+2. `canvas-area site theme var is applied via applySiteTheme`
+3. `row-shell does not have its own background (transparent, shows canvas-frame theme bg)`
+4. `canvas-frame border uses --editor-border (reset to light inside canvas)`
+
+## Pushed
+NO — awaiting manual QA acceptance.
+
+## Manual QA Checklist
+
+### Desktop
+1. Login as admin
+2. Open Settings/About and confirm commit `1a5611b`
+3. Select Harvest Light theme
+4. Scroll page in Edit mode
+5. **Verify**: page/canvas background and row gaps are light/cream, not editor-dark
+6. **Verify**: editor chrome outside page remains dark (left/right panels, topbar)
+7. Toggle Preview and confirm links work
+8. Toggle Markup and draw across header/hero/cards/lower sections
+9. **Verify**: Markup does not cause theme bleed
+10. **Verify**: text/block selection is disabled in Markup
+11. **Verify**: Clear / Keep Markup / Discard Markup behavior
+12. **Verify**: Website Manager still works
+13. **Verify**: admin sees User Management and Image/API Keys
+14. **Verify**: non-admin does not see User Management or Image/API Keys
+15. **Verify**: Publish remains dry-run
+
+### Mobile (iPhone Safari)
+1. Open on iPhone Safari
+2. **Verify**: Harvest Light page/canvas does not show dark row gaps
+3. **Verify**: Markup toolbar is usable
+4. **Verify**: Settings tabs still fit
+5. **Verify**: non-admin/admin tab visibility still matches role
+6. **Verify**: no zoom regression on modal inputs
+
+## Dirty Files (not committed)
+- `project/project.json`
+- `project/image-folder.json`
