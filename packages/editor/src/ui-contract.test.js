@@ -225,6 +225,27 @@ test("provider and key panels expose chat provider and chat key status", () => {
   assert.doesNotMatch(appSource, /secretStatus\?\.imageAnalyze\.source/);
 });
 
+test("local provider UI prefers qwen3 and refreshes installed models only", () => {
+  assert.match(appSource, /normalizeLocalModelOptions/);
+  assert.match(appSource, /qwen3:4b/);
+  assert.doesNotMatch(appSource, /mistral:7b/);
+  assert.doesNotMatch(appSource, /qwen2\.5:3b/);
+  assert.doesNotMatch(appSource, /qwen2\.5:0\.5b/);
+  assert.doesNotMatch(appSource, /llama3\.2:1b/);
+});
+
+test("saving chat provider keeps image key labels unchanged", () => {
+  assert.match(appSource, /Image Gen and Image Analyze key status unchanged/);
+  assert.match(appSource, /previousImageGen/);
+  assert.match(appSource, /previousImageAnalyze/);
+});
+
+test("AI chat surfaces safe success and error provider states", () => {
+  assert.match(appSource, /Local chat connected:/);
+  assert.match(appSource, /AI chat unavailable:/);
+  assert.match(appSource, /chatProviderStatus/);
+});
+
 test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
   assert.match(smokeSource, /unauth \/api\/publish expected 401/);

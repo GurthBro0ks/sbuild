@@ -323,6 +323,23 @@ type NormalizedProviderStatus = {
   message: string;
 };
 
+function normalizeLocalModelOptions(models: Array<{ name: string }>): Array<{ name: string }> {
+  const seen = new Set<string>();
+  return models
+    .map((model) => ({ name: String(model.name || "").trim() }))
+    .filter((model) => model.name)
+    .filter((model) => {
+      if (seen.has(model.name)) return false;
+      seen.add(model.name);
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.name === "qwen3:4b") return -1;
+      if (b.name === "qwen3:4b") return 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
 function upsertProviderStatus(list: NormalizedProviderStatus[], next: NormalizedProviderStatus): NormalizedProviderStatus[] {
   const index = list.findIndex((item) => item.name === next.name);
   if (index >= 0) {
@@ -335,6 +352,8 @@ function upsertProviderStatus(list: NormalizedProviderStatus[], next: Normalized
 
 function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): NormalizedProviderStatus[] {
   const root = toRecord(raw);
+  const channels = toRecord(root.channels);
+  const chatChannel = toRecord(channels.chat);
   const rawProviders = Array.isArray(root.providers) ? root.providers : [];
   let providers = rawProviders
     .map((item) => toRecord(item))
@@ -349,7 +368,9 @@ function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): Normalize
   providers = upsertProviderStatus(providers, {
     name: "AI Chat Provider",
     status: providerStateFromChannel(secrets.chat),
-    message: secrets.chat.statusText
+    message: typeof chatChannel.message === "string" && chatChannel.message.trim().length > 0
+      ? chatChannel.message
+      : secrets.chat.statusText
   });
   providers = upsertProviderStatus(providers, {
     name: "Image Generation API",
@@ -1137,6 +1158,7 @@ export function App() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [photoFolder, setPhotoFolder] = useState("project/images");
   const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
+  const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Provider") || null;
   const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState("");
   const [lastLoadedAt, setLastLoadedAt] = useState("");
@@ -1745,7 +1767,14 @@ export function App() {
     try {
       const data = await fetchJson<{ ok: boolean; ollama: { reachable: boolean; models: Array<{ name: string }> } }>("/api/ai/providers/discover");
       if (data.ok && data.ollama?.models) {
-        setLocalModels(data.ollama.models);
+        const nextModels = normalizeLocalModelOptions(data.ollama.models);
+        setLocalModels(nextModels);
+        setChatModel((current) => {
+          if (chatProvider !== "ollama") return current;
+          if (current && nextModels.some((model) => model.name === current)) return current;
+          if (nextModels.some((model) => model.name === "qwen3:4b")) return "qwen3:4b";
+          return nextModels[0]?.name || "";
+        });
       } else {
         setLocalModels([]);
       }
@@ -1770,6 +1799,8 @@ export function App() {
 
   async function saveProviderConfig() {
     try {
+      const previousImageGen = secretStatus.imageGen.statusText;
+      const previousImageAnalyze = secretStatus.imageAnalyze.statusText;
       await fetchJson("/api/ai/providers/config", {
         method: "POST",
         body: JSON.stringify({
@@ -1782,7 +1813,11 @@ export function App() {
       setProviderConfigSaved(true);
       setTimeout(() => setProviderConfigSaved(false), 2000);
       await discoverLocalModels();
-      await loadProviders();
+      const refreshedSecrets = await loadSecretsStatus();
+      await loadProviders(refreshedSecrets);
+      if (refreshedSecrets.imageGen.statusText === previousImageGen && refreshedSecrets.imageAnalyze.statusText === previousImageAnalyze) {
+        setProviderCheckMessage("Provider saved. Image Gen and Image Analyze key status unchanged.");
+      }
     } catch {
       // ignore
     }
@@ -2039,7 +2074,7 @@ export function App() {
     setChatInput("");
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; hasProposal?: boolean }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; message?: string; hasProposal?: boolean }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2055,11 +2090,17 @@ export function App() {
         setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
         setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
         setChatHistory((h) => [...h, { role: "assistant", text: data.suggestion! }]);
+        if (data.provider === "ollama" && data.model) {
+          setProviderCheckMessage(`Local chat connected: ${data.model}`);
+        } else if (data.message) {
+          setProviderCheckMessage(data.message);
+        }
       } else {
         const msg = data.error || "Prototype assistant: provider not configured. No edits were applied.";
         setAiProposal("");
         setAiHasProposal(false);
         setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
+        if (data.message) setProviderCheckMessage(data.message);
       }
     } catch {
       const msg = "Prototype assistant: provider not configured. No edits were applied.";
@@ -2543,8 +2584,18 @@ export function App() {
     const prompt = chatInput.trim();
     setChatHistory((h) => [...h, { role: "user", text: prompt }]);
     setChatInput("");
-    const data = await fetchJson<{ response: string }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
-    setChatHistory((h) => [...h, { role: "assistant", text: data.response }]);
+    try {
+      const data = await fetchJson<{ response: string; provider?: string; model?: string; message?: string }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
+      setChatHistory((h) => [...h, { role: "assistant", text: data.response }]);
+      if (data.provider === "ollama" && data.model) {
+        setProviderCheckMessage(`Local chat connected: ${data.model}`);
+      } else if (data.message) {
+        setProviderCheckMessage(data.message);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setChatHistory((h) => [...h, { role: "assistant", text: `AI chat unavailable: ${message}` }]);
+    }
   }
 
   async function quickRewrite(mode: "rewrite" | "shorten" | "lengthen" | "tone") {
@@ -4122,6 +4173,7 @@ export function App() {
               <p className="panel-status">
                 <strong>AI panel:</strong> {(() => { const t = computeAiTarget(); if (t.kind === "site-header") return "site header"; if (t.kind === "block") return `block ${t.label}`; return "none"; })()}
               </p>
+              {chatProviderStatus && <p className="panel-status"><strong>Chat status:</strong> {chatProviderStatus.message}</p>}
               <div className="quick-actions">
                 <button onClick={() => void quickRewrite("rewrite")}>Rewrite</button>
                 <button onClick={() => void quickRewrite("shorten")}>Shorten</button>
@@ -5140,6 +5192,7 @@ export function App() {
                 <button onClick={() => void saveProviderConfig()}>{providerConfigSaved ? "Saved!" : "Save Provider Config"}</button>
                 <button onClick={() => void discoverLocalModels()}>Refresh Local Models</button>
               </div>
+              {chatProviderStatus && <p className="panel-status">{chatProviderStatus.message}</p>}
               <hr style={{ margin: "16px 0" }} />
               <p className="hint"><strong>C) API-key providers</strong> use local secret fields in Image/API Keys.</p>
               <p className="hint"><strong>D) Image/API keys</strong> are masked and never stored in project.json.</p>

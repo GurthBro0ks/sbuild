@@ -19,6 +19,16 @@ import {
 import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 
+const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
+const DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
+
+type LocalModelInfo = {
+  name: string;
+  size?: number;
+  modified?: string;
+  parameterSize?: string;
+};
+
 function safeGitCommand(cmd: string, cwd?: string): string | null {
   try {
     return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], cwd }).trim();
@@ -843,6 +853,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ok: true,
       suggestion: result.response,
       provider: result.provider,
+      model: result.model,
+      message: result.message,
       source: result.source,
       hasProposal,
       targetKind,
@@ -1228,6 +1240,36 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     await fs.writeFile(secretsFile, JSON.stringify(secrets, null, 2), "utf-8");
   }
 
+  function normalizeLocalModels(models: LocalModelInfo[]): LocalModelInfo[] {
+    const seen = new Set<string>();
+    return models
+      .map((model) => ({
+        name: String(model.name || "").trim(),
+        size: model.size,
+        modified: model.modified,
+        parameterSize: model.parameterSize
+      }))
+      .filter((model) => model.name)
+      .filter((model) => {
+        if (seen.has(model.name)) return false;
+        seen.add(model.name);
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.name === DEFAULT_LOCAL_CHAT_MODEL) return -1;
+        if (b.name === DEFAULT_LOCAL_CHAT_MODEL) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  }
+
+  function preferredLocalModelName(models: LocalModelInfo[], configuredModel?: string): string | null {
+    const normalized = normalizeLocalModels(models);
+    const preferred = String(configuredModel || process.env.SBUILD_OLLAMA_MODEL || "").trim();
+    if (preferred && normalized.some((model) => model.name === preferred)) return preferred;
+    if (normalized.some((model) => model.name === DEFAULT_LOCAL_CHAT_MODEL)) return DEFAULT_LOCAL_CHAT_MODEL;
+    return normalized[0]?.name || null;
+  }
+
   function maskKey(key: string): string {
     if (key.length <= 8) return "****";
     return `${key.slice(0, 4)}...${key.slice(-4)}`;
@@ -1284,10 +1326,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const envChat = process.env.SBUILD_OPENAI_CHAT_API_KEY || process.env.OPENAI_API_KEY || "";
     const secrets = await loadSecrets();
     const localChat = String((secrets as Record<string, unknown>).chatApiKey || "").trim();
-    const localAnalyze = String((secrets as Record<string, unknown>).imageAnalyzeApiKey || "").trim();
-    const localGen = String((secrets as Record<string, unknown>).imageGenApiKey || "").trim();
-    const chatKey = envChat || localChat || localAnalyze || localGen;
-    const chatSource: "env" | "local" | "missing" = envChat ? "env" : (localChat || localAnalyze || localGen) ? "local" : "missing";
+    const chatKey = envChat || localChat;
+    const chatSource: "env" | "local" | "missing" = envChat ? "env" : localChat ? "local" : "missing";
     return { chatKey, chatSource };
   }
 
@@ -1302,19 +1342,33 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const secrets = await loadSecrets();
     const s = secrets as Record<string, unknown>;
     const chatKeyStatus = await getChatApiKeyStatus();
+    const provider = String(s.chatProvider || "auto");
+    const ollama = await getOllamaStatus();
+    const savedModel = String(s.chatModel || "").trim();
+    const model = savedModel || ((provider === "ollama" || provider === "auto") ? (preferredLocalModelName(ollama.models, DEFAULT_LOCAL_CHAT_MODEL) || "") : "");
+    const defaultBaseUrl = provider === "ollama" || provider === "auto"
+      ? ollama.endpoint
+      : (process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1");
     return {
-      provider: String(s.chatProvider || "auto"),
-      model: String(s.chatModel || ""),
-      baseUrl: String(s.chatBaseUrl || process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1"),
+      provider,
+      model,
+      baseUrl: String(s.chatBaseUrl || defaultBaseUrl),
       apiKey: chatKeyStatus.chatKey
     };
   }
 
   async function saveChatProviderConfig(cfg: { provider?: string; model?: string; baseUrl?: string; apiKey?: string }): Promise<void> {
     const secrets = await loadSecrets();
-    if (cfg.provider !== undefined) secrets.chatProvider = cfg.provider;
-    if (cfg.model !== undefined) secrets.chatModel = cfg.model;
-    if (cfg.baseUrl !== undefined) secrets.chatBaseUrl = cfg.baseUrl;
+    const provider = String(cfg.provider ?? secrets.chatProvider ?? "auto").trim();
+    const model = String(cfg.model || "").trim();
+    const baseUrl = String(cfg.baseUrl || "").trim();
+    if (cfg.provider !== undefined) secrets.chatProvider = provider;
+    if (cfg.model !== undefined) secrets.chatModel = model;
+    if (cfg.baseUrl !== undefined) {
+      secrets.chatBaseUrl = provider === "openai" || provider === "openrouter" || provider === "openai-compatible"
+        ? baseUrl
+        : "";
+    }
     if (cfg.apiKey !== undefined && cfg.apiKey) secrets.chatApiKey = cfg.apiKey;
     await saveSecrets(secrets);
   }
@@ -1328,26 +1382,32 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     message?: string;
   };
 
-  async function getOllamaStatus(): Promise<{ reachable: boolean; model: string | null; message: string }> {
-    const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
-    const preferredModel = String(process.env.SBUILD_OLLAMA_MODEL || "").trim();
+  async function getOllamaStatus(): Promise<{ reachable: boolean; endpoint: string; model: string | null; models: LocalModelInfo[]; message: string }> {
+    const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || DEFAULT_OLLAMA_ENDPOINT;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 2500);
       const response = await fetch(`${endpoint}/api/tags`, { signal: controller.signal });
       clearTimeout(timer);
       if (!response.ok) {
-        return { reachable: false, model: null, message: `Ollama unreachable (${response.status}).` };
+        return { reachable: false, endpoint, model: null, models: [], message: `Ollama unreachable (${response.status}).` };
       }
-      const payload = (await response.json().catch(() => ({}))) as { models?: Array<{ name?: string }> };
-      const models = (payload.models || []).map((m) => String(m.name || "").trim()).filter(Boolean);
+      const payload = (await response.json().catch(() => ({}))) as {
+        models?: Array<{ name?: string; size?: number; modified_at?: string; details?: { parameter_size?: string } }>;
+      };
+      const models = normalizeLocalModels((payload.models || []).map((m) => ({
+        name: String(m.name || ""),
+        size: m.size,
+        modified: m.modified_at,
+        parameterSize: m.details?.parameter_size
+      })));
       if (models.length === 0) {
-        return { reachable: true, model: null, message: "Ollama reachable but no local models installed." };
+        return { reachable: true, endpoint, model: null, models, message: "Ollama reachable but no local models installed." };
       }
-      const model = preferredModel && models.includes(preferredModel) ? preferredModel : models[0];
-      return { reachable: true, model, message: `Ollama ready with model ${model}.` };
+      const model = preferredLocalModelName(models) || null;
+      return { reachable: true, endpoint, model, models, message: model ? `Local chat connected: ${model}` : "Ollama reachable but no local models installed." };
     } catch {
-      return { reachable: false, model: null, message: "Ollama not reachable on localhost." };
+      return { reachable: false, endpoint, model: null, models: [], message: "Ollama not reachable on localhost." };
     }
   }
 
@@ -1379,10 +1439,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     if (provider === "ollama" || provider === "auto") {
       const ollama = await getOllamaStatus();
       if (ollama.reachable && ollama.model) {
-        const modelToUse = config.model && config.model.trim() ? config.model : ollama.model;
+        const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
         try {
-          const endpoint = config.baseUrl?.trim() || process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
-          const response = await fetch(`${endpoint}/api/chat`, {
+          const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1403,9 +1462,18 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               available: true,
               response: text,
               model: modelToUse,
-              message: `Ollama ready with model ${modelToUse}`
+              message: `Local chat connected: ${modelToUse}`
             };
           }
+          const safeDiagnostics = [`status=${response.status}`, `hasMessage=${Boolean(payload.message)}`, `hasError=${Boolean(payload.error)}`].join(" ");
+          return {
+            provider: "ollama",
+            source: "local",
+            available: false,
+            response: "AI chat unavailable: provider returned no content.",
+            model: modelToUse,
+            message: `Ollama returned no content (${safeDiagnostics})`
+          };
         } catch {
           // Fall through to next provider
         }
@@ -1423,7 +1491,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
 
     if (provider === "openai" || provider === "openai-compatible" || provider === "openrouter" || provider === "auto") {
-      const chatKey = config.apiKey || (await getChatApiKeyStatus()).chatKey;
+      const chatKeyStatus = await getChatApiKeyStatus();
+      const chatKey = config.apiKey || chatKeyStatus.chatKey;
       if (!chatKey) {
         return {
           provider: "none",
@@ -1462,7 +1531,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         if (response.ok && text) {
           return {
             provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-            source: "local",
+            source: chatKeyStatus.chatSource,
             available: true,
             response: text,
             model: chatModel,
@@ -1471,7 +1540,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         }
         return {
           provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-          source: "local",
+          source: chatKeyStatus.chatSource,
           available: false,
           response: "AI chat unavailable: provider returned no content.",
           model: chatModel,
@@ -1480,7 +1549,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       } catch {
         return {
           provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-          source: "local",
+          source: chatKeyStatus.chatSource,
           available: false,
           response: "AI chat unavailable: provider request failed.",
           model: chatModel,
@@ -1501,7 +1570,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   async function getChatProviderStatus(): Promise<{ status: "connected" | "not_configured"; source: "local" | "env" | "missing"; provider: string; model?: string; message: string; configuredProvider?: string; localModels?: Array<{ name: string }> }> {
     const config = await getChatProviderConfig();
     const ollama = await getOllamaStatus();
-    const localModels = ollama.reachable ? [{ name: ollama.model || "" }] : [];
+    const localModels = ollama.models.map((model) => ({ name: model.name }));
 
     if (config.provider === "disabled") {
       return {
@@ -1516,13 +1585,13 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
     if (config.provider === "ollama" || config.provider === "auto") {
       if (ollama.reachable && ollama.model) {
-        const modelToUse = config.model && config.model.trim() ? config.model : ollama.model;
+        const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
         return {
           status: "connected",
           source: "local",
           provider: "ollama",
           model: modelToUse,
-          message: `Ollama ready with model ${modelToUse}`,
+          message: `Local chat connected: ${modelToUse}`,
           configuredProvider: config.provider,
           localModels
         };
@@ -1540,9 +1609,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
 
     if (config.apiKey) {
+      const chatKeyStatus = await getChatApiKeyStatus();
       return {
         status: "connected",
-        source: "local",
+        source: chatKeyStatus.chatSource,
         provider: config.provider === "openrouter" ? "openrouter" : "openai-compatible",
         model: config.model || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
         message: `Chat configured via ${config.provider} (${config.baseUrl || "default endpoint"})`,
@@ -1557,7 +1627,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         source: "local",
         provider: "ollama",
         model: ollama.model,
-        message: `Ollama auto-selected (no API key configured)`,
+        message: `Local chat connected: ${ollama.model}`,
         configuredProvider: "auto",
         localModels
       };
@@ -1636,9 +1706,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       {
         name: "AI Chat Provider",
         status: chatStatus.status,
-        message: chatStatus.status === "connected"
-          ? `${chatStatus.provider}${chatStatus.model ? ` (${chatStatus.model})` : ""} via ${chatStatus.source}`
-          : chatStatus.message
+        message: chatStatus.message
       }
     ];
     res.json({ ok: true, providers, channels });
@@ -1678,51 +1746,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   });
 
   app.get("/api/ai/providers/discover", async (_req, res) => {
-    const ollamaEndpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
-    const ollamaModels: Array<{ name: string; size?: number; modified?: string; parameterSize?: string }> = [];
-    let ollamaReachable = false;
-    let ollamaMessage = "Ollama not reachable on localhost.";
-
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(`${ollamaEndpoint}/api/tags`, { signal: controller.signal });
-      clearTimeout(timer);
-      if (response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as {
-          models?: Array<{
-            name?: string;
-            size?: number;
-            modified_at?: string;
-            details?: { parameter_size?: string };
-          }>;
-        };
-        ollamaReachable = true;
-        ollamaModels.push(
-          ...(payload.models || []).map((m) => ({
-            name: String(m.name || ""),
-            size: m.size,
-            modified: m.modified_at,
-            parameterSize: m.details?.parameter_size
-          }))
-        );
-        ollamaMessage = ollamaModels.length > 0
-          ? `Ollama reachable with ${ollamaModels.length} model(s)`
-          : "Ollama reachable but no models installed";
-      } else {
-        ollamaMessage = `Ollama returned ${response.status}`;
-      }
-    } catch {
-      ollamaMessage = "Ollama not reachable on localhost.";
-    }
+    const ollama = await getOllamaStatus();
 
     res.json({
       ok: true,
       ollama: {
-        reachable: ollamaReachable,
-        endpoint: ollamaEndpoint,
-        models: ollamaModels,
-        message: ollamaMessage
+        reachable: ollama.reachable,
+        endpoint: ollama.endpoint,
+        models: ollama.models,
+        message: ollama.reachable
+          ? ollama.models.length > 0
+            ? `Ollama reachable with ${ollama.models.length} model(s)`
+            : "Ollama reachable but no models installed"
+          : ollama.message
       }
     });
   });
@@ -1882,8 +1918,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   app.get("/api/status", async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
-    const chatKeyStatus = await getChatApiKeyStatus();
-    const ollamaStatus = await getOllamaStatus();
+    const chatStatus = await getChatProviderStatus();
     let editorDistExists = false;
     try {
       await fs.access(editorIndexPath);
@@ -1899,21 +1934,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ...channelSummaryFromSource(keyStatus.analyzeSource as "env" | "local" | "missing"),
       message: keyStatus.analyzeSource === "missing" ? "Image analysis API key missing." : `Image analysis configured from ${keyStatus.analyzeSource}.`
     };
-    const chatSource: "env" | "local" | "missing" = ollamaStatus.reachable && ollamaStatus.model ? "local" : chatKeyStatus.chatSource;
     const chatChannel = {
-      ...channelSummaryFromSource(chatSource),
-      model: ollamaStatus.reachable && ollamaStatus.model ? ollamaStatus.model : (process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini"),
-      message: ollamaStatus.reachable && ollamaStatus.model ? `Ollama ready with model ${ollamaStatus.model}.` : chatSource === "missing" ? "Chat API key missing." : `Chat configured from ${chatSource}.`
+      ...channelSummaryFromSource(chatStatus.source),
+      provider: chatStatus.provider,
+      model: chatStatus.model || process.env.SBUILD_CHAT_MODEL || DEFAULT_LOCAL_CHAT_MODEL,
+      message: chatStatus.message
     };
     res.json({
       ok: true,
       status: {
-        chatApi: ollamaStatus.reachable && ollamaStatus.model
-          ? "configured-local"
-          : chatKeyStatus.chatSource === "missing"
-            ? "missing-key"
-            : `configured-${chatKeyStatus.chatSource}`,
-        chatModel: ollamaStatus.reachable && ollamaStatus.model ? ollamaStatus.model : (process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini"),
+        chatApi: chatStatus.status === "connected"
+          ? `configured-${chatStatus.source}`
+          : "missing-key",
+        chatModel: chatStatus.model || process.env.SBUILD_CHAT_MODEL || DEFAULT_LOCAL_CHAT_MODEL,
         imageApi: keyStatus.genSource === "missing" ? "missing-key" : `configured-${keyStatus.genSource}`,
         imageAnalyzeApi: keyStatus.analyzeSource === "missing" ? "missing-key" : `configured-${keyStatus.analyzeSource}`,
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",

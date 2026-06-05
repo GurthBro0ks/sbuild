@@ -1,6 +1,7 @@
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import http from "node:http";
 import { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -96,6 +97,39 @@ async function withTemporarySecretsFileContent<T>(content: string, fn: () => Pro
     } else {
       await fs.writeFile(secretsFile, existingSecrets, "utf8");
     }
+  }
+}
+
+async function withMockOllama<T>(handlers: {
+  tags: { models: Array<{ name: string; size?: number; modified_at?: string; details?: { parameter_size?: string } }> };
+  chat?: { status?: number; body?: unknown };
+}, fn: (endpoint: string) => Promise<T>): Promise<T> {
+  const server = http.createServer((req, res) => {
+    if (req.url === "/api/tags") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(handlers.tags));
+      return;
+    }
+    if (req.url === "/api/chat") {
+      res.writeHead(handlers.chat?.status || 200, { "content-type": "application/json" });
+      res.end(JSON.stringify(handlers.chat?.body || { message: { content: "mock reply" } }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const addr = server.address() as AddressInfo;
+  const endpoint = `http://127.0.0.1:${addr.port}`;
+  const previousEndpoint = process.env.SBUILD_OLLAMA_ENDPOINT;
+  delete process.env.SBUILD_OLLAMA_MODEL;
+  process.env.SBUILD_OLLAMA_ENDPOINT = endpoint;
+  try {
+    return await fn(endpoint);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
+    if (previousEndpoint === undefined) delete process.env.SBUILD_OLLAMA_ENDPOINT;
+    else process.env.SBUILD_OLLAMA_ENDPOINT = previousEndpoint;
   }
 }
 
@@ -309,6 +343,112 @@ test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
   assert.ok(chatProvider);
   assert.ok(["connected", "not_configured", "unknown", "error"].includes(String(chatProvider?.status || "")));
   assert.ok(typeof chatProvider?.message === "string");
+});
+
+test("/api/ai/providers/discover prefers qwen3:4b and only returns installed models", async () => {
+  await withMockOllama({
+    tags: {
+      models: [
+        { name: "mistral:7b" },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } },
+        { name: "qwen3:4b" }
+      ]
+    }
+  }, async () => {
+    const response = await fetch(`${baseUrl}/api/ai/providers/discover`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      ok: boolean;
+      ollama?: { reachable?: boolean; models?: Array<{ name: string }> };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.ollama?.reachable, true);
+    assert.deepEqual(body.ollama?.models?.map((model) => model.name), ["qwen3:4b", "mistral:7b"]);
+  });
+});
+
+test("/api/ai/providers/config prefers local qwen3 without reusing image keys", async () => {
+  await withMockOllama({
+    tags: {
+      models: [
+        { name: "mistral:7b" },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } }
+      ]
+    }
+  }, async (endpoint) => {
+    await withNoOpenAIKey(async () => {
+      await withTemporarySecretsFileContent(JSON.stringify({
+        imageGenApiKey: "img-local-123456",
+        imageAnalyzeApiKey: "analyze-local-654321",
+        chatProvider: "ollama",
+        chatModel: ""
+      }), async () => {
+        const response = await fetch(`${baseUrl}/api/ai/providers/config`);
+        assert.equal(response.status, 200);
+        const body = await response.json() as {
+          ok: boolean;
+          provider?: string;
+          model?: string;
+          baseUrl?: string;
+          hasApiKey?: boolean;
+          apiKeySource?: string;
+        };
+        assert.equal(body.ok, true);
+        assert.equal(body.provider, "ollama");
+        assert.equal(body.model, "qwen3:4b");
+        assert.equal(body.baseUrl, endpoint);
+        assert.equal(body.hasApiKey, false);
+        assert.equal(body.apiKeySource, "missing");
+      });
+    });
+  });
+});
+
+test("auth: saving chat provider config does not overwrite image channel secrets", async () => {
+  const server = await createAuthTestServer();
+  try {
+    await withMockOllama({
+      tags: { models: [{ name: "qwen3:4b" }] }
+    }, async () => {
+      await withTemporarySecretsFileContent(JSON.stringify({
+        imageGenApiKey: "sk-image-1234567890",
+        imageAnalyzeApiKey: "sk-analyze-0987654321"
+      }), async () => {
+        const adminSession = await loginAs(server, "admin", "admin123");
+        const saveRes = await fetch(`${server.baseUrl}/api/ai/providers/config`, {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+          body: JSON.stringify({ provider: "ollama", model: "qwen3:4b", baseUrl: "https://api.openai.com/v1" })
+        });
+        assert.equal(saveRes.status, 200);
+
+        const statusRes = await fetch(`${server.baseUrl}/api/secrets/status`, {
+          headers: { cookie: `sbuild_session=${adminSession}` }
+        });
+        assert.equal(statusRes.status, 200);
+        const body = await statusRes.json() as {
+          ok: boolean;
+          chatProvider?: { provider?: string; model?: string; baseUrl?: string };
+          imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
+          imageAnalyze?: { configured?: boolean; source?: string; maskedKey?: string | null };
+          chat?: { configured?: boolean; maskedKey?: string | null };
+        };
+        assert.equal(body.ok, true);
+        assert.equal(body.chatProvider?.provider, "ollama");
+        assert.equal(body.chatProvider?.model, "qwen3:4b");
+        assert.equal(body.chatProvider?.baseUrl, `http://127.0.0.1:${new URL(process.env.SBUILD_OLLAMA_ENDPOINT || "").port}`);
+        assert.equal(body.imageGen?.configured, true);
+        assert.equal(body.imageGen?.source, "local");
+        assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+        assert.equal(body.imageAnalyze?.configured, true);
+        assert.equal(body.imageAnalyze?.source, "local");
+        assert.ok((body.imageAnalyze?.maskedKey || "").length >= 4);
+        assert.equal(body.chat?.configured, false);
+      });
+    });
+  } finally {
+    await server.close();
+  }
 });
 
 test("/api/status handles malformed local secrets file safely", async () => {
@@ -903,31 +1043,33 @@ test("auth: admin user can POST /api/secrets/image-keys", async () => {
 });
 
 test("POST /api/ai/suggest returns structured response", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Make the heading more catchy",
-        targetKind: "block",
-        blockId: "test-block-1",
-        blockType: "hero"
-      })
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "mock suggestion" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Make the heading more catchy",
+          targetKind: "block",
+          blockId: "test-block-1",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as {
+        ok: boolean;
+        suggestion?: string;
+        provider?: string;
+        targetKind?: string;
+        blockId?: string;
+        blockType?: string;
+      };
+      assert.equal(body.ok, true);
+      assert.ok(body.suggestion, "suggestion field exists");
+      assert.equal(body.targetKind, "block");
+      assert.equal(body.blockId, "test-block-1");
+      assert.equal(body.blockType, "hero");
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as {
-      ok: boolean;
-      suggestion?: string;
-      provider?: string;
-      targetKind?: string;
-      blockId?: string;
-      blockType?: string;
-    };
-    assert.equal(body.ok, true);
-    assert.ok(body.suggestion, "suggestion field exists");
-    assert.equal(body.targetKind, "block");
-    assert.equal(body.blockId, "test-block-1");
-    assert.equal(body.blockType, "hero");
   });
 });
 
@@ -944,41 +1086,45 @@ test("POST /api/ai/suggest returns 400 when prompt is empty", async () => {
 });
 
 test("POST /api/ai/suggest with site targetKind includes site context prefix", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Suggest a better color scheme",
-        targetKind: "site"
-      })
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "mock site suggestion" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Suggest a better color scheme",
+          targetKind: "site"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; targetKind?: string };
+      assert.equal(body.targetKind, "site");
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { ok: boolean; targetKind?: string };
-    assert.equal(body.targetKind, "site");
   });
 });
 
 test("POST /api/ai/suggest returns stable hasProposal/provider fields", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "hello",
-        targetKind: "block",
-        blockId: "test-1",
-        blockType: "hero"
-      })
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "mock stable response" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "hello",
+          targetKind: "block",
+          blockId: "test-1",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string };
+      assert.equal(body.ok, true);
+      assert.equal(typeof body.hasProposal, "boolean");
+      assert.equal(typeof body.provider, "string");
+      if (body.provider === "none") {
+        assert.equal(body.hasProposal, false);
+      }
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string };
-    assert.equal(body.ok, true);
-    assert.equal(typeof body.hasProposal, "boolean");
-    assert.equal(typeof body.provider, "string");
-    if (body.provider === "none") {
-      assert.equal(body.hasProposal, false);
-    }
   });
 });
 
