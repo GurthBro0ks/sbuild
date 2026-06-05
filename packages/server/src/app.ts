@@ -734,6 +734,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({ ok: true, uploads });
   });
 
+  app.delete("/api/images", async (req, res) => {
+    const filenames = req.body?.filenames;
+    if (!filenames || !Array.isArray(filenames)) {
+      res.status(400).json({ ok: false, error: "filenames array is required" });
+      return;
+    }
+    const results: { filename: string; deleted: boolean; error?: string }[] = [];
+    for (const filename of filenames) {
+      const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, "");
+      const filePath = path.join(projectImagesDir, safeName);
+      try {
+        await fs.unlink(filePath);
+        results.push({ filename: safeName, deleted: true });
+      } catch (error) {
+        results.push({ filename: safeName, deleted: false, error: String(error) });
+      }
+    }
+    const allDeleted = results.every((r) => r.deleted);
+    res.json({ ok: allDeleted, results, deletedCount: results.filter((r) => r.deleted).length });
+  });
+
   app.get("/api/images", async (_req, res) => {
     try {
       await fs.mkdir(projectImagesDir, { recursive: true });
@@ -1270,6 +1291,34 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return { chatKey, chatSource };
   }
 
+  type ChatProviderConfig = {
+    provider: string;
+    model: string;
+    baseUrl: string;
+    apiKey: string;
+  };
+
+  async function getChatProviderConfig(): Promise<ChatProviderConfig> {
+    const secrets = await loadSecrets();
+    const s = secrets as Record<string, unknown>;
+    const chatKeyStatus = await getChatApiKeyStatus();
+    return {
+      provider: String(s.chatProvider || "auto"),
+      model: String(s.chatModel || ""),
+      baseUrl: String(s.chatBaseUrl || process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1"),
+      apiKey: chatKeyStatus.chatKey
+    };
+  }
+
+  async function saveChatProviderConfig(cfg: { provider?: string; model?: string; baseUrl?: string; apiKey?: string }): Promise<void> {
+    const secrets = await loadSecrets();
+    if (cfg.provider !== undefined) secrets.chatProvider = cfg.provider;
+    if (cfg.model !== undefined) secrets.chatModel = cfg.model;
+    if (cfg.baseUrl !== undefined) secrets.chatBaseUrl = cfg.baseUrl;
+    if (cfg.apiKey !== undefined && cfg.apiKey) secrets.chatApiKey = cfg.apiKey;
+    await saveSecrets(secrets);
+  }
+
   type ChatProviderResult = {
     provider: string;
     source: "local" | "env" | "missing";
@@ -1314,128 +1363,213 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       };
     }
 
-    const ollama = await getOllamaStatus();
-    if (ollama.reachable && ollama.model) {
+    const config = await getChatProviderConfig();
+    const provider = config.provider || "auto";
+
+    if (provider === "disabled") {
+      return {
+        provider: "disabled",
+        source: "local",
+        available: false,
+        response: "AI chat is disabled in settings.",
+        message: "Provider set to disabled"
+      };
+    }
+
+    if (provider === "ollama" || provider === "auto") {
+      const ollama = await getOllamaStatus();
+      if (ollama.reachable && ollama.model) {
+        const modelToUse = config.model && config.model.trim() ? config.model : ollama.model;
+        try {
+          const endpoint = config.baseUrl?.trim() || process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+          const response = await fetch(`${endpoint}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: modelToUse,
+              stream: false,
+              messages: [{ role: "user", content: cleanPrompt }]
+            })
+          });
+          const payload = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            message?: { content?: string };
+          };
+          const text = String(payload.message?.content || "").trim();
+          if (response.ok && text) {
+            return {
+              provider: "ollama",
+              source: "local",
+              available: true,
+              response: text,
+              model: modelToUse,
+              message: `Ollama ready with model ${modelToUse}`
+            };
+          }
+        } catch {
+          // Fall through to next provider
+        }
+      }
+    }
+
+    if (provider === "ollama" && !config.apiKey) {
+      return {
+        provider: "ollama",
+        source: "missing",
+        available: false,
+        response: "AI chat unavailable: Ollama not reachable and no API key configured.",
+        message: "Ollama not reachable"
+      };
+    }
+
+    if (provider === "openai" || provider === "openai-compatible" || provider === "openrouter" || provider === "auto") {
+      const chatKey = config.apiKey || (await getChatApiKeyStatus()).chatKey;
+      if (!chatKey) {
+        return {
+          provider: "none",
+          source: "missing",
+          available: false,
+          response: "AI chat unavailable: no API key configured.",
+          message: "No API key available"
+        };
+      }
+
+      const chatBase = (config.baseUrl?.trim() || process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+      let chatModel = config.model?.trim() || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini";
+      if (provider === "openrouter") {
+        chatModel = config.model?.trim() || "openrouter/auto";
+      }
       try {
-        const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
-        const response = await fetch(`${endpoint}/api/chat`, {
+        const response = await fetch(`${chatBase}/chat/completions`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${chatKey}`
+          },
           body: JSON.stringify({
-            model: ollama.model,
-            stream: false,
-            messages: [{ role: "user", content: cleanPrompt }]
+            model: chatModel,
+            messages: [
+              { role: "system", content: "You are a concise website editing assistant for sBuild." },
+              { role: "user", content: cleanPrompt }
+            ]
           })
         });
         const payload = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: { content?: string };
+          error?: { message?: string };
+          choices?: Array<{ message?: { content?: string } }>;
         };
-        const text = String(payload.message?.content || "").trim();
+        const text = String(payload.choices?.[0]?.message?.content || "").trim();
         if (response.ok && text) {
           return {
-            provider: "ollama",
+            provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
             source: "local",
             available: true,
             response: text,
-            model: ollama.model,
-            message: ollama.message
+            model: chatModel,
+            message: `Chat ready via ${chatBase}`
           };
         }
-      } catch {
-        // Fall through to API-key provider.
-      }
-    }
-
-    const chatKey = await getChatApiKeyStatus();
-    if (!chatKey.chatKey) {
-      return {
-        provider: "none",
-        source: "missing",
-        available: false,
-        response: "AI chat unavailable: no local model found and API key not configured.",
-        message: ollama.message
-      };
-    }
-
-    const chatBase = (process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-    const chatModel = process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini";
-    try {
-      const response = await fetch(`${chatBase}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${chatKey.chatKey}`
-        },
-        body: JSON.stringify({
-          model: chatModel,
-          messages: [
-            { role: "system", content: "You are a concise website editing assistant for sBuild." },
-            { role: "user", content: cleanPrompt }
-          ]
-        })
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: { message?: string };
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      const text = String(payload.choices?.[0]?.message?.content || "").trim();
-      if (response.ok && text) {
         return {
-          provider: "openai-compatible",
-          source: chatKey.chatSource,
-          available: true,
-          response: text,
+          provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
+          source: "local",
+          available: false,
+          response: "AI chat unavailable: provider returned no content.",
           model: chatModel,
-          message: `Chat ready via ${chatBase}`
+          message: payload.error?.message || `Chat provider returned ${response.status}`
+        };
+      } catch {
+        return {
+          provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
+          source: "local",
+          available: false,
+          response: "AI chat unavailable: provider request failed.",
+          model: chatModel,
+          message: "Chat provider request failed"
         };
       }
-      return {
-        provider: "openai-compatible",
-        source: chatKey.chatSource,
-        available: false,
-        response: "AI chat unavailable: provider returned no content.",
-        model: chatModel,
-        message: payload.error?.message || `Chat provider returned ${response.status}`
-      };
-    } catch {
-      return {
-        provider: "openai-compatible",
-        source: chatKey.chatSource,
-        available: false,
-        response: "AI chat unavailable: provider request failed.",
-        model: chatModel,
-        message: "Chat provider request failed"
-      };
     }
+
+    return {
+      provider: "none",
+      source: "missing",
+      available: false,
+      response: "AI chat unavailable: no provider configured.",
+      message: "Unknown provider"
+    };
   }
 
-  async function getChatProviderStatus(): Promise<{ status: "connected" | "not_configured"; source: "local" | "env" | "missing"; provider: string; model?: string; message: string }> {
+  async function getChatProviderStatus(): Promise<{ status: "connected" | "not_configured"; source: "local" | "env" | "missing"; provider: string; model?: string; message: string; configuredProvider?: string; localModels?: Array<{ name: string }> }> {
+    const config = await getChatProviderConfig();
     const ollama = await getOllamaStatus();
+    const localModels = ollama.reachable ? [{ name: ollama.model || "" }] : [];
+
+    if (config.provider === "disabled") {
+      return {
+        status: "not_configured",
+        source: "local",
+        provider: "disabled",
+        message: "AI chat is disabled in settings.",
+        configuredProvider: "disabled",
+        localModels
+      };
+    }
+
+    if (config.provider === "ollama" || config.provider === "auto") {
+      if (ollama.reachable && ollama.model) {
+        const modelToUse = config.model && config.model.trim() ? config.model : ollama.model;
+        return {
+          status: "connected",
+          source: "local",
+          provider: "ollama",
+          model: modelToUse,
+          message: `Ollama ready with model ${modelToUse}`,
+          configuredProvider: config.provider,
+          localModels
+        };
+      }
+      if (config.provider === "ollama") {
+        return {
+          status: "not_configured",
+          source: "local",
+          provider: "ollama",
+          message: "Ollama selected but not reachable. Install Ollama or switch provider.",
+          configuredProvider: "ollama",
+          localModels
+        };
+      }
+    }
+
+    if (config.apiKey) {
+      return {
+        status: "connected",
+        source: "local",
+        provider: config.provider === "openrouter" ? "openrouter" : "openai-compatible",
+        model: config.model || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
+        message: `Chat configured via ${config.provider} (${config.baseUrl || "default endpoint"})`,
+        configuredProvider: config.provider,
+        localModels
+      };
+    }
+
     if (ollama.reachable && ollama.model) {
       return {
         status: "connected",
         source: "local",
         provider: "ollama",
         model: ollama.model,
-        message: ollama.message
+        message: `Ollama auto-selected (no API key configured)`,
+        configuredProvider: "auto",
+        localModels
       };
     }
-    const chatKey = await getChatApiKeyStatus();
-    if (chatKey.chatSource !== "missing") {
-      return {
-        status: "connected",
-        source: chatKey.chatSource,
-        provider: "openai-compatible",
-        model: process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
-        message: `Chat API key configured from ${chatKey.chatSource}.`
-      };
-    }
+
     return {
       status: "not_configured",
       source: "missing",
       provider: "none",
-      message: ollama.message
+      message: ollama.reachable ? "Ollama reachable but no model loaded." : "No chat provider configured.",
+      configuredProvider: config.provider,
+      localModels
     };
   }
 
@@ -1543,9 +1677,98 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({ ok: true, ...auth });
   });
 
+  app.get("/api/ai/providers/discover", async (_req, res) => {
+    const ollamaEndpoint = process.env.SBUILD_OLLAMA_ENDPOINT || "http://127.0.0.1:11434";
+    const ollamaModels: Array<{ name: string; size?: number; modified?: string; parameterSize?: string }> = [];
+    let ollamaReachable = false;
+    let ollamaMessage = "Ollama not reachable on localhost.";
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(`${ollamaEndpoint}/api/tags`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          models?: Array<{
+            name?: string;
+            size?: number;
+            modified_at?: string;
+            details?: { parameter_size?: string };
+          }>;
+        };
+        ollamaReachable = true;
+        ollamaModels.push(
+          ...(payload.models || []).map((m) => ({
+            name: String(m.name || ""),
+            size: m.size,
+            modified: m.modified_at,
+            parameterSize: m.details?.parameter_size
+          }))
+        );
+        ollamaMessage = ollamaModels.length > 0
+          ? `Ollama reachable with ${ollamaModels.length} model(s)`
+          : "Ollama reachable but no models installed";
+      } else {
+        ollamaMessage = `Ollama returned ${response.status}`;
+      }
+    } catch {
+      ollamaMessage = "Ollama not reachable on localhost.";
+    }
+
+    res.json({
+      ok: true,
+      ollama: {
+        reachable: ollamaReachable,
+        endpoint: ollamaEndpoint,
+        models: ollamaModels,
+        message: ollamaMessage
+      }
+    });
+  });
+
+  app.get("/api/ai/providers/config", async (_req, res) => {
+    const config = await getChatProviderConfig();
+    const chatKeyStatus = await getChatApiKeyStatus();
+    res.json({
+      ok: true,
+      provider: config.provider || "auto",
+      model: config.model || "",
+      baseUrl: config.baseUrl || "",
+      hasApiKey: Boolean(config.apiKey),
+      apiKeySource: chatKeyStatus.chatSource,
+      maskedApiKey: config.apiKey ? maskKey(config.apiKey) : null
+    });
+  });
+
+  app.post("/api/ai/providers/config", requireAdminMw, async (req, res) => {
+    const provider = String(req.body?.provider || "auto").trim();
+    const model = String(req.body?.model || "").trim();
+    const baseUrl = String(req.body?.baseUrl || "").trim();
+    const apiKey = String(req.body?.apiKey || "").trim();
+
+    const validProviders = ["auto", "disabled", "openai", "openrouter", "ollama", "openai-compatible"];
+    if (!validProviders.includes(provider)) {
+      res.status(400).json({ ok: false, error: `Invalid provider: ${provider}` });
+      return;
+    }
+
+    await saveChatProviderConfig({ provider, model, baseUrl, apiKey });
+    const config = await getChatProviderConfig();
+    res.json({
+      ok: true,
+      message: "Provider configuration saved.",
+      provider: config.provider,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      hasApiKey: Boolean(config.apiKey)
+    });
+  });
+
   app.get("/api/secrets/status", requireAdminMw, async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
     const chatStatus = await getChatApiKeyStatus();
+    const chatProviderConfig = await getChatProviderConfig();
     const channels = {
       chat: {
         ...channelSummaryFromSource(chatStatus.chatSource),
@@ -1567,6 +1790,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         configured: chatStatus.chatSource !== "missing",
         source: chatStatus.chatSource,
         maskedKey: chatStatus.chatKey ? maskKey(chatStatus.chatKey) : null
+      },
+      chatProvider: {
+        provider: chatProviderConfig.provider || "auto",
+        model: chatProviderConfig.model || "",
+        baseUrl: chatProviderConfig.baseUrl || "",
+        hasApiKey: Boolean(chatProviderConfig.apiKey)
       },
       imageGen: {
         configured: keyStatus.genSource !== "missing",

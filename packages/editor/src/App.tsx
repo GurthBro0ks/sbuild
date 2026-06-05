@@ -46,6 +46,8 @@ import {
   getUniqueSlug,
   getStarterBlocks,
   STARTER_TEMPLATES,
+  IMAGE_GEN_STYLE_PRESETS,
+  IMAGE_GEN_SIZE_PRESETS,
 } from "@sbuild/shared";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
@@ -1107,6 +1109,20 @@ export function App() {
   const [aiImgGenResult, setAiImgGenResult] = useState("");
   const [aiEnhanceType, setAiEnhanceType] = useState("enhance");
   const [aiEnhancePrompt, setAiEnhancePrompt] = useState("");
+  const [chatProvider, setChatProvider] = useState("auto");
+  const [chatModel, setChatModel] = useState("");
+  const [chatBaseUrl, setChatBaseUrl] = useState("");
+  const [chatApiKeyInput, setChatApiKeyInput] = useState("");
+  const [localModels, setLocalModels] = useState<Array<{ name: string }>>([]);
+  const [imageGenStyle, setImageGenStyle] = useState<string>("custom");
+  const [imageGenSize, setImageGenSize] = useState<string>("fit-block");
+  const [imageGenPlacement, setImageGenPlacement] = useState<string>("block-background");
+  const [selectedImagesForDelete, setSelectedImagesForDelete] = useState<Set<string>>(new Set());
+  const [galleryManagerOpen, setGalleryManagerOpen] = useState(false);
+  const [galleryImages, setGalleryImages] = useState<{ name: string; url: string; folder: string; extension: string; contentType: string; isRenderableImage: boolean; size: number; modified: string; isEdited: boolean }[]>([]);
+  const [galleryImagesLoading, setGalleryImagesLoading] = useState(false);
+  const [galleryDeleteConfirm, setGalleryDeleteConfirm] = useState(false);
+  const [providerConfigSaved, setProviderConfigSaved] = useState(false);
   const [aiEnhanceStatus, setAiEnhanceStatus] = useState("");
   const [aiEnhanceResult, setAiEnhanceResult] = useState("");
   const [buildInfo, setBuildInfo] = useState<SBuildBuildInfo | null>(null);
@@ -1383,6 +1399,8 @@ export function App() {
     void (async () => {
       const secrets = await loadSecretsStatus();
       await loadProviders(secrets);
+      await discoverLocalModels();
+      await loadProviderConfig();
     })();
   }, []);
 
@@ -1723,6 +1741,53 @@ export function App() {
     }
   }
 
+  async function discoverLocalModels() {
+    try {
+      const data = await fetchJson<{ ok: boolean; ollama: { reachable: boolean; models: Array<{ name: string }> } }>("/api/ai/providers/discover");
+      if (data.ok && data.ollama?.models) {
+        setLocalModels(data.ollama.models);
+      } else {
+        setLocalModels([]);
+      }
+    } catch {
+      setLocalModels([]);
+    }
+  }
+
+  async function loadProviderConfig() {
+    try {
+      const data = await fetchJson<{ ok: boolean; provider: string; model: string; baseUrl: string; hasApiKey: boolean; apiKeySource: string; maskedApiKey: string | null }>("/api/ai/providers/config");
+      if (data.ok) {
+        setChatProvider(data.provider || "auto");
+        setChatModel(data.model || "");
+        setChatBaseUrl(data.baseUrl || "");
+        setChatApiKeyInput("");
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function saveProviderConfig() {
+    try {
+      await fetchJson("/api/ai/providers/config", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: chatProvider,
+          model: chatModel,
+          baseUrl: chatBaseUrl,
+          apiKey: chatApiKeyInput
+        })
+      });
+      setProviderConfigSaved(true);
+      setTimeout(() => setProviderConfigSaved(false), 2000);
+      await discoverLocalModels();
+      await loadProviders();
+    } catch {
+      // ignore
+    }
+  }
+
   async function fetchUserInfo() {
     try {
       const data = await fetchJson<{ ok: boolean; user: { username: string; role: string } }>("/api/account/me");
@@ -2055,9 +2120,15 @@ export function App() {
     setAiImgGenResult("");
     try {
       const targetContext = currentTargetContext();
+      const stylePreset = IMAGE_GEN_STYLE_PRESETS.find((s) => s.id === imageGenStyle);
+      const sizePreset = IMAGE_GEN_SIZE_PRESETS.find((s) => s.id === imageGenSize);
+      let finalPrompt = prompt;
+      if (stylePreset && stylePreset.id !== "custom" && stylePreset.promptSuffix) {
+        finalPrompt = `${prompt}\n\n${stylePreset.promptSuffix}`;
+      }
       const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
         method: "POST",
-        body: JSON.stringify({ prompt, targetContext, explicitSize: undefined })
+        body: JSON.stringify({ prompt: finalPrompt, targetContext, explicitSize: sizePreset?.providerSize || undefined })
       });
       if (!data.ok || !data.imageUrl) {
         setAiImgGenStatus(data.message || data.error || "Image generation unavailable.");
@@ -2081,6 +2152,71 @@ export function App() {
     setDirty(true);
     setLastAction("ai-use-image");
     setAiImgGenStatus("Image applied to selected block. Save to persist.");
+  }
+
+  async function aiSaveImageToLibrary() {
+    if (!aiImgGenResult) return;
+    setAiImgGenStatus("Image saved to library.");
+  }
+
+  async function aiAddImageToGallery() {
+    if (!aiImgGenResult) return;
+    const block = selectedBlock;
+    if (!block || block.type !== "gallery") {
+      setAiImgGenStatus("Select a gallery block first to add image.");
+      return;
+    }
+    addGalleryImage(aiImgGenResult);
+    setDirty(true);
+    setAiImgGenStatus("Image added to gallery. Save to persist.");
+  }
+
+  async function openGalleryManager() {
+    setGalleryImagesLoading(true);
+    setGalleryDeleteConfirm(false);
+    setSelectedImagesForDelete(new Set());
+    try {
+      const res = await fetch("/api/images");
+      const data = await res.json();
+      if (data.ok) {
+        setGalleryImages(data.images || []);
+      }
+    } catch {
+      setGalleryImages([]);
+    }
+    setGalleryManagerOpen(true);
+    setGalleryImagesLoading(false);
+  }
+
+  async function deleteSelectedGalleryImages() {
+    if (selectedImagesForDelete.size === 0) return;
+    try {
+      const res = await fetch("/api/images", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filenames: Array.from(selectedImagesForDelete) }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setGalleryImages((prev) => prev.filter((img) => !selectedImagesForDelete.has(img.name)));
+        setSelectedImagesForDelete(new Set());
+        setGalleryDeleteConfirm(false);
+        setAiImgGenStatus(`Deleted ${data.deletedCount || 0} image(s).`);
+      } else {
+        setAiImgGenStatus("Some images could not be deleted.");
+      }
+    } catch {
+      setAiImgGenStatus("Delete failed.");
+    }
+  }
+
+  function toggleGalleryImageSelection(name: string) {
+    setSelectedImagesForDelete((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   }
 
   function clearAiImageGen() {
@@ -4315,14 +4451,48 @@ export function App() {
                     <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
                   </div>
                 </div>
+                <div className="ai-imggen-presets">
+                  <div className="ai-preset-row">
+                    <span className="ai-preset-label">Style:</span>
+                    <select value={imageGenStyle} onChange={(e) => setImageGenStyle(e.target.value)}>
+                      {IMAGE_GEN_STYLE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="ai-preset-row">
+                    <span className="ai-preset-label">Size:</span>
+                    <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}>
+                      {IMAGE_GEN_SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="ai-preset-row">
+                    <span className="ai-preset-label">Placement:</span>
+                    <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
+                      <option value="block-background">Use as block background</option>
+                      <option value="selected-image">Use as selected image</option>
+                      <option value="fit-block">Fit to selected block</option>
+                      <option value="fill-block">Fill selected block</option>
+                      <option value="add-to-gallery">Add to gallery</option>
+                      <option value="save-library">Save to library only</option>
+                    </select>
+                  </div>
+                </div>
                 <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." className="mobile-field-stack" />
                 <div className="button-row ai-button-row">
                   <button onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
                   <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
                   <button onClick={clearAiImageGen}>Clear</button>
+                  <button onClick={() => { void openGalleryManager(); }} title="Open Gallery Manager">Gallery Manager</button>
                 </div>
                 {aiImgGenStatus && <p className="ai-status-msg">{aiImgGenStatus}</p>}
                 {aiImgGenResult && <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />}
+                {aiImgGenResult && (
+                  <div className="ai-result-actions">
+                    <button onClick={aiUseImageInBlock} disabled={!hasSelectedImageTarget()}>Use in Selected Block</button>
+                    <button onClick={() => { void aiSaveImageToLibrary(); }}>Save to Library</button>
+                    <button onClick={() => { void aiAddImageToGallery(); }}>Add to Gallery</button>
+                    <button onClick={() => void aiGenerateImage()}>Regenerate</button>
+                  </div>
+                )}
               </div>
             )}
             {aiTopMenuTab === "image-enhance" && (
@@ -4357,6 +4527,60 @@ export function App() {
                 {aiEnhanceResult && <img src={aiEnhanceResult} alt="Enhanced" className="ai-result-image" />}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {galleryManagerOpen && (
+        <div className="modal-backdrop" onClick={() => setGalleryManagerOpen(false)}>
+          <div className="modal gallery-manager-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Image Gallery Manager</h3>
+              <button className="modal-close" onClick={() => setGalleryManagerOpen(false)} aria-label="Close Gallery Manager">✕</button>
+            </div>
+            <div className="gallery-manager-toolbar">
+              <span>{galleryImages.length} image{galleryImages.length !== 1 ? "s" : ""} in library</span>
+              {selectedImagesForDelete.size > 0 && (
+                <>
+                  <span>{selectedImagesForDelete.size} selected</span>
+                  {!galleryDeleteConfirm ? (
+                    <button onClick={() => setGalleryDeleteConfirm(true)} className="danger">Delete Selected</button>
+                  ) : (
+                    <>
+                      <span>Confirm?</span>
+                      <button onClick={() => void deleteSelectedGalleryImages()} className="danger">Yes, Delete</button>
+                      <button onClick={() => setGalleryDeleteConfirm(false)}>Cancel</button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            {galleryImagesLoading ? (
+              <div className="gallery-manager-loading">Loading images...</div>
+            ) : galleryImages.length === 0 ? (
+              <div className="gallery-manager-empty">No images in library. Generate or upload images first.</div>
+            ) : (
+              <div className="gallery-manager-grid">
+                {galleryImages.map((img) => (
+                  <div
+                    key={img.name}
+                    className={`gallery-manager-item ${selectedImagesForDelete.has(img.name) ? "selected" : ""}`}
+                    onClick={() => toggleGalleryImageSelection(img.name)}
+                  >
+                    {img.isRenderableImage ? (
+                      <img src={img.url} alt={img.name} />
+                    ) : (
+                      <div className="gallery-manager-item-placeholder">{img.extension}</div>
+                    )}
+                    <div className="gallery-manager-item-name">{img.name}</div>
+                    {selectedImagesForDelete.has(img.name) && (
+                      <div className="gallery-manager-item-check">✓</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="button-row"><button onClick={() => setGalleryManagerOpen(false)}>Close</button></div>
           </div>
         </div>
       )}
@@ -4868,8 +5092,57 @@ export function App() {
                   {opencodeAuth.commands.length > 0 && <div>Commands: {opencodeAuth.commands.join(" | ")}</div>}
                 </div>
               )}
-              <p className="hint"><strong>B) API-key providers</strong> use local secret fields in Image/API Keys.</p>
-              <p className="hint"><strong>C) Image/API keys</strong> are masked and never stored in project.json.</p>
+              <hr style={{ margin: "16px 0" }} />
+              <p className="hint"><strong>B) AI Chat Provider Configuration</strong></p>
+              <p className="hint">Configure how AI Chat connects. Settings are saved locally and never stored in project.json.</p>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                Provider
+                <select value={chatProvider} onChange={(e) => setChatProvider(e.target.value)} style={{ marginLeft: 8 }}>
+                  <option value="auto">Auto (try local Ollama first, then API key)</option>
+                  <option value="disabled">Disabled</option>
+                  <option value="ollama">Ollama / Local</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="openai-compatible">OpenAI-Compatible Endpoint</option>
+                </select>
+              </label>
+              {chatProvider === "ollama" && localModels.length > 0 && (
+                <label style={{ display: "block", marginBottom: 8 }}>
+                  Local Model
+                  <select value={chatModel} onChange={(e) => setChatModel(e.target.value)} style={{ marginLeft: 8 }}>
+                    <option value="">Auto (use first available)</option>
+                    {localModels.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {chatProvider === "ollama" && localModels.length === 0 && (
+                <p className="hint" style={{ color: "#c0392b" }}>No Ollama models detected. Install Ollama and run `ollama pull` to use local models.</p>
+              )}
+              {(chatProvider === "openai" || chatProvider === "openrouter" || chatProvider === "openai-compatible") && (
+                <>
+                  <label style={{ display: "block", marginBottom: 8 }}>
+                    Model
+                    <input type="text" value={chatModel} onChange={(e) => setChatModel(e.target.value)} placeholder={chatProvider === "openai" ? "gpt-4o-mini" : "e.g. anthropic/claude-3-haiku"} style={{ marginLeft: 8, flex: 1 }} />
+                  </label>
+                  <label style={{ display: "block", marginBottom: 8 }}>
+                    Base URL
+                    <input type="text" value={chatBaseUrl} onChange={(e) => setChatBaseUrl(e.target.value)} placeholder={chatProvider === "openrouter" ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1"} style={{ marginLeft: 8, flex: 1 }} />
+                  </label>
+                </>
+              )}
+              {(chatProvider !== "ollama" && chatProvider !== "disabled") && (
+                <label style={{ display: "block", marginBottom: 8 }}>
+                  API Key {chatApiKeyInput ? "(entered)" : "(leave blank to keep saved)"}
+                  <input type="password" value={chatApiKeyInput} onChange={(e) => setChatApiKeyInput(e.target.value)} placeholder={chatApiKeyInput ? "••••••••" : "sk-..."} style={{ marginLeft: 8, flex: 1 }} />
+                </label>
+              )}
+              <div className="button-row">
+                <button onClick={() => void saveProviderConfig()}>{providerConfigSaved ? "Saved!" : "Save Provider Config"}</button>
+                <button onClick={() => void discoverLocalModels()}>Refresh Local Models</button>
+              </div>
+              <hr style={{ margin: "16px 0" }} />
+              <p className="hint"><strong>C) API-key providers</strong> use local secret fields in Image/API Keys.</p>
+              <p className="hint"><strong>D) Image/API keys</strong> are masked and never stored in project.json.</p>
               {providerCheckMessage && <p className="panel-status">{providerCheckMessage}</p>}
             </div>}
             {settingsTab === "keys" && userRole === "admin" && <div>

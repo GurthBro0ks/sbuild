@@ -272,9 +272,12 @@ export interface SBuildSiteSettings {
   nav: SBuildNavItem[];
 }
 
+export type AiChatProvider = "disabled" | "openai" | "openrouter" | "ollama" | "openai-compatible";
+
 export interface SBuildAISettings {
-  provider: "mock" | "opencode" | "openai";
+  provider: AiChatProvider;
   model: string;
+  baseUrl?: string;
 }
 
 export interface SBuildProviderStatus {
@@ -283,13 +286,40 @@ export interface SBuildProviderStatus {
   message?: string;
 }
 
+export interface SBuildLocalModel {
+  name: string;
+  size?: number;
+  modified?: string;
+  parameterSize?: string;
+}
+
+export interface SBuildProviderDiscovery {
+  ollama: {
+    reachable: boolean;
+    endpoint: string;
+    models: SBuildLocalModel[];
+    message: string;
+  };
+  openaiCompatible: {
+    reachable: boolean;
+    endpoint: string;
+    models: SBuildLocalModel[];
+    message: string;
+  };
+}
+
 export interface SBuildSecretConfig {
   openCodePath?: string;
   openCodeDetected?: boolean;
+  chatApiKey?: string;
+  chatKeySource?: "env" | "local" | "missing";
   imageGenApiKey?: string;
   imageAnalyzeApiKey?: string;
   imageGenKeySource?: "env" | "local" | "missing";
   imageAnalyzeKeySource?: "env" | "local" | "missing";
+  chatProvider?: AiChatProvider;
+  chatModel?: string;
+  chatBaseUrl?: string;
 }
 
 export interface SBuildDeploySettings {
@@ -354,3 +384,66 @@ export interface ImageSizeDecision {
   reason: string;
   warnings: string[];
 }
+
+export type ImageGenStyle =
+  | "photorealistic"
+  | "website-hero"
+  | "product-shot"
+  | "cartoon"
+  | "watercolor"
+  | "minimal-flat"
+  | "cinematic"
+  | "background-texture"
+  | "custom";
+
+export type ImageGenAspect =
+  | "square"
+  | "landscape"
+  | "wide"
+  | "hero-wide"
+  | "portrait"
+  | "fit-block"
+  | "custom";
+
+export type ImageGenPlacement =
+  | "block-background"
+  | "selected-image"
+  | "fit-block"
+  | "fill-block"
+  | "add-to-gallery"
+  | "save-library";
+
+export interface ImageGenStylePreset {
+  id: ImageGenStyle;
+  label: string;
+  promptSuffix: string;
+}
+
+export interface ImageGenSizePreset {
+  id: ImageGenAspect;
+  label: string;
+  aspectRatio: string;
+  providerSize: OpenAIImageSize;
+}
+
+export const IMAGE_GEN_STYLE_PRESETS: ImageGenStylePreset[] = [
+  { id: "photorealistic", label: "Photorealistic", promptSuffix: "Photorealistic, high detail, professional photography" },
+  { id: "website-hero", label: "Website Hero Banner", promptSuffix: "Website hero banner, wide composition, professional" },
+  { id: "product-shot", label: "Product Shot", promptSuffix: "Product photography, clean background, commercial" },
+  { id: "cartoon", label: "Cartoon", promptSuffix: "Cartoon style, vibrant colors, illustrative" },
+  { id: "watercolor", label: "Watercolor", promptSuffix: "Watercolor painting, soft edges, artistic" },
+  { id: "minimal-flat", label: "Minimal Flat Illustration", promptSuffix: "Minimal flat illustration, clean design, vector style" },
+  { id: "cinematic", label: "Cinematic", promptSuffix: "Cinematic, dramatic lighting, movie still" },
+  { id: "background-texture", label: "Background Texture", promptSuffix: "Background texture, seamless, tileable pattern" },
+  { id: "custom", label: "Custom", promptSuffix: "" },
+];
+
+export const IMAGE_GEN_SIZE_PRESETS: ImageGenSizePreset[] = [
+  { id: "square", label: "Square 1:1", aspectRatio: "1:1", providerSize: "1024x1024" },
+  { id: "landscape", label: "Landscape 4:3", aspectRatio: "4:3", providerSize: "1024x1024" },
+  { id: "wide", label: "Wide 16:9", aspectRatio: "16:9", providerSize: "1536x1024" },
+  { id: "hero-wide", label: "Hero Wide 21:9", aspectRatio: "21:9", providerSize: "1536x1024" },
+  { id: "portrait", label: "Portrait 4:5", aspectRatio: "4:5", providerSize: "1024x1024" },
+  { id: "fit-block", label: "Fit Selected Block", aspectRatio: "auto", providerSize: "1024x1024" },
+  { id: "custom", label: "Custom", aspectRatio: "custom", providerSize: "1024x1024" },
+];
