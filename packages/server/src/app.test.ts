@@ -1306,6 +1306,46 @@ test("POST /api/ai/chat response does not leak raw secret values", async () => {
   });
 });
 
+test("POST /api/ai/suggest passes chat history as messages to Ollama", async () => {
+  let capturedBody: unknown = null;
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: {
+      capture: (body) => { capturedBody = body; },
+      body: { message: { content: "follow-up reply" } }
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Make it shorter",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "text",
+          chatHistory: [
+            { role: "user", text: "Write a welcome message" },
+            { role: "assistant", text: "Welcome to our site!" }
+          ]
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.suggestion, "follow-up reply");
+      const messages = (capturedBody as { messages?: Array<{ role: string; content: string }> })?.messages || [];
+      assert.ok(messages.length >= 4, "messages include system + history + user prompt");
+      const userMsg = messages.find((m) => m.role === "user" && m.content.includes("Write a welcome message"));
+      assert.ok(userMsg, "history user message passed through");
+      const assistantMsg = messages.find((m) => m.role === "assistant" && m.content.includes("Welcome to our site"));
+      assert.ok(assistantMsg, "history assistant message passed through");
+      const finalUser = messages.find((m) => m.role === "user" && m.content.includes("Make it shorter"));
+      assert.ok(finalUser, "current user prompt included");
+    });
+  });
+});
+
 test("POST /api/ai/chat fails safely with malformed provider config", async () => {
   await withTemporarySecretsFileContent(JSON.stringify({ chatProvider: "bogus-provider", chatModel: "qwen3:4b" }), async () => {
     const response = await fetch(`${baseUrl}/api/ai/chat`, {

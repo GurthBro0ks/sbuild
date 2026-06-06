@@ -812,11 +812,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   app.post("/api/ai/chat", async (req, res) => {
     const prompt = String(req.body?.prompt || "").trim();
+    const chatHistory = Array.isArray(req.body?.chatHistory) ? req.body.chatHistory as Array<{ role: string; text: string }> : [];
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
     }
-    const result = await chatWithProviders(prompt);
+    const result = await chatWithProviders(prompt, chatHistory);
     res.json({ ok: true, ...result });
   });
 
@@ -825,6 +826,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const targetKind = String(req.body?.targetKind || "block");
     const blockId = String(req.body?.blockId || "");
     const blockType = String(req.body?.blockType || "");
+    const chatHistory = Array.isArray(req.body?.chatHistory) ? req.body.chatHistory as Array<{ role: string; text: string }> : [];
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
@@ -840,7 +842,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ? "If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}. Otherwise answer normally with plain text and no proposal object. "
       : "";
     const fullPrompt = `${contextPrefix}${proposalInstruction}${prompt}`;
-    const result = await chatWithProviders(fullPrompt);
+    const result = await chatWithProviders(fullPrompt, chatHistory);
     const proposal = result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
       : null;
@@ -1461,7 +1463,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
   }
 
-  async function chatWithProviders(prompt: string): Promise<ChatProviderResult> {
+  async function chatWithProviders(prompt: string, chatHistory?: Array<{ role: string; text: string }>): Promise<ChatProviderResult> {
     const cleanPrompt = prompt.trim();
     const startedAt = Date.now();
     if (!cleanPrompt) {
@@ -1511,6 +1513,18 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           const systemPrompt = runtimeIdentityPrompt({ provider: "ollama", model: modelToUse, source: "local" });
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 30000);
+          const historyMessages: Array<{ role: string; content: string }> = [
+            { role: "system", content: systemPrompt }
+          ];
+          if (chatHistory && chatHistory.length > 0) {
+            const recentHistory = chatHistory.slice(-10);
+            for (const msg of recentHistory) {
+              if (msg.role === "user" || msg.role === "assistant") {
+                historyMessages.push({ role: msg.role, content: msg.text });
+              }
+            }
+          }
+          historyMessages.push({ role: "user", content: cleanPrompt });
           const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1521,10 +1535,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               options: {
                 temperature: 0.2
               },
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: cleanPrompt }
-              ]
+              messages: historyMessages
             })
           });
           clearTimeout(timer);
@@ -1609,6 +1620,18 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       }
       try {
         const responseSource = chatKeyStatus.chatSource;
+        const remoteMessages: Array<{ role: string; content: string }> = [
+          { role: "system", content: runtimeIdentityPrompt({ provider: provider === "openrouter" ? "openrouter" : "openai-compatible", model: chatModel, source: responseSource }) }
+        ];
+        if (chatHistory && chatHistory.length > 0) {
+          const recentHistory = chatHistory.slice(-10);
+          for (const msg of recentHistory) {
+            if (msg.role === "user" || msg.role === "assistant") {
+              remoteMessages.push({ role: msg.role, content: msg.text });
+            }
+          }
+        }
+        remoteMessages.push({ role: "user", content: cleanPrompt });
         const response = await fetch(`${chatBase}/chat/completions`, {
           method: "POST",
           headers: {
@@ -1617,10 +1640,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           },
           body: JSON.stringify({
             model: chatModel,
-            messages: [
-              { role: "system", content: runtimeIdentityPrompt({ provider: provider === "openrouter" ? "openrouter" : "openai-compatible", model: chatModel, source: responseSource }) },
-              { role: "user", content: cleanPrompt }
-            ]
+            messages: remoteMessages
           })
         });
         const payload = (await response.json().catch(() => ({}))) as {

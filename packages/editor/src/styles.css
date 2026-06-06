@@ -2471,18 +2471,21 @@ button:disabled {
 }
 .ai-panel-resize-handle {
   position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translate(50%, -50%);
-  width: 16px;
-  height: 56px;
   padding: 0;
-  border-radius: 6px;
   border: 1px solid var(--editor-border);
   background: var(--editor-panel-bg-2);
+  z-index: 2;
+}
+.ai-panel-resize-right {
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 56px;
+  border-radius: 6px;
   cursor: ew-resize;
 }
-.ai-panel-resize-handle::before {
+.ai-panel-resize-right::before {
   content: "";
   position: absolute;
   left: 50%;
@@ -2493,12 +2496,53 @@ button:disabled {
   transform: translate(-50%, -50%);
   box-shadow: -4px 0 0 var(--editor-text-muted), 4px 0 0 var(--editor-text-muted);
 }
+.ai-panel-resize-bottom {
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 56px;
+  height: 16px;
+  border-radius: 6px;
+  cursor: ns-resize;
+}
+.ai-panel-resize-bottom::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 2px;
+  background: var(--editor-text-muted);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 -4px 0 var(--editor-text-muted), 0 4px 0 var(--editor-text-muted);
+}
+.ai-panel-resize-corner {
+  right: -8px;
+  bottom: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: nwse-resize;
+}
+.ai-panel-resize-corner::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--editor-text-muted);
+  border-bottom: 2px solid var(--editor-text-muted);
+  transform: translate(-30%, -30%);
+}
 .ai-panel-tab-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
 }
 .ai-chat-layout {
   display: flex;
@@ -2734,36 +2778,169 @@ button:disabled {
   border: 1px solid var(--editor-border);
   object-fit: contain;
 }
-.ai-imggen-target,
-.ai-enhance-source {
-  font-size: 12px;
+.ai-card {
+  background: var(--editor-panel-bg-2);
+  border: 1px solid var(--editor-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ai-card-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--editor-text-muted);
+  padding: 8px 12px 0;
+}
+.ai-card-body {
+  padding: 8px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
+  gap: 6px;
 }
-.ai-enhance-options select {
-  padding: 4px 8px;
-  border-radius: 6px;
+.ai-card-body textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
   background: var(--editor-input-bg);
   color: var(--editor-input-text);
-  border: 1px solid var(--editor-button-border);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 48px;
+  line-height: 1.4;
 }
-.ai-button-row {
+.ai-card-body textarea:focus {
+  border-color: var(--editor-accent);
+  outline: none;
+}
+.ai-card-body textarea::placeholder {
+  color: var(--editor-text-muted);
+}
+.ai-card-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 0 12px;
+  padding: 8px 12px;
 }
-.ai-button-row button {
+.ai-card-actions button {
+  padding: 7px 14px;
+  font-size: 12px;
+  border-radius: 8px;
+  background: var(--editor-button-bg);
+  color: var(--editor-button-text);
+  border: 1px solid var(--editor-button-border);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-card-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ai-card-actions button.ai-action-primary {
+  background: var(--editor-accent);
+  color: #fff;
+  border: none;
+  font-weight: 700;
+}
+.ai-card-actions button.ai-action-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.ai-card-status {
+  border-left: 3px solid var(--editor-accent);
+}
+.ai-card-status p {
+  margin: 0;
   padding: 6px 12px;
   font-size: 12px;
-  border-radius: 6px;
+  color: var(--editor-text-muted);
 }
-.ai-imggen-target + textarea,
-.ai-enhance-options + textarea {
-  margin: 0 12px;
+.ai-card-preview .ai-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.ai-preset-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ai-preset-group label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--editor-text-muted);
+}
+.ai-preset-group select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--editor-input-bg);
+  color: var(--editor-input-text);
+  border: 1px solid var(--editor-button-border);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+.ai-preset-group select:focus {
+  border-color: var(--editor-accent);
+  outline: none;
+}
+.ai-card-presets .ai-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.ai-card-target .ai-card-body {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-card-target .ai-card-body > span {
+  font-size: 12px;
+  color: var(--editor-text);
+}
+.ai-source-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.ai-source-name {
+  font-size: 12px;
+  color: var(--editor-text);
+  font-weight: 600;
+}
+.ai-source-thumb {
+  max-width: 100%;
+  max-height: 80px;
+  border-radius: 6px;
+  border: 1px solid var(--editor-border);
+  object-fit: contain;
+}
+.ai-preview-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ai-preview-actions button {
+  padding: 5px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  background: var(--editor-button-bg);
+  color: var(--editor-button-text);
+  border: 1px solid var(--editor-button-border);
+  cursor: pointer;
+}
+.ai-preview-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
@@ -2811,6 +2988,16 @@ button:disabled {
   .ai-result-image {
     max-width: 100%;
     max-height: 120px;
+  }
+  .ai-card-presets .ai-card-body {
+    grid-template-columns: 1fr;
+  }
+  .ai-card-target .ai-card-body {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ai-card-body textarea {
+    font-size: 16px;
   }
 }
 

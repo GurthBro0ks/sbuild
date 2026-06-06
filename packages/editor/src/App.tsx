@@ -92,13 +92,14 @@ type ContextMenuState = { visible: boolean; x: number; y: number; blockId: strin
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
 type AiPanelRect = { x: number; y: number; width: number; height: number };
 type AiPanelDragState = { pointerId: number; offsetX: number; offsetY: number } | null;
-type AiPanelResizeState = { pointerId: number; startX: number; startY: number; startWidth: number; startHeight: number } | null;
+type AiPanelResizeHandle = "right" | "bottom" | "corner";
+type AiPanelResizeState = { pointerId: number; handle: AiPanelResizeHandle; startX: number; startY: number; startWidth: number; startHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
 
 const AI_PANEL_STORAGE_KEY = "sbuild_ai_panel_rect_v1";
 const AI_PANEL_MIN_WIDTH = 440;
-const AI_PANEL_MIN_HEIGHT = 420;
+const AI_PANEL_MIN_HEIGHT = 480;
 const AI_PANEL_MAX_WIDTH = 760;
 const AI_PANEL_MARGIN = 16;
 
@@ -120,11 +121,11 @@ function chatFooterText(item: ChatItem): string {
 
 function defaultAiPanelRect(): AiPanelRect {
   if (typeof window === "undefined") {
-    return { x: 24, y: 96, width: 560, height: 640 };
+    return { x: 24, y: 96, width: 560, height: 680 };
   }
   const width = Math.min(560, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
   const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 120);
-  const height = Math.min(640, maxHeight);
+  const height = Math.min(680, maxHeight);
   const x = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - 24);
   const y = Math.max(72, Math.round((window.innerHeight - height) / 2));
   return { x, y, width, height };
@@ -1279,10 +1280,12 @@ export function App() {
         }));
       }
       if (aiPanelResize && event.pointerId === aiPanelResize.pointerId) {
+        const dx = event.clientX - aiPanelResize.startX;
+        const dy = event.clientY - aiPanelResize.startY;
         setAiPanelRect((current) => clampAiPanelRect({
           ...current,
-          width: aiPanelResize.startWidth + (event.clientX - aiPanelResize.startX),
-          height: current.height
+          width: (aiPanelResize.handle === "bottom" ? current.width : aiPanelResize.startWidth + dx),
+          height: (aiPanelResize.handle === "right" ? current.height : aiPanelResize.startHeight + dy)
         }));
       }
     };
@@ -2222,11 +2225,12 @@ export function App() {
     });
   }
 
-  function handleAiPanelResizeStart(event: React.PointerEvent<HTMLButtonElement>) {
+  function handleAiPanelResizeStart(event: React.PointerEvent<HTMLButtonElement>, handle: AiPanelResizeHandle) {
     if (isMobileViewport) return;
     event.stopPropagation();
     setAiPanelResize({
       pointerId: event.pointerId,
+      handle,
       startX: event.clientX,
       startY: event.clientY,
       startWidth: aiPanelRect.width,
@@ -2252,7 +2256,8 @@ export function App() {
           prompt,
           targetKind: aiChatTarget,
           blockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "",
-          blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : ""
+          blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "",
+          chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text }))
         })
       });
       if (data.ok && data.suggestion) {
@@ -2276,7 +2281,15 @@ export function App() {
           setProviderCheckMessage(data.message);
         }
       } else {
-        const msg = data.error || "Prototype assistant: provider not configured. No edits were applied.";
+        const providerLabel = data.provider === "ollama" && data.model
+          ? `Local ${data.model}`
+          : data.provider || "the AI provider";
+        const rawMsg = data.error || "Provider not configured.";
+        const msg = data.source === "missing"
+          ? `${rawMsg} Check Settings to configure a provider.`
+          : data.provider === "ollama" && !data.suggestion
+            ? `${providerLabel} returned no content (${data.latencyMs ? `${(data.latencyMs / 1000).toFixed(1)}s` : "timeout"}). Provider is still configured.`
+            : rawMsg;
         setAiProposal("");
         setAiStructuredProposal(null);
         setAiHasProposal(false);
@@ -2291,10 +2304,16 @@ export function App() {
         if (data.message) setProviderCheckMessage(data.message);
       }
     } catch (error) {
-      const msg = "Prototype assistant: request failed. The configured provider may still be available.";
+      const elapsed = Date.now() - startedAt;
+      const providerHint = chatProviderStatus?.message || "the configured provider";
+      const detail = error instanceof Error ? error.message : String(error);
+      const isTimeout = detail.includes("abort") || detail.includes("timeout") || elapsed > 25000;
+      const msg = isTimeout
+        ? `Local qwen3:4b is configured but timed out after ${(elapsed / 1000).toFixed(1)} seconds. The provider is still configured — try a shorter prompt or check Ollama status.`
+        : `Request failed (${providerHint}): ${detail}`;
       setAiHasProposal(false);
       setAiStructuredProposal(null);
-      pushChatMessage({ role: "assistant", text: `${msg} ${error instanceof Error ? error.message : String(error)}`, latencyMs: Date.now() - startedAt });
+      pushChatMessage({ role: "assistant", text: msg, latencyMs: elapsed });
     } finally {
       setAiProposalPending(false);
       setTimeout(() => {
@@ -4716,91 +4735,132 @@ export function App() {
             )}
             {aiTopMenuTab === "image-gen" && (
               <div className="ai-panel-tab-content">
-                <div className="ai-imggen-target">
-                  <span>Target: {hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
-                  <div className="ai-chat-target-buttons">
-                    <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
-                    <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
+                <div className="ai-card ai-card-target">
+                  <div className="ai-card-label">Target</div>
+                  <div className="ai-card-body">
+                    <span>{hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
+                    <div className="ai-chat-target-buttons">
+                      <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
+                      <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
+                    </div>
                   </div>
                 </div>
-                <div className="ai-imggen-presets">
-                  <div className="ai-preset-row">
-                    <span className="ai-preset-label">Style:</span>
-                    <select value={imageGenStyle} onChange={(e) => setImageGenStyle(e.target.value)}>
-                      {IMAGE_GEN_STYLE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="ai-preset-row">
-                    <span className="ai-preset-label">Size:</span>
-                    <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}>
-                      {IMAGE_GEN_SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="ai-preset-row">
-                    <span className="ai-preset-label">Placement:</span>
-                    <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
-                      <option value="block-background">Use as block background</option>
-                      <option value="selected-image">Use as selected image</option>
-                      <option value="fit-block">Fit to selected block</option>
-                      <option value="fill-block">Fill selected block</option>
-                      <option value="add-to-gallery">Add to gallery</option>
-                      <option value="save-library">Save to library only</option>
-                    </select>
+                <div className="ai-card ai-card-presets">
+                  <div className="ai-card-label">Presets</div>
+                  <div className="ai-card-body">
+                    <div className="ai-preset-group">
+                      <label>Style</label>
+                      <select value={imageGenStyle} onChange={(e) => setImageGenStyle(e.target.value)}>
+                        {IMAGE_GEN_STYLE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="ai-preset-group">
+                      <label>Size</label>
+                      <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}>
+                        {IMAGE_GEN_SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="ai-preset-group">
+                      <label>Placement</label>
+                      <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
+                        <option value="block-background">Use as block background</option>
+                        <option value="selected-image">Use as selected image</option>
+                        <option value="fit-block">Fit to selected block</option>
+                        <option value="fill-block">Fill selected block</option>
+                        <option value="add-to-gallery">Add to gallery</option>
+                        <option value="save-library">Save to library only</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-                <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." className="mobile-field-stack" />
-                <div className="button-row ai-button-row">
-                  <button onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
+                <div className="ai-card ai-card-prompt">
+                  <div className="ai-card-label">Image Prompt</div>
+                  <div className="ai-card-body">
+                    <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." />
+                  </div>
+                </div>
+                <div className="ai-card-actions">
+                  <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
                   <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
                   <button onClick={clearAiImageGen}>Clear</button>
                   <button onClick={() => { void openGalleryManager(); }} title="Open Gallery Manager">Gallery Manager</button>
                 </div>
-                {aiImgGenStatus && <p className="ai-status-msg">{aiImgGenStatus}</p>}
-                {aiImgGenResult && <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />}
+                {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
-                  <div className="ai-result-actions">
-                    <button onClick={aiUseImageInBlock} disabled={!hasSelectedImageTarget()}>Use in Selected Block</button>
-                    <button onClick={() => { void aiSaveImageToLibrary(); }}>Save to Library</button>
-                    <button onClick={() => { void aiAddImageToGallery(); }}>Add to Gallery</button>
-                    <button onClick={() => void aiGenerateImage()}>Regenerate</button>
+                  <div className="ai-card ai-card-preview">
+                    <div className="ai-card-label">Preview</div>
+                    <div className="ai-card-body">
+                      <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />
+                      <div className="ai-preview-actions">
+                        <button onClick={aiUseImageInBlock} disabled={!hasSelectedImageTarget()}>Use in Selected Block</button>
+                        <button onClick={() => { void aiSaveImageToLibrary(); }}>Save to Library</button>
+                        <button onClick={() => { void aiAddImageToGallery(); }}>Add to Gallery</button>
+                        <button onClick={() => void aiGenerateImage()}>Regenerate</button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             )}
             {aiTopMenuTab === "image-enhance" && (
               <div className="ai-panel-tab-content">
-                {(() => {
-                  const es = getSelectedEnhanceSource();
-                  if (es.kind !== "none") {
-                    return (
-                      <div className="ai-enhance-source">
-                        <span>Source: {es.label}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
-                        {es.reason && <p className="ai-status-msg">{es.reason}</p>}
-                      </div>
-                    );
-                  }
-                  return <p className="ai-status-msg ai-no-target">{es.reason || "Select an image block, gallery image, or background first."}</p>;
-                })()}
-                <div className="ai-enhance-options">
-                  <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
-                    <option value="enhance">Enhance</option>
-                    <option value="black-white">Black &amp; White</option>
-                    <option value="cleanup">Cleanup</option>
-                    <option value="crop-fit">Crop/Fit</option>
-                  </select>
+                <div className="ai-card ai-card-source">
+                  <div className="ai-card-label">Source Image</div>
+                  <div className="ai-card-body">
+                    {(() => {
+                      const es = getSelectedEnhanceSource();
+                      if (es.kind !== "none") {
+                        return (
+                          <div className="ai-source-detail">
+                            <span className="ai-source-name">{es.label}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
+                            {es.src && <img src={es.src} alt="Source" className="ai-source-thumb" />}
+                            {es.reason && <p className="ai-status-msg">{es.reason}</p>}
+                          </div>
+                        );
+                      }
+                      return <p className="ai-status-msg ai-no-target">{es.reason || "Select an image block, gallery image, or background first."}</p>;
+                    })()}
+                  </div>
                 </div>
-                <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." className="mobile-field-stack" />
-                <div className="button-row ai-button-row">
-                  <button onClick={() => void aiEnhanceImage()} disabled={!getSelectedEnhanceSource().src}>Analyze/Enhance</button>
+                <div className="ai-card ai-card-options">
+                  <div className="ai-card-label">Enhancement</div>
+                  <div className="ai-card-body">
+                    <div className="ai-preset-group">
+                      <label>Type</label>
+                      <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
+                        <option value="enhance">Enhance</option>
+                        <option value="black-white">Black &amp; White</option>
+                        <option value="cleanup">Cleanup</option>
+                        <option value="crop-fit">Crop/Fit</option>
+                      </select>
+                    </div>
+                    <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." />
+                  </div>
+                </div>
+                <div className="ai-card-actions">
+                  <button className="ai-action-primary" onClick={() => void aiEnhanceImage()} disabled={!getSelectedEnhanceSource().src}>Analyze/Enhance</button>
                   <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
                   <button onClick={clearAiEnhance}>Clear</button>
                 </div>
-                {aiEnhanceStatus && <p className="ai-status-msg">{aiEnhanceStatus}</p>}
-                {aiEnhanceResult && <img src={aiEnhanceResult} alt="Enhanced" className="ai-result-image" />}
+                {aiEnhanceStatus && <div className="ai-card ai-card-status"><p>{aiEnhanceStatus}</p></div>}
+                {aiEnhanceResult && (
+                  <div className="ai-card ai-card-preview">
+                    <div className="ai-card-label">Enhanced Preview</div>
+                    <div className="ai-card-body">
+                      <img src={aiEnhanceResult} alt="Enhanced" className="ai-result-image" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
-          {!isMobileViewport && <button className="ai-panel-resize-handle" onPointerDown={handleAiPanelResizeStart} aria-label="Resize AI panel" title="Resize AI panel" />}
+          {!isMobileViewport && (
+            <>
+              <button className="ai-panel-resize-handle ai-panel-resize-right" onPointerDown={(e) => handleAiPanelResizeStart(e, "right")} aria-label="Resize AI panel width" title="Resize width" />
+              <button className="ai-panel-resize-handle ai-panel-resize-bottom" onPointerDown={(e) => handleAiPanelResizeStart(e, "bottom")} aria-label="Resize AI panel height" title="Resize height" />
+              <button className="ai-panel-resize-handle ai-panel-resize-corner" onPointerDown={(e) => handleAiPanelResizeStart(e, "corner")} aria-label="Resize AI panel" title="Resize width and height" />
+            </>
+          )}
         </div>
       )}
 

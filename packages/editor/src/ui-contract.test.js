@@ -258,12 +258,28 @@ test("desktop AI panel exposes draggable and reset affordances", () => {
   assert.match(cssSource, /\.ai-panel-tabs[\s\S]*flex-wrap:\s*wrap/);
 });
 
-test("desktop AI panel exposes resize affordance", () => {
+test("desktop AI panel exposes resize affordances for right, bottom, and corner", () => {
   assert.match(appSource, /handleAiPanelResizeStart/);
-  assert.match(appSource, /ai-panel-resize-handle/);
+  assert.match(appSource, /ai-panel-resize-right/);
+  assert.match(appSource, /ai-panel-resize-bottom/);
+  assert.match(appSource, /ai-panel-resize-corner/);
   assert.match(cssSource, /\.ai-panel-resize-handle/);
-  assert.match(cssSource, /top:\s*50%/);
   assert.match(cssSource, /cursor:\s*ew-resize/);
+  assert.match(cssSource, /cursor:\s*ns-resize/);
+  assert.match(cssSource, /cursor:\s*nwse-resize/);
+});
+
+test("AI panel resize state tracks handle direction for width and height changes", () => {
+  assert.match(appSource, /AiPanelResizeHandle/);
+  assert.match(appSource, /aiPanelResize\.handle === "bottom"/);
+  assert.match(appSource, /aiPanelResize\.handle === "right"/);
+});
+
+test("mobile media query hides all AI panel desktop resize handles", () => {
+  const mobileIdx = cssSource.indexOf("@media (max-width: 768px)");
+  assert.ok(mobileIdx > 0, "mobile media query exists");
+  const mobileSection = cssSource.substring(mobileIdx);
+  assert.match(mobileSection, /\.ai-panel-resize-handle[\s\S]*?display:\s*none/);
 });
 
 test("AI chat messages render timestamp footers with metadata", () => {
@@ -286,6 +302,45 @@ test("Apply Suggestion stays gated behind structured proposal metadata", () => {
   assert.match(appSource, /Boolean\(data\.proposal\?\.replaceText\)/);
   assert.match(appSource, /if \(!aiStructuredProposal\?\.replaceText\) return;/);
   assert.doesNotMatch(appSource, /Boolean\(data\.hasProposal\) && canEditBlocks/);
+});
+
+test("AI chat sends conversation history for follow-up context", () => {
+  assert.match(appSource, /chatHistory:\s*chatHistory\.slice\(-10\)\.map/);
+  assert.match(appSource, /role:\s*m\.role,\s*text:\s*m\.text/);
+});
+
+test("AI chat error messages are provider-aware with timeout details", () => {
+  assert.match(appSource, /isTimeout/);
+  assert.match(appSource, /timed out after/);
+  assert.match(appSource, /providerHint/);
+});
+
+test("AI Image Gen uses modern card layout instead of raw form controls", () => {
+  assert.match(appSource, /ai-card\s+ai-card-target/);
+  assert.match(appSource, /ai-card\s+ai-card-presets/);
+  assert.match(appSource, /ai-card\s+ai-card-prompt/);
+  assert.match(appSource, /ai-card-actions/);
+  assert.match(appSource, /ai-action-primary/);
+  assert.match(cssSource, /\.ai-card\b/);
+  assert.match(cssSource, /\.ai-card-label/);
+  assert.match(cssSource, /\.ai-card-body/);
+  assert.match(cssSource, /\.ai-preset-group/);
+});
+
+test("AI Image Enhance uses modern card layout with source detection", () => {
+  assert.match(appSource, /ai-card\s+ai-card-source/);
+  assert.match(appSource, /ai-card\s+ai-card-options/);
+  assert.match(appSource, /ai-source-detail/);
+  assert.match(appSource, /ai-source-thumb/);
+  assert.match(cssSource, /\.ai-source-detail/);
+  assert.match(cssSource, /\.ai-source-thumb/);
+});
+
+test("AI card preview shows generated or enhanced images with action buttons", () => {
+  assert.match(appSource, /ai-card\s+ai-card-preview/);
+  assert.match(appSource, /ai-preview-actions/);
+  assert.match(cssSource, /\.ai-preview-actions/);
+  assert.match(cssSource, /\.ai-result-image/);
 });
 
 test("smoke script treats unauth publish 401 as expected gate behavior", () => {
