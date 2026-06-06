@@ -856,6 +856,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       model: result.model,
       message: result.message,
       source: result.source,
+      latencyMs: result.latencyMs,
+      isLocal: result.isLocal,
       hasProposal,
       targetKind,
       blockId,
@@ -1380,7 +1382,28 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     response: string;
     model?: string;
     message?: string;
+    latencyMs?: number;
+    isLocal?: boolean;
   };
+
+  function runtimeIdentityPrompt(input: { provider: string; model?: string; source: "local" | "env" | "missing" }): string {
+    const model = input.model || "unknown";
+    const locality = input.source === "local" ? "local" : input.source === "env" ? "remote" : "unconfigured";
+    return [
+      "You are a concise website editing assistant for sBuild.",
+      `Runtime chat provider: ${input.provider}.`,
+      `Runtime chat model: ${model}.`,
+      `Runtime source: ${input.source}.`,
+      `This chat is ${locality}.`,
+      "If the user asks what model or provider is in use, answer using the runtime metadata above.",
+      "Do not claim to be a cloud-hosted provider when runtime metadata says local.",
+      "Keep replies brief and do not include chain-of-thought or hidden reasoning."
+    ].join(" ");
+  }
+
+  function isRuntimeIdentityQuestion(prompt: string): boolean {
+    return /(what|which).*(model|provider)|are you local|running locally|what are you using/i.test(prompt);
+  }
 
   async function getOllamaStatus(): Promise<{ reachable: boolean; endpoint: string; model: string | null; models: LocalModelInfo[]; message: string }> {
     const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || DEFAULT_OLLAMA_ENDPOINT;
@@ -1413,13 +1436,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   async function chatWithProviders(prompt: string): Promise<ChatProviderResult> {
     const cleanPrompt = prompt.trim();
+    const startedAt = Date.now();
     if (!cleanPrompt) {
       return {
         provider: "none",
         source: "missing",
         available: false,
         response: "AI chat unavailable: prompt is empty.",
-        message: "prompt is required"
+        message: "prompt is required",
+        latencyMs: Date.now() - startedAt,
+        isLocal: false
       };
     }
 
@@ -1432,7 +1458,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         source: "local",
         available: false,
         response: "AI chat is disabled in settings.",
-        message: "Provider set to disabled"
+        message: "Provider set to disabled",
+        latencyMs: Date.now() - startedAt,
+        isLocal: true
       };
     }
 
@@ -1440,14 +1468,33 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       const ollama = await getOllamaStatus();
       if (ollama.reachable && ollama.model) {
         const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
+        if (isRuntimeIdentityQuestion(cleanPrompt)) {
+          return {
+            provider: "ollama",
+            source: "local",
+            available: true,
+            response: `Using local Ollama model ${modelToUse}.`,
+            model: modelToUse,
+            message: `Local chat connected: ${modelToUse}`,
+            latencyMs: Date.now() - startedAt,
+            isLocal: true
+          };
+        }
         try {
+          const systemPrompt = runtimeIdentityPrompt({ provider: "ollama", model: modelToUse, source: "local" });
           const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               model: modelToUse,
               stream: false,
-              messages: [{ role: "user", content: cleanPrompt }]
+              options: {
+                temperature: 0.2
+              },
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: cleanPrompt }
+              ]
             })
           });
           const payload = (await response.json().catch(() => ({}))) as {
@@ -1462,7 +1509,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               available: true,
               response: text,
               model: modelToUse,
-              message: `Local chat connected: ${modelToUse}`
+              message: `Local chat connected: ${modelToUse}`,
+              latencyMs: Date.now() - startedAt,
+              isLocal: true
             };
           }
           const safeDiagnostics = [`status=${response.status}`, `hasMessage=${Boolean(payload.message)}`, `hasError=${Boolean(payload.error)}`].join(" ");
@@ -1472,7 +1521,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             available: false,
             response: "AI chat unavailable: provider returned no content.",
             model: modelToUse,
-            message: `Ollama returned no content (${safeDiagnostics})`
+            message: `Ollama returned no content (${safeDiagnostics})`,
+            latencyMs: Date.now() - startedAt,
+            isLocal: true
           };
         } catch {
           // Fall through to next provider
@@ -1486,7 +1537,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         source: "missing",
         available: false,
         response: "AI chat unavailable: Ollama not reachable and no API key configured.",
-        message: "Ollama not reachable"
+        message: "Ollama not reachable",
+        latencyMs: Date.now() - startedAt,
+        isLocal: true
       };
     }
 
@@ -1499,7 +1552,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           source: "missing",
           available: false,
           response: "AI chat unavailable: no API key configured.",
-          message: "No API key available"
+          message: "No API key available",
+          latencyMs: Date.now() - startedAt,
+          isLocal: false
         };
       }
 
@@ -1509,6 +1564,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         chatModel = config.model?.trim() || "openrouter/auto";
       }
       try {
+        const responseSource = chatKeyStatus.chatSource;
         const response = await fetch(`${chatBase}/chat/completions`, {
           method: "POST",
           headers: {
@@ -1518,7 +1574,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           body: JSON.stringify({
             model: chatModel,
             messages: [
-              { role: "system", content: "You are a concise website editing assistant for sBuild." },
+              { role: "system", content: runtimeIdentityPrompt({ provider: provider === "openrouter" ? "openrouter" : "openai-compatible", model: chatModel, source: responseSource }) },
               { role: "user", content: cleanPrompt }
             ]
           })
@@ -1535,7 +1591,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             available: true,
             response: text,
             model: chatModel,
-            message: `Chat ready via ${chatBase}`
+            message: `Chat ready via ${chatBase}`,
+            latencyMs: Date.now() - startedAt,
+            isLocal: false
           };
         }
         return {
@@ -1544,7 +1602,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           available: false,
           response: "AI chat unavailable: provider returned no content.",
           model: chatModel,
-          message: payload.error?.message || `Chat provider returned ${response.status}`
+          message: payload.error?.message || `Chat provider returned ${response.status}`,
+          latencyMs: Date.now() - startedAt,
+          isLocal: false
         };
       } catch {
         return {
@@ -1553,7 +1613,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           available: false,
           response: "AI chat unavailable: provider request failed.",
           model: chatModel,
-          message: "Chat provider request failed"
+          message: "Chat provider request failed",
+          latencyMs: Date.now() - startedAt,
+          isLocal: false
         };
       }
     }
@@ -1563,7 +1625,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       source: "missing",
       available: false,
       response: "AI chat unavailable: no provider configured.",
-      message: "Unknown provider"
+      message: "Unknown provider",
+      latencyMs: Date.now() - startedAt,
+      isLocal: false
     };
   }
 

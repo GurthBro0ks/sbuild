@@ -102,7 +102,7 @@ async function withTemporarySecretsFileContent<T>(content: string, fn: () => Pro
 
 async function withMockOllama<T>(handlers: {
   tags: { models: Array<{ name: string; size?: number; modified_at?: string; details?: { parameter_size?: string } }> };
-  chat?: { status?: number; body?: unknown };
+  chat?: { status?: number; body?: unknown; capture?: (body: unknown) => void };
 }, fn: (endpoint: string) => Promise<T>): Promise<T> {
   const server = http.createServer((req, res) => {
     if (req.url === "/api/tags") {
@@ -111,8 +111,13 @@ async function withMockOllama<T>(handlers: {
       return;
     }
     if (req.url === "/api/chat") {
-      res.writeHead(handlers.chat?.status || 200, { "content-type": "application/json" });
-      res.end(JSON.stringify(handlers.chat?.body || { message: { content: "mock reply" } }));
+      let raw = "";
+      req.on("data", (chunk) => { raw += String(chunk); });
+      req.on("end", () => {
+        handlers.chat?.capture?.(raw ? JSON.parse(raw) : {});
+        res.writeHead(handlers.chat?.status || 200, { "content-type": "application/json" });
+        res.end(JSON.stringify(handlers.chat?.body || { message: { content: "mock reply" } }));
+      });
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -1060,12 +1065,19 @@ test("POST /api/ai/suggest returns structured response", async () => {
         ok: boolean;
         suggestion?: string;
         provider?: string;
+        model?: string;
+        source?: string;
+        latencyMs?: number;
         targetKind?: string;
         blockId?: string;
         blockType?: string;
       };
       assert.equal(body.ok, true);
       assert.ok(body.suggestion, "suggestion field exists");
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.source, "local");
+      assert.equal(typeof body.latencyMs, "number");
       assert.equal(body.targetKind, "block");
       assert.equal(body.blockId, "test-block-1");
       assert.equal(body.blockType, "hero");
@@ -1117,14 +1129,102 @@ test("POST /api/ai/suggest returns stable hasProposal/provider fields", async ()
         })
       });
       assert.equal(response.status, 200);
-      const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string };
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; provider?: string; model?: string; source?: string; latencyMs?: number };
       assert.equal(body.ok, true);
       assert.equal(typeof body.hasProposal, "boolean");
       assert.equal(typeof body.provider, "string");
+      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.source, "local");
+      assert.equal(typeof body.latencyMs, "number");
       if (body.provider === "none") {
         assert.equal(body.hasProposal, false);
       }
     });
+  });
+});
+
+test("POST /api/ai/suggest passes local provider metadata into Ollama prompt context", async () => {
+  let capturedBody: any = null;
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: {
+      body: { message: { content: "metadata-aware reply" } },
+      capture: (body) => { capturedBody = body; }
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "Rewrite this briefly: Fresh catfish available every Friday.", targetKind: "site" })
+      });
+      assert.equal(response.status, 200);
+      assert.equal(capturedBody?.model, "qwen3:4b");
+      assert.equal(capturedBody?.options?.temperature, 0.2);
+      const messages = Array.isArray(capturedBody?.messages) ? capturedBody.messages : [];
+      assert.equal(messages[0]?.role, "system");
+      assert.match(String(messages[0]?.content || ""), /Runtime chat provider: ollama\./);
+      assert.match(String(messages[0]?.content || ""), /Runtime chat model: qwen3:4b\./);
+      assert.match(String(messages[0]?.content || ""), /Do not claim to be a cloud-hosted provider/);
+    });
+  });
+});
+
+test("POST /api/ai/chat answers identity questions from runtime metadata", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "What model are you using? Are you local?" })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { provider?: string; model?: string; source?: string; response?: string; latencyMs?: number };
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.source, "local");
+      assert.match(String(body.response || ""), /local Ollama model qwen3:4b/i);
+      assert.equal(typeof body.latencyMs, "number");
+    });
+  });
+});
+
+test("POST /api/ai/chat response does not leak raw secret values", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "safe local reply" } } } }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatApiKey: "sk-secret-chat-value",
+      imageGenApiKey: "sk-secret-image-value",
+      imageAnalyzeApiKey: "sk-secret-analyze-value",
+      chatProvider: "ollama",
+      chatModel: "qwen3:4b"
+    }), async () => {
+      const response = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "hello" })
+      });
+      assert.equal(response.status, 200);
+      const raw = await response.text();
+      assert.ok(!raw.includes("sk-secret-chat-value"));
+      assert.ok(!raw.includes("sk-secret-image-value"));
+      assert.ok(!raw.includes("sk-secret-analyze-value"));
+    });
+  });
+});
+
+test("POST /api/ai/chat fails safely with malformed provider config", async () => {
+  await withTemporarySecretsFileContent(JSON.stringify({ chatProvider: "bogus-provider", chatModel: "qwen3:4b" }), async () => {
+    const response = await fetch(`${baseUrl}/api/ai/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "hello" })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; provider?: string; response?: string; source?: string };
+    assert.equal(body.ok, true);
+    assert.equal(body.provider, "none");
+    assert.equal(body.source, "missing");
+    assert.match(String(body.response || ""), /no provider configured/i);
   });
 });
 

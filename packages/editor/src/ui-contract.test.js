@@ -246,6 +246,38 @@ test("AI chat surfaces safe success and error provider states", () => {
   assert.match(appSource, /chatProviderStatus/);
 });
 
+test("desktop AI panel exposes draggable and reset affordances", () => {
+  assert.match(appSource, /handleAiPanelDragStart/);
+  assert.match(appSource, /ai-panel-drag-handle/);
+  assert.match(appSource, /Reset panel/);
+  assert.match(appSource, /AI_PANEL_STORAGE_KEY/);
+  assert.match(appSource, /clampAiPanelRect/);
+  assert.match(cssSource, /\.ai-panel-drag-handle/);
+  assert.match(cssSource, /\.ai-panel-reset/);
+});
+
+test("desktop AI panel exposes resize affordance", () => {
+  assert.match(appSource, /handleAiPanelResizeStart/);
+  assert.match(appSource, /ai-panel-resize-handle/);
+  assert.match(cssSource, /\.ai-panel-resize-handle/);
+  assert.match(cssSource, /cursor:\s*nwse-resize/);
+});
+
+test("AI chat messages render timestamp footers with metadata", () => {
+  assert.match(appSource, /formatChatTimestamp/);
+  assert.match(appSource, /chatFooterText/);
+  assert.match(appSource, /ai-chat-msg-footer/);
+  assert.match(appSource, /latencyMs/);
+  assert.match(cssSource, /\.ai-chat-msg-footer/);
+});
+
+test("AI chat footer can show provider model metadata for responses", () => {
+  assert.match(appSource, /item\.source/);
+  assert.match(appSource, /item\.model/);
+  assert.match(appSource, /\(item\.latencyMs \/ 1000\)\.toFixed\(1\)/);
+  assert.match(appSource, /ai-chat-provider-status/);
+});
+
 test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
   assert.match(smokeSource, /unauth \/api\/publish expected 401/);

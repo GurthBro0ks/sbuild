@@ -54,7 +54,16 @@ type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "style" | "images" | "ai" | "status";
 type PropertiesTab = "fields" | "resize";
 type SettingsTab = "general" | "providers" | "keys" | "deploy" | "debug" | "about" | "account" | "users";
-type ChatItem = { role: "user" | "assistant"; text: string };
+type ChatItem = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+  provider?: string;
+  model?: string;
+  source?: string;
+  latencyMs?: number;
+};
 type ProviderSource = "missing" | "local" | "env" | "configured" | "not_configured" | "unknown";
 type ChannelStatus = {
   source: ProviderSource;
@@ -77,8 +86,75 @@ type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: Paint
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
+type AiPanelRect = { x: number; y: number; width: number; height: number };
+type AiPanelDragState = { pointerId: number; offsetX: number; offsetY: number } | null;
+type AiPanelResizeState = { pointerId: number; startX: number; startY: number; startWidth: number; startHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
+
+const AI_PANEL_STORAGE_KEY = "sbuild_ai_panel_rect_v1";
+const AI_PANEL_MIN_WIDTH = 360;
+const AI_PANEL_MIN_HEIGHT = 420;
+const AI_PANEL_MAX_WIDTH = 720;
+const AI_PANEL_MARGIN = 16;
+
+function formatChatTimestamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function chatFooterText(item: ChatItem): string {
+  const parts = [formatChatTimestamp(item.timestamp)];
+  if (item.role === "assistant") {
+    if (item.source) parts.push(item.source);
+    if (item.model) parts.push(item.model);
+    if (typeof item.latencyMs === "number" && Number.isFinite(item.latencyMs)) {
+      parts.push(`${(item.latencyMs / 1000).toFixed(1)}s`);
+    }
+  }
+  return parts.join(" · ");
+}
+
+function defaultAiPanelRect(): AiPanelRect {
+  if (typeof window === "undefined") {
+    return { x: 24, y: 96, width: 420, height: 640 };
+  }
+  const width = Math.min(420, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
+  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 120);
+  const height = Math.min(640, maxHeight);
+  const x = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - 24);
+  const y = Math.max(72, Math.round((window.innerHeight - height) / 2));
+  return { x, y, width, height };
+}
+
+function clampAiPanelRect(rect: AiPanelRect): AiPanelRect {
+  if (typeof window === "undefined") return rect;
+  const maxWidth = Math.min(AI_PANEL_MAX_WIDTH, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
+  const width = Math.min(maxWidth, Math.max(AI_PANEL_MIN_WIDTH, rect.width));
+  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 96);
+  const height = Math.min(maxHeight, Math.max(AI_PANEL_MIN_HEIGHT, rect.height));
+  const maxX = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - AI_PANEL_MARGIN);
+  const maxY = Math.max(56, window.innerHeight - height - AI_PANEL_MARGIN);
+  const x = Math.min(maxX, Math.max(AI_PANEL_MARGIN, rect.x));
+  const y = Math.min(maxY, Math.max(56, rect.y));
+  return { x, y, width, height };
+}
+
+function loadAiPanelRect(): AiPanelRect {
+  if (typeof window === "undefined") return defaultAiPanelRect();
+  try {
+    const raw = localStorage.getItem(AI_PANEL_STORAGE_KEY);
+    if (!raw) return defaultAiPanelRect();
+    const parsed = JSON.parse(raw) as Partial<AiPanelRect>;
+    return clampAiPanelRect({
+      x: Number(parsed.x ?? 0),
+      y: Number(parsed.y ?? 0),
+      width: Number(parsed.width ?? 0),
+      height: Number(parsed.height ?? 0)
+    });
+  } catch {
+    return defaultAiPanelRect();
+  }
+}
 
 const BLOCK_TYPES: BlockType[] = [
   "hero", "text", "image", "cards", "hours", "gallery", "contact",
@@ -1118,6 +1194,9 @@ export function App() {
   const [opencodeAuth, setOpencodeAuth] = useState<{ status: string; message: string; commands: string[]; output?: string } | null>(null);
   const [aiTopMenuOpen, setAiTopMenuOpen] = useState(false);
   const [aiTopMenuTab, setAiTopMenuTab] = useState<AiTopMenuTab>("chat");
+  const [aiPanelRect, setAiPanelRect] = useState<AiPanelRect>(() => loadAiPanelRect());
+  const [aiPanelDrag, setAiPanelDrag] = useState<AiPanelDragState>(null);
+  const [aiPanelResize, setAiPanelResize] = useState<AiPanelResizeState>(null);
   const [aiChatTarget, setAiChatTarget] = useState<AiChatTarget>("block");
   const [aiProposal, setAiProposal] = useState("");
   const [aiProposalBlockId, setAiProposalBlockId] = useState("");
@@ -1165,6 +1244,54 @@ export function App() {
   const [projectPath, setProjectPath] = useState("");
   const canvasRef = useRef<HTMLDivElement>(null);
   const layoutSectionRef = useRef<HTMLDivElement>(null);
+  const aiPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || isMobileViewport) return;
+    localStorage.setItem(AI_PANEL_STORAGE_KEY, JSON.stringify(aiPanelRect));
+  }, [aiPanelRect, isMobileViewport]);
+
+  useEffect(() => {
+    if (!aiTopMenuOpen || isMobileViewport) return;
+    const update = () => setAiPanelRect((current) => clampAiPanelRect(current));
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [aiTopMenuOpen, isMobileViewport]);
+
+  useEffect(() => {
+    if (isMobileViewport) {
+      setAiPanelDrag(null);
+      setAiPanelResize(null);
+      return;
+    }
+    if (!aiPanelDrag && !aiPanelResize) return;
+    const handleMove = (event: PointerEvent) => {
+      if (aiPanelDrag && event.pointerId === aiPanelDrag.pointerId) {
+        setAiPanelRect((current) => clampAiPanelRect({
+          ...current,
+          x: event.clientX - aiPanelDrag.offsetX,
+          y: event.clientY - aiPanelDrag.offsetY
+        }));
+      }
+      if (aiPanelResize && event.pointerId === aiPanelResize.pointerId) {
+        setAiPanelRect((current) => clampAiPanelRect({
+          ...current,
+          width: aiPanelResize.startWidth + (event.clientX - aiPanelResize.startX),
+          height: aiPanelResize.startHeight + (event.clientY - aiPanelResize.startY)
+        }));
+      }
+    };
+    const handleUp = (event: PointerEvent) => {
+      if (aiPanelDrag && event.pointerId === aiPanelDrag.pointerId) setAiPanelDrag(null);
+      if (aiPanelResize && event.pointerId === aiPanelResize.pointerId) setAiPanelResize(null);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+  }, [aiPanelDrag, aiPanelResize, isMobileViewport]);
 
   const [websiteManagerOpen, setWebsiteManagerOpen] = useState(false);
   const [newPageFlowOpen, setNewPageFlowOpen] = useState(false);
@@ -2064,17 +2191,56 @@ export function App() {
     return "Selected Block (none)";
   }
 
+  function pushChatMessage(next: Omit<ChatItem, "id" | "timestamp"> & { timestamp?: number }) {
+    const timestamp = next.timestamp ?? Date.now();
+    setChatHistory((history) => [...history, {
+      id: `${next.role}-${timestamp}-${history.length}`,
+      timestamp,
+      ...next
+    }]);
+  }
+
+  function resetAiPanelPosition() {
+    setAiPanelRect(defaultAiPanelRect());
+  }
+
+  function handleAiPanelDragStart(event: React.PointerEvent<HTMLDivElement>) {
+    if (isMobileViewport) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button")) return;
+    const rect = aiPanelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setAiPanelDrag({
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top
+    });
+  }
+
+  function handleAiPanelResizeStart(event: React.PointerEvent<HTMLButtonElement>) {
+    if (isMobileViewport) return;
+    event.stopPropagation();
+    setAiPanelResize({
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: aiPanelRect.width,
+      startHeight: aiPanelRect.height
+    });
+  }
+
   async function aiAskSuggest() {
     const prompt = chatInput.trim();
     if (!prompt) return;
     setAiProposalPending(true);
     setAiProposal("");
     setAiHasProposal(false);
-    setChatHistory((h) => [...h, { role: "user", text: prompt }]);
+    pushChatMessage({ role: "user", text: prompt });
     setChatInput("");
+    const startedAt = Date.now();
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; message?: string; hasProposal?: boolean }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2089,7 +2255,14 @@ export function App() {
         setAiHasProposal(hasValidProposal);
         setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
         setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
-        setChatHistory((h) => [...h, { role: "assistant", text: data.suggestion! }]);
+        pushChatMessage({
+          role: "assistant",
+          text: data.suggestion!,
+          provider: data.provider,
+          model: data.model,
+          source: data.source,
+          latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+        });
         if (data.provider === "ollama" && data.model) {
           setProviderCheckMessage(`Local chat connected: ${data.model}`);
         } else if (data.message) {
@@ -2099,13 +2272,20 @@ export function App() {
         const msg = data.error || "Prototype assistant: provider not configured. No edits were applied.";
         setAiProposal("");
         setAiHasProposal(false);
-        setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
+        pushChatMessage({
+          role: "assistant",
+          text: msg,
+          provider: data.provider,
+          model: data.model,
+          source: data.source,
+          latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+        });
         if (data.message) setProviderCheckMessage(data.message);
       }
-    } catch {
+    } catch (error) {
       const msg = "Prototype assistant: provider not configured. No edits were applied.";
       setAiHasProposal(false);
-      setChatHistory((h) => [...h, { role: "assistant", text: msg }]);
+      pushChatMessage({ role: "assistant", text: `${msg} ${error instanceof Error ? error.message : String(error)}`, latencyMs: Date.now() - startedAt });
     } finally {
       setAiProposalPending(false);
       setTimeout(() => {
@@ -2152,6 +2332,16 @@ export function App() {
     setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
+  }
+
+  function renderChatMessage(msg: ChatItem) {
+    return (
+      <div key={msg.id} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
+        <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
+        <div className="ai-chat-msg-text">{msg.text}</div>
+        <div className="ai-chat-msg-footer">{chatFooterText(msg)}</div>
+      </div>
+    );
   }
 
   async function aiGenerateImage() {
@@ -2582,11 +2772,19 @@ export function App() {
   async function chat() {
     if (!chatInput.trim()) return;
     const prompt = chatInput.trim();
-    setChatHistory((h) => [...h, { role: "user", text: prompt }]);
+    pushChatMessage({ role: "user", text: prompt });
     setChatInput("");
+    const startedAt = Date.now();
     try {
-      const data = await fetchJson<{ response: string; provider?: string; model?: string; message?: string }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
-      setChatHistory((h) => [...h, { role: "assistant", text: data.response }]);
+      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
+      pushChatMessage({
+        role: "assistant",
+        text: data.response,
+        provider: data.provider,
+        model: data.model,
+        source: data.source,
+        latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+      });
       if (data.provider === "ollama" && data.model) {
         setProviderCheckMessage(`Local chat connected: ${data.model}`);
       } else if (data.message) {
@@ -2594,7 +2792,7 @@ export function App() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setChatHistory((h) => [...h, { role: "assistant", text: `AI chat unavailable: ${message}` }]);
+      pushChatMessage({ role: "assistant", text: `AI chat unavailable: ${message}`, latencyMs: Date.now() - startedAt });
     }
   }
 
@@ -4181,9 +4379,7 @@ export function App() {
                 <button onClick={() => void quickRewrite("tone")}>Tone</button>
               </div>
               <div className="chat-log">
-                {chatHistory.map((msg, i) => (
-                  <div key={i} className={`msg ${msg.role}`}>{msg.text}</div>
-                ))}
+                {chatHistory.map((msg) => renderChatMessage(msg))}
               </div>
               <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} rows={4} placeholder="Ask AI to improve copy or layout" className="mobile-field-stack" />
               <div className="button-row mobile-button-row">
@@ -4421,19 +4617,37 @@ export function App() {
         <div className="ai-panel-backdrop" onClick={() => setAiTopMenuOpen(false)} />
       )}
       {aiTopMenuOpen && (
-        <div className="ai-panel" role="dialog" aria-label="AI panel" onClick={(e) => e.stopPropagation()}>
-          <div className="ai-panel-header">
+        <div
+          ref={aiPanelRef}
+          className={`ai-panel ${!isMobileViewport ? "ai-panel-desktop" : ""}`}
+          role="dialog"
+          aria-label="AI panel"
+          onClick={(e) => e.stopPropagation()}
+          style={!isMobileViewport ? {
+            left: aiPanelRect.x,
+            top: aiPanelRect.y,
+            width: aiPanelRect.width,
+            height: aiPanelRect.height,
+            right: "auto",
+            bottom: "auto",
+            transform: "none"
+          } : undefined}
+        >
+          <div className="ai-panel-header" onPointerDown={handleAiPanelDragStart}>
             <span className="ai-panel-title">sBuild AI</span>
+            {!isMobileViewport && <span className="ai-panel-drag-handle" title="Drag panel">Drag panel</span>}
             <div className="ai-panel-tabs">
               <button onClick={() => setAiTopMenuTab("chat")} className={aiTopMenuTab === "chat" ? "selected" : ""}>AI Chat</button>
               <button onClick={() => setAiTopMenuTab("image-gen")} className={aiTopMenuTab === "image-gen" ? "selected" : ""}>AI Image Gen</button>
               <button onClick={() => setAiTopMenuTab("image-enhance")} className={aiTopMenuTab === "image-enhance" ? "selected" : ""}>AI Image Enhance</button>
             </div>
+            {!isMobileViewport && <button className="ai-panel-reset" onClick={resetAiPanelPosition} title="Reset panel position and size">Reset panel</button>}
             <button className="ai-panel-close" onClick={() => setAiTopMenuOpen(false)} aria-label="Close AI panel">✕</button>
           </div>
           <div className="ai-panel-body">
             {aiTopMenuTab === "chat" && (
               <div className="ai-panel-tab-content ai-chat-layout">
+                {chatProviderStatus && <div className="ai-chat-provider-status">{chatProviderStatus.message}</div>}
                 {(previewMode || paintMode) && (
                   <div className="ai-chat-mode-notice">
                     {previewMode && "Planning only — preview mode will not edit the page."}
@@ -4458,13 +4672,8 @@ export function App() {
                       <div className="ai-chat-msg-text">Tell me what you want to change. I can help with copy, layout, images, or planning.</div>
                     </div>
                   )}
-                  {chatHistory.map((msg, i) => (
-                    <div key={i} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
-                      <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
-                      <div className="ai-chat-msg-text">{msg.text}</div>
-                    </div>
-                  ))}
-                  {aiProposalPending && <div className="ai-chat-msg ai-chat-msg-assistant"><div className="ai-chat-msg-role">AI</div><div className="ai-chat-msg-text ai-chat-typing">Thinking...</div></div>}
+                  {chatHistory.map((msg) => renderChatMessage(msg))}
+                  {aiProposalPending && <div className="ai-chat-msg ai-chat-msg-assistant"><div className="ai-chat-msg-role">AI</div><div className="ai-chat-msg-text ai-chat-typing">Thinking...</div><div className="ai-chat-msg-footer">Waiting for response...</div></div>}
                 </div>
                 {!previewMode && !paintMode && (
                   <div className="ai-chat-action-bar">
@@ -4580,6 +4789,7 @@ export function App() {
               </div>
             )}
           </div>
+          {!isMobileViewport && <button className="ai-panel-resize-handle" onPointerDown={handleAiPanelResizeStart} aria-label="Resize AI panel" title="Resize AI panel" />}
         </div>
       )}
 
