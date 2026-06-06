@@ -351,13 +351,13 @@ test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
   assert.ok(typeof chatProvider?.message === "string");
 });
 
-test("/api/ai/providers/discover prefers qwen3:4b and only returns installed models", async () => {
+test("/api/ai/providers/discover prefers qwen2.5:1.5b and only returns installed models", async () => {
   await withMockOllama({
     tags: {
       models: [
         { name: "mistral:7b" },
-        { name: "qwen3:4b", details: { parameter_size: "4B" } },
-        { name: "qwen3:4b" }
+        { name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } }
       ]
     }
   }, async () => {
@@ -369,15 +369,16 @@ test("/api/ai/providers/discover prefers qwen3:4b and only returns installed mod
     };
     assert.equal(body.ok, true);
     assert.equal(body.ollama?.reachable, true);
-    assert.deepEqual(body.ollama?.models?.map((model) => model.name), ["qwen3:4b", "mistral:7b"]);
+    assert.deepEqual(body.ollama?.models?.map((model) => model.name), ["qwen2.5:1.5b", "mistral:7b", "qwen3:4b"]);
   });
 });
 
-test("/api/ai/providers/config prefers local qwen3 without reusing image keys", async () => {
+test("/api/ai/providers/config prefers local qwen2.5 without reusing image keys", async () => {
   await withMockOllama({
     tags: {
       models: [
         { name: "mistral:7b" },
+        { name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } },
         { name: "qwen3:4b", details: { parameter_size: "4B" } }
       ]
     }
@@ -401,7 +402,7 @@ test("/api/ai/providers/config prefers local qwen3 without reusing image keys", 
         };
         assert.equal(body.ok, true);
         assert.equal(body.provider, "ollama");
-        assert.equal(body.model, "qwen3:4b");
+        assert.equal(body.model, "qwen2.5:1.5b");
         assert.equal(body.baseUrl, endpoint);
         assert.equal(body.hasApiKey, false);
         assert.equal(body.apiKeySource, "missing");

@@ -20,7 +20,7 @@ import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
-const DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
+const DEFAULT_LOCAL_CHAT_MODEL = "qwen2.5:1.5b";
 
 type LocalModelInfo = {
   name: string;
@@ -1596,19 +1596,24 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           }
           const userMessage = `${cleanPrompt}\n\nPlease respond concisely and directly. Do not include your reasoning process.`;
           historyMessages.push({ role: "user", content: userMessage });
+          const isQwen3 = modelToUse.startsWith("qwen3");
+          const requestBody: any = {
+            model: modelToUse,
+            stream: false,
+            options: {
+              temperature: 0.2,
+              num_predict: 512
+            },
+            messages: historyMessages
+          };
+          if (isQwen3) {
+            requestBody.think = false;
+          }
           const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: controller.signal,
-            body: JSON.stringify({
-              model: modelToUse,
-              stream: false,
-              options: {
-                temperature: 0.2,
-                num_predict: 1024
-              },
-              messages: historyMessages
-            })
+            body: JSON.stringify(requestBody)
           });
           clearTimeout(timer);
           const payload = (await response.json().catch(() => ({}))) as {
