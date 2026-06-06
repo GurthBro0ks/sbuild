@@ -1566,3 +1566,124 @@ test("isUiStateQuestion does not match 'what model' substring", async () => {
     assert.notEqual(body.model, "ui-state");
   });
 });
+
+test("stale qwen3:4b old-default config migrates to qwen2.5:1.5b when available", async () => {
+  await withMockOllama({
+    tags: {
+      models: [
+        { name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } }
+      ]
+    }
+  }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatProvider: "ollama",
+      chatModel: "qwen3:4b"
+    }), async () => {
+      const response = await fetch(`${baseUrl}/api/ai/providers/config`);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      const secretsRaw = await fs.readFile(secretsFile, "utf8");
+      const secretsParsed = JSON.parse(secretsRaw) as Record<string, unknown>;
+      assert.equal(secretsParsed.chatModel, "qwen2.5:1.5b");
+      assert.equal(secretsParsed._chatModelMigrated, true);
+    });
+  });
+});
+
+test("explicit qwen3:4b selection preserved when migration flag is already set", async () => {
+  await withMockOllama({
+    tags: {
+      models: [
+        { name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } }
+      ]
+    }
+  }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatProvider: "ollama",
+      chatModel: "qwen3:4b",
+      _chatModelMigrated: true
+    }), async () => {
+      const response = await fetch(`${baseUrl}/api/ai/providers/config`);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen3:4b");
+    });
+  });
+});
+
+test("migration does not run when new default is not available", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b", details: { parameter_size: "4B" } }] }
+  }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatProvider: "ollama",
+      chatModel: "qwen3:4b"
+    }), async () => {
+      const response = await fetch(`${baseUrl}/api/ai/providers/config`);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.model, "qwen3:4b");
+    });
+  });
+});
+
+test("provider status reports active model consistently across endpoints", async () => {
+  await withMockOllama({
+    tags: {
+      models: [
+        { name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } },
+        { name: "qwen3:4b", details: { parameter_size: "4B" } }
+      ]
+    }
+  }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatProvider: "ollama",
+      chatModel: "qwen2.5:1.5b"
+    }), async () => {
+      const providersRes = await fetch(`${baseUrl}/api/ai/providers/status`);
+      assert.equal(providersRes.status, 200);
+      const providersBody = await providersRes.json() as {
+        channels?: { chat?: { model?: string; message?: string } };
+        providers?: Array<{ name: string; message?: string }>;
+      };
+      assert.equal(providersBody.channels?.chat?.model, "qwen2.5:1.5b");
+      assert.match(String(providersBody.channels?.chat?.message || ""), /qwen2\.5:1\.5b/);
+      const statusRes = await fetch(`${baseUrl}/api/status`);
+      assert.equal(statusRes.status, 200);
+      const statusBody = await statusRes.json() as { status?: { chatModel?: string; chat?: { model?: string; message?: string } } };
+      assert.equal(statusBody.status?.chatModel, "qwen2.5:1.5b");
+      assert.equal(statusBody.status?.chat?.model, "qwen2.5:1.5b");
+      assert.match(String(statusBody.status?.chat?.message || ""), /qwen2\.5:1\.5b/);
+    });
+  });
+});
+
+test("no raw secrets returned in provider status or config endpoints", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b", details: { parameter_size: "1.5B" } }] }
+  }, async () => {
+    await withTemporarySecretsFileContent(JSON.stringify({
+      chatProvider: "ollama",
+      chatModel: "qwen2.5:1.5b",
+      chatApiKey: "sk-test-secret-key-12345678",
+      imageGenApiKey: "sk-image-secret-87654321",
+      imageAnalyzeApiKey: "sk-analyze-secret-abcdefgh"
+    }), async () => {
+      for (const endpoint of ["/api/ai/providers/status", "/api/ai/providers/config", "/api/status"]) {
+        const res = await fetch(`${baseUrl}${endpoint}`);
+        const text = await res.text();
+        assert.doesNotMatch(text, /sk-test-secret-key-12345678/, `${endpoint} leaks chatApiKey`);
+        assert.doesNotMatch(text, /sk-image-secret-87654321/, `${endpoint} leaks imageGenApiKey`);
+        assert.doesNotMatch(text, /sk-analyze-secret-abcdefgh/, `${endpoint} leaks imageAnalyzeApiKey`);
+      }
+    });
+  });
+});

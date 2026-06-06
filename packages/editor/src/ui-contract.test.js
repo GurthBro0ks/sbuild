@@ -225,9 +225,9 @@ test("provider and key panels expose chat provider and chat key status", () => {
   assert.doesNotMatch(appSource, /secretStatus\?\.imageAnalyze\.source/);
 });
 
-test("local provider UI prefers qwen3 and refreshes installed models only", () => {
+test("local provider UI prefers qwen2.5:1.5b and refreshes installed models only", () => {
   assert.match(appSource, /normalizeLocalModelOptions/);
-  assert.match(appSource, /qwen3:4b/);
+  assert.match(appSource, /qwen2\.5:1\.5b/);
   assert.doesNotMatch(appSource, /mistral:7b/);
   assert.doesNotMatch(appSource, /qwen2\.5:3b/);
   assert.doesNotMatch(appSource, /qwen2\.5:0\.5b/);

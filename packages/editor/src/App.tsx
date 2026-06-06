@@ -415,8 +415,8 @@ function normalizeLocalModelOptions(models: Array<{ name: string }>): Array<{ na
       return true;
     })
     .sort((a, b) => {
-      if (a.name === "qwen3:4b") return -1;
-      if (b.name === "qwen3:4b") return 1;
+      if (a.name === "qwen2.5:1.5b") return -1;
+      if (b.name === "qwen2.5:1.5b") return 1;
       return a.name.localeCompare(b.name);
     });
 }
@@ -1907,7 +1907,7 @@ export function App() {
         setChatModel((current) => {
           if (chatProvider !== "ollama") return current;
           if (current && nextModels.some((model) => model.name === current)) return current;
-          if (nextModels.some((model) => model.name === "qwen3:4b")) return "qwen3:4b";
+          if (nextModels.some((model) => model.name === "qwen2.5:1.5b")) return "qwen2.5:1.5b";
           return nextModels[0]?.name || "";
         });
       } else {

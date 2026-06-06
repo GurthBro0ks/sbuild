@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
 const DEFAULT_LOCAL_CHAT_MODEL = "qwen2.5:1.5b";
+const OLD_DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
 
 type LocalModelInfo = {
   name: string;
@@ -1445,7 +1446,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const chatKeyStatus = await getChatApiKeyStatus();
     const provider = String(s.chatProvider || "auto");
     const ollama = await getOllamaStatus();
-    const savedModel = String(s.chatModel || "").trim();
+    let savedModel = String(s.chatModel || "").trim();
+    if (savedModel === OLD_DEFAULT_LOCAL_CHAT_MODEL && !s._chatModelMigrated && (provider === "ollama" || provider === "auto")) {
+      if (ollama.models.some((m) => m.name === DEFAULT_LOCAL_CHAT_MODEL)) {
+        savedModel = DEFAULT_LOCAL_CHAT_MODEL;
+        secrets.chatModel = DEFAULT_LOCAL_CHAT_MODEL;
+        secrets._chatModelMigrated = true;
+        await saveSecrets(secrets);
+      }
+    }
     const model = savedModel || ((provider === "ollama" || provider === "auto") ? (preferredLocalModelName(ollama.models, DEFAULT_LOCAL_CHAT_MODEL) || "") : "");
     const defaultBaseUrl = provider === "ollama" || provider === "auto"
       ? ollama.endpoint
