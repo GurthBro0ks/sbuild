@@ -2707,6 +2707,21 @@ button:disabled {
   white-space: nowrap;
   flex-shrink: 0;
 }
+.ai-chat-delete-history {
+  padding: 8px 10px;
+  font-size: 11px;
+  border-radius: 8px;
+  background: transparent;
+  color: #c0392b;
+  border: 1px solid #c0392b;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ai-chat-delete-history:hover {
+  background: #c0392b;
+  color: #fff;
+}
 .ai-chat-target {
   display: flex;
   flex-direction: column;

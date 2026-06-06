@@ -309,7 +309,7 @@ test("AI chat sends conversation history for follow-up context", () => {
 test("AI chat error messages are provider-aware with timeout details", () => {
   assert.match(appSource, /isTimeout/);
   assert.match(appSource, /timed out after/);
-  assert.match(appSource, /qwen3:4b is configured/);
+  assert.match(appSource, /is configured/);
 });
 
 test("AI Image Gen uses modern card layout instead of raw form controls", () => {

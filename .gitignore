@@ -19,5 +19,6 @@ project/backups
 .sbuild-login-credentials.txt
 project/users.json
 data/ai-memory.json
+data/ai-chat-history.json
 project/project.json
 project/image-folder.json

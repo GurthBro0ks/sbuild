@@ -2187,7 +2187,10 @@ export function App() {
   }
 
   function toggleAiTopMenu() {
-    setAiTopMenuOpen((prev) => !prev);
+    setAiTopMenuOpen((prev) => {
+      if (!prev) void loadChatHistory();
+      return !prev;
+    });
   }
 
   function aiChatTargetLabel(): string {
@@ -2307,9 +2310,10 @@ export function App() {
       const elapsed = Date.now() - startedAt;
       const detail = error instanceof Error ? error.message : String(error);
       const isTimeout = detail.includes("abort") || detail.includes("timeout") || elapsed > 25000;
+      const lastModel = chatProviderStatus?.message || providerCheckMessage || "the local model";
       const msg = isTimeout
-        ? `Local qwen3:4b is configured but timed out after ${(elapsed / 1000).toFixed(1)} seconds. The provider is still configured — try a shorter prompt or check Ollama status.`
-        : `Request failed (qwen3:4b is configured): ${detail}`;
+        ? `${lastModel} is configured but timed out after ${(elapsed / 1000).toFixed(1)} seconds. The provider is still configured — try a shorter prompt or check Ollama status.`
+        : `Request failed (${lastModel} is configured): ${detail}`;
       setProviderCheckMessage(msg);
       setAiHasProposal(false);
       setAiStructuredProposal(null);
@@ -2362,6 +2366,41 @@ export function App() {
     setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
+  }
+
+  async function loadChatHistory() {
+    try {
+      const data = await fetchJson<{ ok: boolean; messages?: Array<{ role: string; text: string; timestamp: number; provider?: string; model?: string; source?: string; latencyMs?: number }> }>("/api/ai/chat/history");
+      if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
+        const items: ChatItem[] = data.messages.map((m, i) => ({
+          id: `history-${m.timestamp}-${i}`,
+          role: m.role as "user" | "assistant",
+          text: m.text,
+          timestamp: m.timestamp,
+          provider: m.provider,
+          model: m.model,
+          source: m.source,
+          latencyMs: m.latencyMs
+        }));
+        setChatHistory(items);
+      }
+    } catch {
+      // silently ignore - history is optional
+    }
+  }
+
+  async function deleteChatHistory() {
+    if (!window.confirm("Delete all chat history for this project? This cannot be undone.")) return;
+    try {
+      await fetchJson<{ ok: boolean }>("/api/ai/chat/history", { method: "DELETE", body: JSON.stringify({}) });
+      setChatHistory([]);
+      setAiProposal("");
+      setAiStructuredProposal(null);
+      setAiHasProposal(false);
+      setProviderCheckMessage("Chat history deleted.");
+    } catch {
+      setProviderCheckMessage("Failed to delete chat history.");
+    }
   }
 
   function renderChatMessage(msg: ChatItem) {
@@ -2806,7 +2845,7 @@ export function App() {
     setChatInput("");
     const startedAt = Date.now();
     try {
-      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt }) });
+      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })) }) });
       pushChatMessage({
         role: "assistant",
         text: data.response,
@@ -4730,6 +4769,7 @@ export function App() {
                   />
                   <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()} className="ai-chat-send">Send</button>
                   <button onClick={clearAiChat} className="ai-chat-clear" title="Clear conversation">Clear</button>
+                  {chatHistory.length > 0 && <button onClick={() => void deleteChatHistory()} className="ai-chat-delete-history" title="Delete saved chat history">Delete History</button>}
                 </div>
               </div>
             )}

@@ -81,6 +81,8 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
 }
 import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
+import { getChatHistory, appendChatHistory, clearChatHistory } from "./lib/chatHistoryStore.js";
+import type { PersistedChatItem } from "./lib/chatHistoryStore.js";
 import {
   backupsDir,
   distDir,
@@ -818,6 +820,17 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return;
     }
     const result = await chatWithProviders(prompt, chatHistory);
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (username) {
+      const persistedItems: PersistedChatItem[] = [
+        { role: "user", text: prompt, timestamp: Date.now() },
+        { role: "assistant", text: result.response, timestamp: Date.now(), provider: result.provider, model: result.model, source: result.source, latencyMs: result.latencyMs }
+      ];
+      appendChatHistory(username, undefined, persistedItems);
+    }
     res.json({ ok: true, ...result });
   });
 
@@ -830,6 +843,32 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
+    }
+    if (isRuntimeIdentityQuestion(prompt)) {
+      const config = await getChatProviderConfig();
+      const provider = config.provider || "auto";
+      if (provider === "ollama" || provider === "auto") {
+        const ollama = await getOllamaStatus();
+        if (ollama.reachable && ollama.model) {
+          const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
+          res.json({
+            ok: true,
+            suggestion: `Using local Ollama model ${modelToUse}.`,
+            provider: "ollama",
+            model: modelToUse,
+            message: `Local chat connected: ${modelToUse}`,
+            source: "local",
+            latencyMs: 0,
+            isLocal: true,
+            proposal: null,
+            hasProposal: false,
+            targetKind,
+            blockId,
+            blockType
+          });
+          return;
+        }
+      }
     }
     if (isUiStateQuestion(prompt)) {
       const answer = answerUiStateQuestion(prompt, targetKind, blockId, blockType);
@@ -874,6 +913,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     })() : "dev";
     if (username) {
       appendMemoryForUser(username, `Q: ${prompt.slice(0, 200)} A: ${result.response.slice(0, 200)}`);
+      const persistedItems: PersistedChatItem[] = [
+        { role: "user", text: prompt, timestamp: Date.now() },
+        { role: "assistant", text: result.response, timestamp: Date.now(), provider: result.provider, model: result.model, source: result.source, latencyMs: result.latencyMs }
+      ];
+      appendChatHistory(username, undefined, persistedItems);
     }
     res.json({
       ok: true,
@@ -933,6 +977,34 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return;
     }
     clearMemoryForUser(username);
+    res.json({ ok: true });
+  });
+
+  app.get("/api/ai/chat/history", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const projectPath = String(req.query?.projectPath || "");
+    const messages = getChatHistory(username, projectPath || undefined);
+    res.json({ ok: true, messages });
+  });
+
+  app.delete("/api/ai/chat/history", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const projectPath = String(req.body?.projectPath || req.query?.projectPath || "");
+    clearChatHistory(username, projectPath || undefined);
     res.json({ ok: true });
   });
 
@@ -1438,7 +1510,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   }
 
   function isUiStateQuestion(prompt: string): boolean {
-    return /which (block|target|mode|page|selection|selected)|what block|what selection|what mode/i.test(prompt);
+    return /\bwhich\s+(block|target|mode|page|selection|selected)\b|\bwhat\s+block\b|\bwhat\s+selection\b|\bwhat\s+mode\b/i.test(prompt);
   }
 
   function answerUiStateQuestion(prompt: string, targetKind: string, blockId: string, blockType: string): string | null {

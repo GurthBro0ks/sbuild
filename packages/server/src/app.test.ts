@@ -1466,3 +1466,103 @@ test("DELETE /api/ai/memory clears user memory", async () => {
   const getBody = await getResponse.json() as { ok: boolean; memory: { summaries: string[] } };
   assert.equal(getBody.memory.summaries.length, 0);
 });
+
+test("POST /api/ai/suggest does not intercept model identity questions as UI state", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "What model are you using?",
+          targetKind: "block",
+          blockId: "hero-abc123",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.match(String(body.suggestion || ""), /local Ollama model qwen2\.5:1\.5b/i);
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+    });
+  });
+});
+
+test("POST /api/ai/suggest answers 'are you local' with runtime metadata", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Are you local?",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.match(String(body.suggestion || ""), /local Ollama model qwen2\.5:1\.5b/i);
+    });
+  });
+});
+
+test("GET /api/ai/chat/history returns messages after chat", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "hello response" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "hello test history" })
+      });
+      const response = await fetch(`${baseUrl}/api/ai/chat/history`);
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; messages: Array<{ role: string; text: string }> };
+      assert.equal(body.ok, true);
+      assert.ok(Array.isArray(body.messages));
+      assert.ok(body.messages.length >= 2);
+      assert.equal(body.messages[body.messages.length - 2].role, "user");
+      assert.equal(body.messages[body.messages.length - 1].role, "assistant");
+    });
+  });
+});
+
+test("DELETE /api/ai/chat/history clears messages", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "temp response" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "temp question for delete test" })
+      });
+      const delResponse = await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+      assert.equal(delResponse.status, 200);
+      const delBody = await delResponse.json() as { ok: boolean };
+      assert.equal(delBody.ok, true);
+      const getResponse = await fetch(`${baseUrl}/api/ai/chat/history`);
+      const getBody = await getResponse.json() as { ok: boolean; messages: unknown[] };
+      assert.equal(getBody.messages.length, 0);
+    });
+  });
+});
+
+test("isUiStateQuestion does not match 'what model' substring", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "What model are you using?",
+        targetKind: "page"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; model?: string };
+    assert.equal(body.ok, true);
+    assert.notEqual(body.model, "ui-state");
+  });
+});
