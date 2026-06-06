@@ -1207,6 +1207,64 @@ test("POST /api/ai/suggest passes local provider metadata into Ollama prompt con
   });
 });
 
+test("POST /api/ai/suggest answers UI state questions from request context without calling model", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Which block is selected?",
+        targetKind: "block",
+        blockId: "hero-abc123",
+        blockType: "hero"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean; provider?: string; model?: string };
+    assert.equal(body.ok, true);
+    assert.match(String(body.suggestion || ""), /Hero section.*hero-abc123/);
+    assert.equal(body.hasProposal, false);
+    assert.equal(body.provider, "local");
+    assert.equal(body.model, "ui-state");
+  });
+});
+
+test("POST /api/ai/suggest answers which target mode from request context", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Which target mode is selected?",
+        targetKind: "page"
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean };
+    assert.equal(body.ok, true);
+    assert.match(String(body.suggestion || ""), /Current Page is active/);
+    assert.equal(body.hasProposal, false);
+  });
+});
+
+test("POST /api/ai/suggest does not enable hasProposal for UI state answers", async () => {
+  await withNoOpenAIKey(async () => {
+    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Which block is selected?",
+        targetKind: "block",
+        blockId: "",
+        blockType: ""
+      })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { ok: boolean; hasProposal?: boolean };
+    assert.equal(body.hasProposal, false);
+  });
+});
+
 test("POST /api/ai/chat answers identity questions from runtime metadata", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] } }, async () => {
     await withNoOpenAIKey(async () => {

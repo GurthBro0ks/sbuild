@@ -2305,12 +2305,12 @@ export function App() {
       }
     } catch (error) {
       const elapsed = Date.now() - startedAt;
-      const providerHint = chatProviderStatus?.message || "the configured provider";
       const detail = error instanceof Error ? error.message : String(error);
       const isTimeout = detail.includes("abort") || detail.includes("timeout") || elapsed > 25000;
       const msg = isTimeout
         ? `Local qwen3:4b is configured but timed out after ${(elapsed / 1000).toFixed(1)} seconds. The provider is still configured — try a shorter prompt or check Ollama status.`
-        : `Request failed (${providerHint}): ${detail}`;
+        : `Request failed (qwen3:4b is configured): ${detail}`;
+      setProviderCheckMessage(msg);
       setAiHasProposal(false);
       setAiStructuredProposal(null);
       pushChatMessage({ role: "assistant", text: msg, latencyMs: elapsed });
@@ -4855,11 +4855,7 @@ export function App() {
             )}
           </div>
           {!isMobileViewport && (
-            <>
-              <button className="ai-panel-resize-handle ai-panel-resize-right" onPointerDown={(e) => handleAiPanelResizeStart(e, "right")} aria-label="Resize AI panel width" title="Resize width" />
-              <button className="ai-panel-resize-handle ai-panel-resize-bottom" onPointerDown={(e) => handleAiPanelResizeStart(e, "bottom")} aria-label="Resize AI panel height" title="Resize height" />
-              <button className="ai-panel-resize-handle ai-panel-resize-corner" onPointerDown={(e) => handleAiPanelResizeStart(e, "corner")} aria-label="Resize AI panel" title="Resize width and height" />
-            </>
+            <button className="ai-panel-resize-handle ai-panel-resize-corner" onPointerDown={(e) => handleAiPanelResizeStart(e, "corner")} aria-label="Resize AI panel" title="Resize AI panel" />
           )}
         </div>
       )}

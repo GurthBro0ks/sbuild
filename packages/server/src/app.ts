@@ -831,6 +831,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
     }
+    if (isUiStateQuestion(prompt)) {
+      const answer = answerUiStateQuestion(prompt, targetKind, blockId, blockType);
+      if (answer !== null) {
+        res.json({
+          ok: true,
+          suggestion: answer,
+          provider: "local",
+          model: "ui-state",
+          message: "UI state answer",
+          source: "local",
+          latencyMs: 0,
+          isLocal: true,
+          proposal: null,
+          hasProposal: false,
+          targetKind,
+          blockId,
+          blockType
+        });
+        return;
+      }
+    }
     const contextPrefix = targetKind === "site"
       ? "You are editing the whole website project. "
       : targetKind === "page"
@@ -1416,6 +1437,55 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return /(what|which).*(model|provider)|are you local|running locally|what are you using/i.test(prompt);
   }
 
+  function isUiStateQuestion(prompt: string): boolean {
+    return /which (block|target|mode|page|selection|selected)|what block|what selection|what mode/i.test(prompt);
+  }
+
+  function answerUiStateQuestion(prompt: string, targetKind: string, blockId: string, blockType: string): string | null {
+    const normalizedPrompt = prompt.toLowerCase();
+    if (/which block|what block|which selection|what selection|selected block/i.test(normalizedPrompt)) {
+      if (!blockId || !blockType) {
+        return "No block is currently selected.";
+      }
+      const label = blockTypeLabelsForState(blockType);
+      return `The selected target is the ${label} block (${blockId}).`;
+    }
+    if (/which target|which mode|what target|what mode/i.test(normalizedPrompt)) {
+      if (targetKind === "site") return "Whole Site is active.";
+      if (targetKind === "page") return "Current Page is active.";
+      if (targetKind === "block") {
+        if (!blockId || !blockType) return "Selected Block is active (no block selected).";
+      const label = blockTypeLabelsForState(blockType);
+        return `Selected Block is active (${label}).`;
+      }
+    }
+    if (/what page|which page/i.test(normalizedPrompt)) {
+      if (targetKind === "page") return "Current Page is active.";
+      if (targetKind === "site") return "Whole Site is active.";
+      return "Current Page is active.";
+    }
+    return null;
+  }
+
+  function blockTypeLabelsForState(blockType: string): string {
+    const labels: Record<string, string> = {
+      hero: "Hero section",
+      text: "Text section",
+      image: "Image block",
+      cards: "Cards section",
+      gallery: "Gallery block",
+      contact: "Contact section",
+      hours: "Hours section",
+      testimonial: "Testimonial block",
+      map: "Map block",
+      marquee: "Marquee block",
+      spacer: "Spacer block",
+      divider: "Divider block",
+      html: "HTML block"
+    };
+    return labels[blockType] || blockType;
+  }
+
   function parseStructuredSuggestionProposal(text: string): StructuredSuggestionProposal | null {
     const candidates = [text.trim()];
     const fencedMatches = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => String(match[1] || "").trim());
@@ -1517,7 +1587,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             { role: "system", content: systemPrompt }
           ];
           if (chatHistory && chatHistory.length > 0) {
-            const recentHistory = chatHistory.slice(-10);
+            const recentHistory = chatHistory.slice(-5);
             for (const msg of recentHistory) {
               if (msg.role === "user" || msg.role === "assistant") {
                 historyMessages.push({ role: msg.role, content: msg.text });
@@ -1533,7 +1603,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               model: modelToUse,
               stream: false,
               options: {
-                temperature: 0.2
+                temperature: 0.2,
+                num_predict: 256
               },
               messages: historyMessages
             })

@@ -258,21 +258,18 @@ test("desktop AI panel exposes draggable and reset affordances", () => {
   assert.match(cssSource, /\.ai-panel-tabs[\s\S]*flex-wrap:\s*wrap/);
 });
 
-test("desktop AI panel exposes resize affordances for right, bottom, and corner", () => {
+test("desktop AI panel exposes only corner resize handle", () => {
   assert.match(appSource, /handleAiPanelResizeStart/);
-  assert.match(appSource, /ai-panel-resize-right/);
-  assert.match(appSource, /ai-panel-resize-bottom/);
   assert.match(appSource, /ai-panel-resize-corner/);
+  assert.doesNotMatch(appSource, /ai-panel-resize-right/);
+  assert.doesNotMatch(appSource, /ai-panel-resize-bottom/);
   assert.match(cssSource, /\.ai-panel-resize-handle/);
-  assert.match(cssSource, /cursor:\s*ew-resize/);
-  assert.match(cssSource, /cursor:\s*ns-resize/);
   assert.match(cssSource, /cursor:\s*nwse-resize/);
 });
 
-test("AI panel resize state tracks handle direction for width and height changes", () => {
+test("AI panel resize state tracks handle direction for corner resize", () => {
   assert.match(appSource, /AiPanelResizeHandle/);
-  assert.match(appSource, /aiPanelResize\.handle === "bottom"/);
-  assert.match(appSource, /aiPanelResize\.handle === "right"/);
+  assert.match(appSource, /handleAiPanelResizeStart\(e,\s*"corner"\)/);
 });
 
 test("mobile media query hides all AI panel desktop resize handles", () => {
@@ -312,7 +309,7 @@ test("AI chat sends conversation history for follow-up context", () => {
 test("AI chat error messages are provider-aware with timeout details", () => {
   assert.match(appSource, /isTimeout/);
   assert.match(appSource, /timed out after/);
-  assert.match(appSource, /providerHint/);
+  assert.match(appSource, /qwen3:4b is configured/);
 });
 
 test("AI Image Gen uses modern card layout instead of raw form controls", () => {
