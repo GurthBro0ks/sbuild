@@ -64,6 +64,10 @@ type ChatItem = {
   source?: string;
   latencyMs?: number;
 };
+type StructuredSuggestionProposal = {
+  kind: "replace-copy";
+  replaceText: string;
+};
 type ProviderSource = "missing" | "local" | "env" | "configured" | "not_configured" | "unknown";
 type ChannelStatus = {
   source: ProviderSource;
@@ -93,9 +97,9 @@ type ImageMeta = { name: string; url: string; folder: string; size: number; modi
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
 
 const AI_PANEL_STORAGE_KEY = "sbuild_ai_panel_rect_v1";
-const AI_PANEL_MIN_WIDTH = 360;
+const AI_PANEL_MIN_WIDTH = 440;
 const AI_PANEL_MIN_HEIGHT = 420;
-const AI_PANEL_MAX_WIDTH = 720;
+const AI_PANEL_MAX_WIDTH = 760;
 const AI_PANEL_MARGIN = 16;
 
 function formatChatTimestamp(timestamp: number): string {
@@ -116,9 +120,9 @@ function chatFooterText(item: ChatItem): string {
 
 function defaultAiPanelRect(): AiPanelRect {
   if (typeof window === "undefined") {
-    return { x: 24, y: 96, width: 420, height: 640 };
+    return { x: 24, y: 96, width: 560, height: 640 };
   }
-  const width = Math.min(420, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
+  const width = Math.min(560, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
   const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 120);
   const height = Math.min(640, maxHeight);
   const x = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - 24);
@@ -1199,6 +1203,7 @@ export function App() {
   const [aiPanelResize, setAiPanelResize] = useState<AiPanelResizeState>(null);
   const [aiChatTarget, setAiChatTarget] = useState<AiChatTarget>("block");
   const [aiProposal, setAiProposal] = useState("");
+  const [aiStructuredProposal, setAiStructuredProposal] = useState<StructuredSuggestionProposal | null>(null);
   const [aiProposalBlockId, setAiProposalBlockId] = useState("");
   const [aiProposalBlockType, setAiProposalBlockType] = useState("");
   const [aiProposalPending, setAiProposalPending] = useState(false);
@@ -1277,7 +1282,7 @@ export function App() {
         setAiPanelRect((current) => clampAiPanelRect({
           ...current,
           width: aiPanelResize.startWidth + (event.clientX - aiPanelResize.startX),
-          height: aiPanelResize.startHeight + (event.clientY - aiPanelResize.startY)
+          height: current.height
         }));
       }
     };
@@ -2234,13 +2239,14 @@ export function App() {
     if (!prompt) return;
     setAiProposalPending(true);
     setAiProposal("");
+    setAiStructuredProposal(null);
     setAiHasProposal(false);
     pushChatMessage({ role: "user", text: prompt });
     setChatInput("");
     const startedAt = Date.now();
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2251,7 +2257,8 @@ export function App() {
       });
       if (data.ok && data.suggestion) {
         setAiProposal(data.suggestion);
-        const hasValidProposal = Boolean(data.hasProposal) && canEditBlocks;
+        setAiStructuredProposal(data.proposal || null);
+        const hasValidProposal = Boolean(data.proposal?.replaceText) && canEditBlocks;
         setAiHasProposal(hasValidProposal);
         setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
         setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
@@ -2271,6 +2278,7 @@ export function App() {
       } else {
         const msg = data.error || "Prototype assistant: provider not configured. No edits were applied.";
         setAiProposal("");
+        setAiStructuredProposal(null);
         setAiHasProposal(false);
         pushChatMessage({
           role: "assistant",
@@ -2283,8 +2291,9 @@ export function App() {
         if (data.message) setProviderCheckMessage(data.message);
       }
     } catch (error) {
-      const msg = "Prototype assistant: provider not configured. No edits were applied.";
+      const msg = "Prototype assistant: request failed. The configured provider may still be available.";
       setAiHasProposal(false);
+      setAiStructuredProposal(null);
       pushChatMessage({ role: "assistant", text: `${msg} ${error instanceof Error ? error.message : String(error)}`, latencyMs: Date.now() - startedAt });
     } finally {
       setAiProposalPending(false);
@@ -2296,7 +2305,7 @@ export function App() {
   }
 
   function applyAiProposal() {
-    if (!aiProposal) return;
+    if (!aiStructuredProposal?.replaceText) return;
     const targetId = aiProposalBlockId || selectedBlockId;
     if (!targetId) {
       setStatus("No block selected to apply suggestion to");
@@ -2306,13 +2315,13 @@ export function App() {
     const mutator = (b: Block) => {
       const bd = b.data as Record<string, unknown>;
       if (typeof bd.heading === "string") {
-        return { ...b, data: { ...bd, heading: aiProposal } };
+        return { ...b, data: { ...bd, heading: aiStructuredProposal.replaceText } };
       }
       if (typeof bd.body === "string") {
-        return { ...b, data: { ...bd, body: aiProposal } };
+        return { ...b, data: { ...bd, body: aiStructuredProposal.replaceText } };
       }
       if (typeof bd.text === "string") {
-        return { ...b, data: { ...bd, text: aiProposal } };
+        return { ...b, data: { ...bd, text: aiStructuredProposal.replaceText } };
       }
       return b;
     };
@@ -2321,12 +2330,14 @@ export function App() {
     setLastAction("ai-apply-proposal");
     setStatus("AI suggestion applied to local editor state. Save to persist.");
     setAiProposal("");
+    setAiStructuredProposal(null);
     setAiProposalBlockId("");
     setAiProposalBlockType("");
   }
 
   function clearAiChat() {
     setAiProposal("");
+    setAiStructuredProposal(null);
     setAiProposalBlockId("");
     setAiProposalBlockType("");
     setAiHasProposal(false);

@@ -102,7 +102,7 @@ async function withTemporarySecretsFileContent<T>(content: string, fn: () => Pro
 
 async function withMockOllama<T>(handlers: {
   tags: { models: Array<{ name: string; size?: number; modified_at?: string; details?: { parameter_size?: string } }> };
-  chat?: { status?: number; body?: unknown; capture?: (body: unknown) => void };
+  chat?: { status?: number; body?: unknown | (() => unknown); capture?: (body: unknown) => void };
 }, fn: (endpoint: string) => Promise<T>): Promise<T> {
   const server = http.createServer((req, res) => {
     if (req.url === "/api/tags") {
@@ -115,8 +115,9 @@ async function withMockOllama<T>(handlers: {
       req.on("data", (chunk) => { raw += String(chunk); });
       req.on("end", () => {
         handlers.chat?.capture?.(raw ? JSON.parse(raw) : {});
+        const responseBody = typeof handlers.chat?.body === "function" ? handlers.chat.body() : handlers.chat?.body;
         res.writeHead(handlers.chat?.status || 200, { "content-type": "application/json" });
-        res.end(JSON.stringify(handlers.chat?.body || { message: { content: "mock reply" } }));
+        res.end(JSON.stringify(responseBody || { message: { content: "mock reply" } }));
       });
       return;
     }
@@ -1143,6 +1144,42 @@ test("POST /api/ai/suggest returns stable hasProposal/provider fields", async ()
   });
 });
 
+test("POST /api/ai/suggest keeps hasProposal false for normal model/status answers", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "Using local Ollama model qwen3:4b." } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "What model are you using?", targetKind: "block", blockId: "test-1", blockType: "hero" })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { hasProposal?: boolean; proposal?: unknown };
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.proposal, null);
+    });
+  });
+});
+
+test("POST /api/ai/suggest enables hasProposal for structured proposal responses", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: "```json\n{\"kind\":\"replace-copy\",\"replaceText\":\"Fresh catfish every Friday.\"}\n```" } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "Make this shorter", targetKind: "block", blockId: "test-1", blockType: "hero" })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { hasProposal?: boolean; proposal?: { kind?: string; replaceText?: string } | null };
+      assert.equal(body.hasProposal, true);
+      assert.equal(body.proposal?.kind, "replace-copy");
+      assert.equal(body.proposal?.replaceText, "Fresh catfish every Friday.");
+    });
+  });
+});
+
 test("POST /api/ai/suggest passes local provider metadata into Ollama prompt context", async () => {
   let capturedBody: any = null;
   await withMockOllama({
@@ -1185,6 +1222,63 @@ test("POST /api/ai/chat answers identity questions from runtime metadata", async
       assert.equal(body.source, "local");
       assert.match(String(body.response || ""), /local Ollama model qwen3:4b/i);
       assert.equal(typeof body.latencyMs, "number");
+    });
+  });
+});
+
+test("POST /api/ai/chat keeps local provider metadata on no-content replies", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "hello" })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { provider?: string; model?: string; source?: string; response?: string; message?: string };
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.source, "local");
+      assert.match(String(body.response || ""), /provider is still configured/i);
+      assert.match(String(body.message || ""), /provider is still configured/i);
+    });
+  });
+});
+
+test("POST /api/ai/chat follow-up after identity keeps configured local provider on failure", async () => {
+  let callCount = 0;
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: {
+      body: () => {
+        callCount += 1;
+        return callCount === 1
+          ? { message: { content: "normal reply" } }
+          : { message: { content: "" } };
+      }
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const first = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "Rewrite this briefly: Fresh catfish available every Friday." })
+      }).then((r) => r.json() as Promise<{ provider?: string; model?: string; source?: string; response?: string }>);
+      assert.equal(first.provider, "ollama");
+      assert.equal(first.model, "qwen3:4b");
+      assert.equal(first.source, "local");
+      assert.equal(first.response, "normal reply");
+
+      const second = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "Which scope tab is selected?" })
+      }).then((r) => r.json() as Promise<{ provider?: string; model?: string; source?: string; response?: string }>);
+      assert.equal(second.provider, "ollama");
+      assert.equal(second.model, "qwen3:4b");
+      assert.equal(second.source, "local");
+      assert.match(String(second.response || ""), /provider is still configured/i);
+      assert.doesNotMatch(String(second.response || ""), /no provider configured/i);
     });
   });
 });

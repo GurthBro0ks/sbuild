@@ -2388,19 +2388,19 @@ button:disabled {
   top: 50%;
   right: 24px;
   transform: translateY(-50%);
-  width: 420px;
+  width: 560px;
   height: min(80vh, 640px);
   background: var(--editor-panel-bg);
   border: 1px solid var(--editor-border);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   z-index: 91;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
 }
 .ai-panel-desktop {
-  min-width: 360px;
+  min-width: 440px;
   min-height: 420px;
 }
 .ai-panel-header {
@@ -2413,6 +2413,8 @@ button:disabled {
   flex-shrink: 0;
   cursor: grab;
   user-select: none;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 .ai-panel-title {
   font-size: 14px;
@@ -2432,8 +2434,10 @@ button:disabled {
 .ai-panel-tabs {
   display: flex;
   gap: 4px;
-  flex: 1;
-  justify-content: center;
+  flex: 1 0 100%;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  order: 2;
 }
 .ai-panel-tabs button {
   padding: 5px 10px;
@@ -2467,25 +2471,27 @@ button:disabled {
 }
 .ai-panel-resize-handle {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 18px;
-  height: 18px;
+  right: 0;
+  top: 50%;
+  transform: translate(50%, -50%);
+  width: 16px;
+  height: 56px;
   padding: 0;
   border-radius: 6px;
   border: 1px solid var(--editor-border);
   background: var(--editor-panel-bg-2);
-  cursor: nwse-resize;
+  cursor: ew-resize;
 }
 .ai-panel-resize-handle::before {
   content: "";
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--editor-text-muted);
-  border-bottom: 2px solid var(--editor-text-muted);
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 26px;
+  background: var(--editor-text-muted);
+  transform: translate(-50%, -50%);
+  box-shadow: -4px 0 0 var(--editor-text-muted), 4px 0 0 var(--editor-text-muted);
 }
 .ai-panel-tab-content {
   display: flex;

@@ -836,12 +836,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         : blockType
           ? `You are editing a ${blockType} block. `
           : "You are editing a block. ";
-    const fullPrompt = `${contextPrefix}${prompt}`;
+    const proposalInstruction = targetKind === "block"
+      ? "If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}. Otherwise answer normally with plain text and no proposal object. "
+      : "";
+    const fullPrompt = `${contextPrefix}${proposalInstruction}${prompt}`;
     const result = await chatWithProviders(fullPrompt);
-    const hasProposal = result.available
-      && targetKind === "block"
-      && Boolean(blockId)
-      && Boolean(blockType);
+    const proposal = result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
+      ? parseStructuredSuggestionProposal(result.response)
+      : null;
+    const hasProposal = Boolean(proposal);
     const username = auth.enabled ? (() => {
       const session = getSession(req);
       return session ? session.u : null;
@@ -858,6 +861,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       source: result.source,
       latencyMs: result.latencyMs,
       isLocal: result.isLocal,
+      proposal,
       hasProposal,
       targetKind,
       blockId,
@@ -1386,6 +1390,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     isLocal?: boolean;
   };
 
+  type StructuredSuggestionProposal = {
+    kind: "replace-copy";
+    replaceText: string;
+  };
+
   function runtimeIdentityPrompt(input: { provider: string; model?: string; source: "local" | "env" | "missing" }): string {
     const model = input.model || "unknown";
     const locality = input.source === "local" ? "local" : input.source === "env" ? "remote" : "unconfigured";
@@ -1403,6 +1412,24 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   function isRuntimeIdentityQuestion(prompt: string): boolean {
     return /(what|which).*(model|provider)|are you local|running locally|what are you using/i.test(prompt);
+  }
+
+  function parseStructuredSuggestionProposal(text: string): StructuredSuggestionProposal | null {
+    const candidates = [text.trim()];
+    const fencedMatches = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => String(match[1] || "").trim());
+    candidates.push(...fencedMatches);
+    for (const candidate of candidates) {
+      if (!candidate.startsWith("{")) continue;
+      try {
+        const parsed = JSON.parse(candidate) as Record<string, unknown>;
+        if (parsed.kind === "replace-copy" && typeof parsed.replaceText === "string" && parsed.replaceText.trim()) {
+          return { kind: "replace-copy", replaceText: parsed.replaceText.trim() };
+        }
+      } catch {
+        // ignore malformed candidate
+      }
+    }
+    return null;
   }
 
   async function getOllamaStatus(): Promise<{ reachable: boolean; endpoint: string; model: string | null; models: LocalModelInfo[]; message: string }> {
@@ -1482,9 +1509,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         }
         try {
           const systemPrompt = runtimeIdentityPrompt({ provider: "ollama", model: modelToUse, source: "local" });
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 30000);
           const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
             body: JSON.stringify({
               model: modelToUse,
               stream: false,
@@ -1497,6 +1527,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               ]
             })
           });
+          clearTimeout(timer);
           const payload = (await response.json().catch(() => ({}))) as {
             error?: string;
             message?: { content?: string };
@@ -1519,14 +1550,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             provider: "ollama",
             source: "local",
             available: false,
-            response: "AI chat unavailable: provider returned no content.",
+            response: "AI chat unavailable: local model timed out or returned no content; provider is still configured.",
             model: modelToUse,
-            message: `Ollama returned no content (${safeDiagnostics})`,
+            message: `Local model returned no content (${safeDiagnostics}); provider is still configured.`,
             latencyMs: Date.now() - startedAt,
             isLocal: true
           };
-        } catch {
-          // Fall through to next provider
+        } catch (error) {
+          // Avoid surfacing a configured local provider as missing when a request fails.
+          const message = error instanceof Error && error.name === "AbortError"
+            ? "Local model timed out or returned no content; provider is still configured."
+            : "Local model request failed; provider is still configured.";
+          return {
+            provider: "ollama",
+            source: "local",
+            available: false,
+            response: `AI chat unavailable: ${message}`,
+            model: modelToUse,
+            message,
+            latencyMs: Date.now() - startedAt,
+            isLocal: true
+          };
         }
       }
     }

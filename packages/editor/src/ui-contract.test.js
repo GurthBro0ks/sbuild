@@ -252,15 +252,18 @@ test("desktop AI panel exposes draggable and reset affordances", () => {
   assert.match(appSource, /Reset panel/);
   assert.match(appSource, /AI_PANEL_STORAGE_KEY/);
   assert.match(appSource, /clampAiPanelRect/);
+  assert.match(appSource, /Math\.min\(560,/);
   assert.match(cssSource, /\.ai-panel-drag-handle/);
   assert.match(cssSource, /\.ai-panel-reset/);
+  assert.match(cssSource, /\.ai-panel-tabs[\s\S]*flex-wrap:\s*wrap/);
 });
 
 test("desktop AI panel exposes resize affordance", () => {
   assert.match(appSource, /handleAiPanelResizeStart/);
   assert.match(appSource, /ai-panel-resize-handle/);
   assert.match(cssSource, /\.ai-panel-resize-handle/);
-  assert.match(cssSource, /cursor:\s*nwse-resize/);
+  assert.match(cssSource, /top:\s*50%/);
+  assert.match(cssSource, /cursor:\s*ew-resize/);
 });
 
 test("AI chat messages render timestamp footers with metadata", () => {
@@ -276,6 +279,13 @@ test("AI chat footer can show provider model metadata for responses", () => {
   assert.match(appSource, /item\.model/);
   assert.match(appSource, /\(item\.latencyMs \/ 1000\)\.toFixed\(1\)/);
   assert.match(appSource, /ai-chat-provider-status/);
+});
+
+test("Apply Suggestion stays gated behind structured proposal metadata", () => {
+  assert.match(appSource, /aiStructuredProposal/);
+  assert.match(appSource, /Boolean\(data\.proposal\?\.replaceText\)/);
+  assert.match(appSource, /if \(!aiStructuredProposal\?\.replaceText\) return;/);
+  assert.doesNotMatch(appSource, /Boolean\(data\.hasProposal\) && canEditBlocks/);
 });
 
 test("smoke script treats unauth publish 401 as expected gate behavior", () => {
