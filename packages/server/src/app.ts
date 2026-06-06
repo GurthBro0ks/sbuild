@@ -1582,7 +1582,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         try {
           const systemPrompt = runtimeIdentityPrompt({ provider: "ollama", model: modelToUse, source: "local" });
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 30000);
+          const timer = setTimeout(() => controller.abort(), 90000);
           const historyMessages: Array<{ role: string; content: string }> = [
             { role: "system", content: systemPrompt }
           ];
@@ -1594,7 +1594,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               }
             }
           }
-          historyMessages.push({ role: "user", content: cleanPrompt });
+          const userMessage = `${cleanPrompt}\n\nPlease respond concisely and directly. Do not include your reasoning process.`;
+          historyMessages.push({ role: "user", content: userMessage });
           const response = await fetch(`${ollama.endpoint}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1604,7 +1605,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               stream: false,
               options: {
                 temperature: 0.2,
-                num_predict: 256
+                num_predict: 1024
               },
               messages: historyMessages
             })
@@ -1612,9 +1613,13 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           clearTimeout(timer);
           const payload = (await response.json().catch(() => ({}))) as {
             error?: string;
-            message?: { content?: string };
+            message?: { content?: string; thinking?: string };
           };
-          const text = String(payload.message?.content || "").trim();
+          let text = String(payload.message?.content || "").trim();
+          const thinking = payload.message?.thinking || "";
+          if (!text && thinking) {
+            text = `[Note: response based on model reasoning]\n${thinking.trim()}`;
+          }
           if (response.ok && text) {
             return {
               provider: "ollama",
@@ -1632,17 +1637,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             provider: "ollama",
             source: "local",
             available: false,
-            response: "AI chat unavailable: local model timed out or returned no content; provider is still configured.",
+            response: `AI chat unavailable: Local Ollama model ${modelToUse} timed out or returned no content; provider is still configured.`,
             model: modelToUse,
-            message: `Local model returned no content (${safeDiagnostics}); provider is still configured.`,
+            message: `Local model ${modelToUse} returned no content (${safeDiagnostics}); provider is still configured.`,
             latencyMs: Date.now() - startedAt,
             isLocal: true
           };
         } catch (error) {
-          // Avoid surfacing a configured local provider as missing when a request fails.
           const message = error instanceof Error && error.name === "AbortError"
-            ? "Local model timed out or returned no content; provider is still configured."
-            : "Local model request failed; provider is still configured.";
+            ? `Local Ollama model ${modelToUse} timed out after 90 seconds; provider is still configured.`
+            : `Local model request failed: ${error instanceof Error ? error.message : String(error)}; provider is still configured.`;
           return {
             provider: "ollama",
             source: "local",
