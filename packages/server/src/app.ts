@@ -900,16 +900,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           ? `You are editing a ${blockType} block. `
           : "You are editing a block. ";
     const isQuestion = isQuestionPrompt(prompt);
-    const proposalInstruction = !isQuestion && targetKind === "block"
-      ? "If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}. Otherwise answer normally with plain text and no proposal object. "
+    const fieldInstruction = !isQuestion && targetKind === "block" && blockType
+      ? fieldInstructionFromPrompt(prompt, blockType)
       : "";
-    const fullPrompt = `${contextPrefix}${proposalInstruction}${prompt}`;
+    const proposalInstruction = !isQuestion && targetKind === "block"
+      ? `If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced \`\`\`json block with {"kind":"replace-copy","replaceText":"...","targetField":"heading or subheading or body"}. Otherwise answer normally with plain text and no proposal object. `
+      : "";
+    const fullPrompt = `${contextPrefix}${fieldInstruction}${proposalInstruction}${prompt}`;
     const result = await chatWithProviders(fullPrompt, chatHistory);
     const rawProposal = !isQuestion && result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
       : null;
     const proposal = rawProposal && rawProposal.replaceText.length > 0 && rawProposal.replaceText.length <= 2000
-      ? rawProposal
+      ? { ...rawProposal, targetField: rawProposal.targetField || inferTargetField(prompt, blockType) }
       : null;
     const hasProposal = Boolean(proposal);
     let displayResponse = stripProposalJsonFromText(result.response);
@@ -1538,6 +1541,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   type StructuredSuggestionProposal = {
     kind: "replace-copy";
     replaceText: string;
+    targetField?: string;
   };
 
   function runtimeIdentityPrompt(input: { provider: string; model?: string; source: "local" | "env" | "missing" }): string {
@@ -1617,7 +1621,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       try {
         const parsed = JSON.parse(candidate) as Record<string, unknown>;
         if (parsed.kind === "replace-copy" && typeof parsed.replaceText === "string" && parsed.replaceText.trim()) {
-          return { kind: "replace-copy", replaceText: parsed.replaceText.trim() };
+          const targetField = typeof parsed.targetField === "string" && parsed.targetField.trim()
+            ? parsed.targetField.trim()
+            : undefined;
+          return { kind: "replace-copy", replaceText: parsed.replaceText.trim(), targetField };
         }
       } catch {
         // ignore malformed candidate
@@ -1635,6 +1642,30 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return true;
     }
     return false;
+  }
+
+  function inferTargetField(prompt: string, blockType: string): string | undefined {
+    const lower = prompt.toLowerCase();
+    const headingWords = /\b(title|heading|headline|head line)\b/;
+    const subheadingWords = /\b(description|subheading|subtitle|tagline)\b/;
+    const bodyWords = /\b(body|intro|text|copy|paragraph|about|blurb|detail|summary)\b/;
+    if (headingWords.test(lower)) return "heading";
+    if (subheadingWords.test(lower)) return "subheading";
+    if (bodyWords.test(lower)) return "body";
+    if (blockType === "hero") return "subheading";
+    if (blockType === "text") return "body";
+    return undefined;
+  }
+
+  function fieldInstructionFromPrompt(prompt: string, blockType: string): string {
+    const field = inferTargetField(prompt, blockType);
+    if (!field) return "";
+    const labels: Record<string, string> = {
+      heading: "heading/title",
+      subheading: "subheading/description",
+      body: "body text"
+    };
+    return `The user is targeting the ${labels[field] || field} field. `;
   }
 
   function stripProposalJsonFromText(text: string): string {
@@ -1728,7 +1759,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             "Give short, direct, plain-text answers.",
             "Do NOT wrap your answer in JSON unless the user explicitly asks for JSON.",
             "Do NOT include your reasoning process or thinking steps.",
-            "If suggesting a replacement for block text, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}.",
+            "Do NOT describe or explain what a block, section, or page does. Instead, write the actual website copy that will appear on the page.",
+            "Do NOT say things like 'The hero block showcases...' or 'This section features...'. Write the actual text the visitor will read.",
+            "When asked to write description, subheading, body, or intro text, output ONLY the replacement text — no labels, no explanation, no meta-commentary.",
+            "If suggesting a replacement for block text, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
             "Otherwise answer normally with plain text."
           ].join(" ");
           const controller = new AbortController();

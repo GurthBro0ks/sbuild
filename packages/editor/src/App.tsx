@@ -67,6 +67,7 @@ type ChatItem = {
 type StructuredSuggestionProposal = {
   kind: "replace-copy";
   replaceText: string;
+  targetField?: string;
 };
 type ProviderSource = "missing" | "local" | "env" | "configured" | "not_configured" | "unknown";
 type ChannelStatus = {
@@ -1210,6 +1211,7 @@ export function App() {
   const [aiProposalBlockType, setAiProposalBlockType] = useState("");
   const [aiProposalPending, setAiProposalPending] = useState(false);
   const [aiHasProposal, setAiHasProposal] = useState(false);
+  const [aiUndoSnapshot, setAiUndoSnapshot] = useState<{ pageId: string; blocks: Block[] } | null>(null);
   const [aiImgGenPrompt, setAiImgGenPrompt] = useState("");
   const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("block");
   const [aiImgGenStatus, setAiImgGenStatus] = useState("");
@@ -2342,16 +2344,30 @@ export function App() {
       return;
     }
     if (!selectedPage) return;
-    const mutator = (b: Block) => {
+    setAiUndoSnapshot({ pageId: selectedPage.id, blocks: JSON.parse(JSON.stringify(selectedPage.blocks)) });
+    const mutator = (b: Block): Block => {
       const bd = b.data as Record<string, unknown>;
+      const tf = aiStructuredProposal.targetField;
+      if (tf === "heading" && typeof bd.heading === "string") {
+        return { ...b, data: { ...b.data, heading: aiStructuredProposal.replaceText } };
+      }
+      if (tf === "subheading" && typeof bd.subheading === "string") {
+        return { ...b, data: { ...b.data, subheading: aiStructuredProposal.replaceText } };
+      }
+      if (tf === "body" && typeof bd.body === "string") {
+        return { ...b, data: { ...b.data, body: aiStructuredProposal.replaceText } };
+      }
+      if (typeof bd.subheading === "string") {
+        return { ...b, data: { ...b.data, subheading: aiStructuredProposal.replaceText } };
+      }
       if (typeof bd.heading === "string") {
-        return { ...b, data: { ...bd, heading: aiStructuredProposal.replaceText } };
+        return { ...b, data: { ...b.data, heading: aiStructuredProposal.replaceText } };
       }
       if (typeof bd.body === "string") {
-        return { ...b, data: { ...bd, body: aiStructuredProposal.replaceText } };
+        return { ...b, data: { ...b.data, body: aiStructuredProposal.replaceText } };
       }
       if (typeof bd.text === "string") {
-        return { ...b, data: { ...bd, text: aiStructuredProposal.replaceText } };
+        return { ...b, data: { ...b.data, text: aiStructuredProposal.replaceText } };
       }
       return b;
     };
@@ -2365,6 +2381,19 @@ export function App() {
     setAiProposalBlockType("");
   }
 
+  function undoAiChange() {
+    if (!aiUndoSnapshot || !selectedPage) return;
+    if (selectedPage.id !== aiUndoSnapshot.pageId) {
+      setAiUndoSnapshot(null);
+      return;
+    }
+    patchCurrentPage({ ...selectedPage, blocks: aiUndoSnapshot.blocks });
+    setDirty(true);
+    setLastAction("ai-undo");
+    setStatus("AI change undone.");
+    setAiUndoSnapshot(null);
+  }
+
   function clearAiChat() {
     setAiProposal("");
     setAiStructuredProposal(null);
@@ -2373,6 +2402,7 @@ export function App() {
     setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
+    setAiUndoSnapshot(null);
   }
 
   async function loadChatHistory() {
@@ -2441,6 +2471,66 @@ export function App() {
       } catch {
         setChatSaveStatus("Save failed.");
         setTimeout(() => setChatSaveStatus(""), 3000);
+      }
+    })();
+  }
+
+  const [aiHistoryView, setAiHistoryView] = useState(false);
+  const [aiHistoryMessages, setAiHistoryMessages] = useState<ChatItem[]>([]);
+
+  function restoreChat() {
+    void (async () => {
+      try {
+        const data = await fetchJson<{ ok: boolean; messages?: Array<{ role: string; text: string; timestamp: number; provider?: string; model?: string; source?: string; latencyMs?: number }> }>("/api/ai/chat/history");
+        if (data.ok && Array.isArray(data.messages)) {
+          const items: ChatItem[] = data.messages.map((m, i) => ({
+            id: `restore-${m.timestamp}-${i}`,
+            role: m.role as "user" | "assistant",
+            text: m.text,
+            timestamp: m.timestamp,
+            provider: m.provider,
+            model: m.model,
+            source: m.source,
+            latencyMs: m.latencyMs
+          }));
+          setChatHistory(items);
+          setProviderCheckMessage(`Restored ${items.length} messages.`);
+          setTimeout(() => setProviderCheckMessage(""), 3000);
+          scrollChatToBottom();
+        } else {
+          setProviderCheckMessage("No saved history to restore.");
+          setTimeout(() => setProviderCheckMessage(""), 3000);
+        }
+      } catch {
+        setProviderCheckMessage("Failed to restore chat.");
+        setTimeout(() => setProviderCheckMessage(""), 3000);
+      }
+    })();
+  }
+
+  function viewHistory() {
+    void (async () => {
+      try {
+        const data = await fetchJson<{ ok: boolean; messages?: Array<{ role: string; text: string; timestamp: number; provider?: string; model?: string; source?: string; latencyMs?: number }> }>("/api/ai/chat/history");
+        if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
+          setAiHistoryMessages(data.messages.map((m, i) => ({
+            id: `histview-${m.timestamp}-${i}`,
+            role: m.role as "user" | "assistant",
+            text: m.text,
+            timestamp: m.timestamp,
+            provider: m.provider,
+            model: m.model,
+            source: m.source,
+            latencyMs: m.latencyMs
+          })));
+          setAiHistoryView(true);
+        } else {
+          setProviderCheckMessage("No saved history.");
+          setTimeout(() => setProviderCheckMessage(""), 3000);
+        }
+      } catch {
+        setProviderCheckMessage("Failed to load history.");
+        setTimeout(() => setProviderCheckMessage(""), 3000);
       }
     })();
   }
@@ -4799,6 +4889,7 @@ export function App() {
                 </div>
                 {!previewMode && !paintMode && (
                   <div className="ai-chat-action-bar">
+                    {aiUndoSnapshot && <button onClick={undoAiChange} className="ai-undo-btn">Undo AI Change</button>}
                     <button onClick={applyAiProposal} disabled={!aiHasProposal} className="ai-apply-btn">Apply Suggestion</button>
                     {!aiHasProposal && chatHistory.length > 0 && aiProposalPending === false && (
                       <span className="ai-apply-reason">No structured proposal to apply</span>
@@ -4825,9 +4916,30 @@ export function App() {
                 <div className="ai-chat-controls-bar">
                   <button onClick={clearAiChat} className="ai-chat-clear" title="Clear current conversation">Clear Chat</button>
                   {chatHistory.length > 0 && <button onClick={saveChat} className="ai-chat-save" title="Save chat to server">Save Chat</button>}
+                  <button onClick={restoreChat} className="ai-chat-restore" title="Restore saved chat history">Restore Chat</button>
+                  <button onClick={viewHistory} className="ai-chat-view-history" title="View saved chat history">View History</button>
                   {chatSaveStatus && <span className="ai-chat-save-status">{chatSaveStatus}</span>}
                   {chatHistory.length > 0 && <button onClick={() => void deleteChatHistory()} className="ai-chat-delete-history" title="Delete saved chat history">Delete History</button>}
                 </div>
+                {aiHistoryView && (
+                  <div className="ai-history-modal-overlay" onClick={() => setAiHistoryView(false)}>
+                    <div className="ai-history-modal" onClick={(e) => e.stopPropagation()}>
+                      <div className="ai-history-modal-header">
+                        <span>Chat History</span>
+                        <button onClick={() => setAiHistoryView(false)} className="ai-history-close">&times;</button>
+                      </div>
+                      <div className="ai-history-modal-body">
+                        {aiHistoryMessages.map((msg) => (
+                          <div key={msg.id} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
+                            <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
+                            <div className="ai-chat-msg-text">{msg.role === "assistant" ? stripRawProposalJson(msg.text) : msg.text}</div>
+                            <div className="ai-chat-msg-footer">{chatFooterText(msg)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {aiTopMenuTab === "image-gen" && (

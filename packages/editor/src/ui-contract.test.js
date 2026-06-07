@@ -2262,7 +2262,7 @@ test("AI Chat: Apply Suggestion only shown in Edit mode with valid proposal", ()
   assert.match(appSource, /aiHasProposal/);
   const applyIdx = appSource.indexOf("Apply Suggestion");
   assert.ok(applyIdx > 0, "Apply Suggestion button exists");
-  const applySection = appSource.substring(applyIdx - 300, applyIdx + 300);
+  const applySection = appSource.substring(applyIdx - 500, applyIdx + 300);
   assert.match(applySection, /!previewMode.*!paintMode|canEditBlocks/);
 });
 
