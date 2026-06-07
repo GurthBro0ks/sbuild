@@ -96,7 +96,63 @@ type AiPanelDragState = { pointerId: number; offsetX: number; offsetY: number } 
 type AiPanelResizeHandle = "corner";
 type AiPanelResizeState = { pointerId: number; handle: AiPanelResizeHandle; startX: number; startY: number; startWidth: number; startHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
+type ImageLibraryFilter = "all" | "hide-blank" | "hide-tall" | "generated" | "uploaded" | "used";
+type ImageTileFit = "cover" | "contain";
+type ImageDiagnostics = { width: number; height: number; likelyWhite: boolean; likelyTallCapture: boolean };
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
+
+function collectUsedImageUrls(project: SBuildProject | null): Set<string> {
+  const used = new Set<string>();
+  if (!project) return used;
+  for (const page of project.pages) {
+    for (const block of page.blocks) {
+      if (block.styles?.backgroundImage) used.add(block.styles.backgroundImage);
+      if (block.type === "image") {
+        const src = (block.data as ImageBlockData).src;
+        if (src) used.add(src);
+      }
+      if (block.type === "gallery") {
+        const galleryData = block.data as GalleryBlockData;
+        for (const image of galleryData.images || []) {
+          if (image.src) used.add(image.src);
+        }
+      }
+      if (block.type === "cards") {
+        const cardsData = block.data as CardsBlockData;
+        for (const item of cardsData.cards || []) {
+          const src = (item as unknown as Record<string, unknown>).image;
+          if (typeof src === "string" && src) used.add(src);
+        }
+      }
+    }
+  }
+  return used;
+}
+
+function isLikelyScreenshotName(name: string): boolean {
+  return /(screenshot|screen[-_]?shot|capture|img[-_]?\d{4,})/i.test(name);
+}
+
+function isGeneratedImage(meta: ImageMeta): boolean {
+  return /^generated(?:\/|$)/i.test(meta.folder);
+}
+
+function isUploadedImage(meta: ImageMeta): boolean {
+  return !isGeneratedImage(meta) && !meta.isEdited;
+}
+
+function imagePassesFilter(meta: ImageMeta, filter: ImageLibraryFilter, diagnostics: ImageDiagnostics | undefined, usedImageUrls: Set<string>): boolean {
+  if (filter === "all") return true;
+  if (filter === "generated") return isGeneratedImage(meta);
+  if (filter === "uploaded") return isUploadedImage(meta);
+  if (filter === "used") return usedImageUrls.has(meta.url);
+  if (filter === "hide-blank") return !(diagnostics?.likelyWhite);
+  if (filter === "hide-tall") {
+    if (diagnostics?.likelyTallCapture) return false;
+    return !isLikelyScreenshotName(meta.name);
+  }
+  return true;
+}
 
 const AI_PANEL_STORAGE_KEY = "sbuild_ai_panel_rect_v1";
 const AI_PANEL_MIN_WIDTH = 440;
@@ -1235,11 +1291,9 @@ export function App() {
   const [imageGenStyle, setImageGenStyle] = useState<string>("custom");
   const [imageGenSize, setImageGenSize] = useState<string>("fit-block");
   const [imageGenPlacement, setImageGenPlacement] = useState<string>("block-background");
-  const [selectedImagesForDelete, setSelectedImagesForDelete] = useState<Set<string>>(new Set());
-  const [galleryManagerOpen, setGalleryManagerOpen] = useState(false);
-  const [galleryImages, setGalleryImages] = useState<{ name: string; url: string; folder: string; extension: string; contentType: string; isRenderableImage: boolean; size: number; modified: string; isEdited: boolean }[]>([]);
-  const [galleryImagesLoading, setGalleryImagesLoading] = useState(false);
-  const [galleryDeleteConfirm, setGalleryDeleteConfirm] = useState(false);
+  const [imageLibraryFilter, setImageLibraryFilter] = useState<ImageLibraryFilter>("all");
+  const [imageTileFit, setImageTileFit] = useState<ImageTileFit>("cover");
+  const [imageDiagnostics, setImageDiagnostics] = useState<Record<string, ImageDiagnostics>>({});
   const [providerConfigSaved, setProviderConfigSaved] = useState(false);
   const [aiEnhanceStatus, setAiEnhanceStatus] = useState("");
   const [aiEnhanceResult, setAiEnhanceResult] = useState("");
@@ -1540,6 +1594,11 @@ export function App() {
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
   const rowRenderItems = useMemo(() => toRowRenderItems(selectedPage?.blocks || []), [selectedPage?.blocks]);
   const shouldStackRows = deviceMode === "phone";
+  const usedImageUrls = useMemo(() => collectUsedImageUrls(project), [project]);
+  const filteredUploadedImages = useMemo(
+    () => uploadedImages.filter((img) => imagePassesFilter(img, imageLibraryFilter, imageDiagnostics[img.url], usedImageUrls)),
+    [uploadedImages, imageLibraryFilter, imageDiagnostics, usedImageUrls]
+  );
 
   function closeTransientOverlays() {
     setContextMenu(null);
@@ -1867,6 +1926,43 @@ export function App() {
       if (data.folder) setPhotoFolder(data.folder);
       if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0].url);
     } catch { setUploadedImages([]); }
+  }
+
+  function captureImageDiagnostics(url: string, name: string, element: HTMLImageElement) {
+    if (imageDiagnostics[url]) return;
+    const width = element.naturalWidth || 0;
+    const height = element.naturalHeight || 0;
+    const likelyTallCapture = (width > 0 && height > 0 && height / Math.max(width, 1) >= 1.55) || isLikelyScreenshotName(name);
+    let likelyWhite = false;
+    if (width > 0 && height > 0) {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 24;
+        canvas.height = 24;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(element, 0, 0, 24, 24);
+          const imageData = ctx.getImageData(0, 0, 24, 24).data;
+          let total = 0;
+          let totalSquared = 0;
+          const pixels = imageData.length / 4;
+          for (let i = 0; i < imageData.length; i += 4) {
+            const brightness = (imageData[i] + imageData[i + 1] + imageData[i + 2]) / 3;
+            total += brightness;
+            totalSquared += brightness * brightness;
+          }
+          const avg = total / Math.max(pixels, 1);
+          const variance = totalSquared / Math.max(pixels, 1) - avg * avg;
+          likelyWhite = avg >= 246 && variance <= 95;
+        }
+      } catch {
+        likelyWhite = false;
+      }
+    }
+    setImageDiagnostics((prev) => ({
+      ...prev,
+      [url]: { width, height, likelyWhite, likelyTallCapture }
+    }));
   }
 
   async function loadPhotoFolder() {
@@ -2291,6 +2387,16 @@ export function App() {
         if (itemParts.length) parts.push(`  Card ${i + 1}: ${itemParts.join(" / ")}`);
       });
     }
+    if (d.rows && Array.isArray(d.rows)) {
+      (d.rows as Array<Record<string, unknown>>).forEach((row, i) => {
+        const day = String(row.day || `Row ${i + 1}`).trim();
+        const open = String(row.open || "").trim();
+        const close = String(row.close || "").trim();
+        const note = String(row.note || "").trim();
+        const range = open || close ? `${open || "?"}-${close || "?"}` : "(hours not set)";
+        parts.push(`  Hours ${i + 1}: ${day} ${range}${note ? ` (${note})` : ""}`.trim());
+      });
+    }
     if (d.images && Array.isArray(d.images)) {
       parts.push(`  ${d.images.length} gallery image(s)`);
     }
@@ -2332,7 +2438,7 @@ export function App() {
           blockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "",
           blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "",
           chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })),
-          pageContent: aiChatTarget !== "block" ? extractPageContent(aiChatTarget === "site" ? "site" : "page") : undefined,
+          pageContent: extractPageContent(aiChatTarget === "site" ? "site" : "page"),
           blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined
         })
       });
@@ -2655,7 +2761,7 @@ export function App() {
     const placement = imageGenPlacement;
     if (placement === "fit-block") {
       if (block.type === "hero" || block.type === "cards") {
-        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "contain", backgroundPosition: "center" } }));
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "contain", backgroundPosition: "center center" } }));
       } else if (block.type === "image") {
         patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as ImageBlockData), src: aiImgGenResult, alt: "AI generated image" }, styles: { ...(b.styles || {}), backgroundSize: "contain" } }));
       } else {
@@ -2663,7 +2769,7 @@ export function App() {
       }
     } else if (placement === "fill-block") {
       if (block.type === "hero" || block.type === "cards") {
-        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "fill", backgroundPosition: "center" } }));
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "fill", backgroundPosition: "center center" } }));
       } else {
         patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as ImageBlockData), src: aiImgGenResult, alt: "AI generated image" }, styles: { ...(b.styles || {}), backgroundSize: "fill" } }));
       }
@@ -2708,54 +2814,6 @@ export function App() {
     addGalleryImage(aiImgGenResult);
     setDirty(true);
     setAiImgGenStatus("Image added to gallery. Save to persist.");
-  }
-
-  async function openGalleryManager() {
-    setGalleryImagesLoading(true);
-    setGalleryDeleteConfirm(false);
-    setSelectedImagesForDelete(new Set());
-    try {
-      const res = await fetch("/api/images");
-      const data = await res.json();
-      if (data.ok) {
-        setGalleryImages(data.images || []);
-      }
-    } catch {
-      setGalleryImages([]);
-    }
-    setGalleryManagerOpen(true);
-    setGalleryImagesLoading(false);
-  }
-
-  async function deleteSelectedGalleryImages() {
-    if (selectedImagesForDelete.size === 0) return;
-    try {
-      const res = await fetch("/api/images", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filenames: Array.from(selectedImagesForDelete) }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setGalleryImages((prev) => prev.filter((img) => !selectedImagesForDelete.has(img.name)));
-        setSelectedImagesForDelete(new Set());
-        setGalleryDeleteConfirm(false);
-        setAiImgGenStatus(`Deleted ${data.deletedCount || 0} image(s).`);
-      } else {
-        setAiImgGenStatus("Some images could not be deleted.");
-      }
-    } catch {
-      setAiImgGenStatus("Delete failed.");
-    }
-  }
-
-  function toggleGalleryImageSelection(name: string) {
-    setSelectedImagesForDelete((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
   }
 
   function clearAiImageGen() {
@@ -2966,7 +3024,7 @@ export function App() {
           ...(b.styles || {}),
           backgroundImage: url,
           backgroundSize: "cover",
-          backgroundPosition: "center"
+          backgroundPosition: "center center"
         }
       }));
     } else if (imageManagerTarget === "hero") {
@@ -2976,7 +3034,7 @@ export function App() {
           ...(b.styles || {}),
           backgroundImage: url,
           backgroundSize: "cover",
-          backgroundPosition: "center"
+          backgroundPosition: "center center"
         }
       }));
     } else if (imageManagerTarget === "image-block") {
@@ -4623,7 +4681,7 @@ export function App() {
               <h3 style={{ margin: 0 }}>Image Library</h3>
               <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
             </div>
-              <p className="panel-status">Upload, manage, and apply images. <strong>Library</strong> = all project image assets. <strong>Gallery</strong> = images placed in a gallery block on the website.</p>
+              <p className="panel-status">Image Library stores uploaded and generated project assets. Website Gallery controls images displayed inside gallery blocks on the website.</p>
 
               <div className="image-manager-upload">
                 <label>Upload image
@@ -4646,15 +4704,35 @@ export function App() {
               </div>
 
               <div className="image-manager-gallery">
-                <h4>Project Images ({uploadedImages.length})</h4>
-                {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
+                <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+                <div className="image-library-controls">
+                  <label>Filter
+                    <select value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
+                      <option value="all">Show all</option>
+                      <option value="hide-blank">Hide likely blank/white</option>
+                      <option value="hide-tall">Hide tall/screenshot-like</option>
+                      <option value="generated">Generated only</option>
+                      <option value="uploaded">Uploaded only</option>
+                      <option value="used">Used on page only</option>
+                    </select>
+                  </label>
+                  <label>Tile fit
+                    <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                    </select>
+                  </label>
+                </div>
+                {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
                 <div className="image-grid">
-                  {uploadedImages.map((img) => (
+                  {filteredUploadedImages.map((img) => (
                     <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
                       <img
                         src={img.url}
                         alt={img.name}
                         loading="lazy"
+                        style={{ objectFit: imageTileFit }}
+                        onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
                         onError={(e) => {
                           setBrokenImages((prev) => new Set(prev).add(img.url));
                           (e.target as HTMLImageElement).style.display = "none";
@@ -5052,8 +5130,8 @@ export function App() {
                       <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
                     </div>
                     <p className="ai-hint" style={{ fontSize: "11px", color: "var(--editor-muted)", margin: "4px 0 0" }}>
-                      <strong>Image Library</strong> = all uploaded/generated assets for this project.
-                      <strong> Gallery</strong> = images displayed in a gallery block on the website.
+                      Image Library stores uploaded and generated project assets.
+                      Website Gallery controls images displayed inside gallery blocks on the website.
                     </p>
                   </div>
                 </div>
@@ -5098,7 +5176,7 @@ export function App() {
                   <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
                   <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
                   <button onClick={clearAiImageGen}>Clear</button>
-                  <button onClick={() => { void openGalleryManager(); }} title="Manage all project images (library) and gallery block images">Manage Image Library</button>
+                  <button onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }} title="Open the shared project image library">Open Image Library</button>
                 </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
@@ -5122,12 +5200,12 @@ export function App() {
               <div className="ai-panel-tab-content">
                 {aiEnhanceSourceOverride && (
                   <div className="ai-card ai-card-source" style={{ borderColor: "var(--editor-accent)" }}>
-                    <div className="ai-card-label">Source Image (locked — will not change with block selection)</div>
+                    <div className="ai-card-label">Source image locked — will not change with block selection</div>
                     <div className="ai-card-body">
                       <div className="ai-source-detail">
                         <span className="ai-source-name">{aiEnhanceResult ? "Source: Generated image (enhanced)" : "Source: Generated image"}</span>
                         <img src={aiEnhanceSourceOverride} alt="Source" className="ai-source-thumb" />
-                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Unlock: use selected block instead</button>
+                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Unlock source (use selected block)</button>
                       </div>
                     </div>
                   </div>
@@ -5176,6 +5254,7 @@ export function App() {
                 <div className="ai-card-actions">
                   <button className="ai-action-primary" onClick={() => void aiEnhanceImage()} disabled={!(aiEnhanceSourceOverride || getSelectedEnhanceSource().src)}>Analyze/Enhance</button>
                   <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
+                  <button onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }}>Open Image Library</button>
                   <button onClick={clearAiEnhance}>Clear</button>
                 </div>
                 {aiEnhanceStatus && <div className="ai-card ai-card-status"><p>{aiEnhanceStatus}</p></div>}
@@ -5193,61 +5272,6 @@ export function App() {
           {!isMobileViewport && (
             <button className="ai-panel-resize-handle ai-panel-resize-corner" onPointerDown={(e) => handleAiPanelResizeStart(e, "corner")} aria-label="Resize AI panel" title="Resize AI panel" />
           )}
-        </div>
-      )}
-
-      {galleryManagerOpen && (
-        <div className="modal-backdrop" onClick={() => setGalleryManagerOpen(false)}>
-          <div className="modal gallery-manager-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Image Library</h3>
-              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated images for this project. Image Library stores project assets. Website Gallery controls gallery blocks shown on the site.</p>
-              <button className="modal-close" onClick={() => setGalleryManagerOpen(false)} aria-label="Close Image Library">✕</button>
-            </div>
-            <div className="gallery-manager-toolbar">
-              <span>{galleryImages.length} image{galleryImages.length !== 1 ? "s" : ""} in library</span>
-              {selectedImagesForDelete.size > 0 && (
-                <>
-                  <span>{selectedImagesForDelete.size} selected</span>
-                  {!galleryDeleteConfirm ? (
-                    <button onClick={() => setGalleryDeleteConfirm(true)} className="danger">Delete Selected</button>
-                  ) : (
-                    <>
-                      <span>Confirm?</span>
-                      <button onClick={() => void deleteSelectedGalleryImages()} className="danger">Yes, Delete</button>
-                      <button onClick={() => setGalleryDeleteConfirm(false)}>Cancel</button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-            {galleryImagesLoading ? (
-              <div className="gallery-manager-loading">Loading images...</div>
-            ) : galleryImages.length === 0 ? (
-              <div className="gallery-manager-empty">No images in library. Generate or upload images first.</div>
-            ) : (
-              <div className="gallery-manager-grid">
-                {galleryImages.map((img) => (
-                  <div
-                    key={img.name}
-                    className={`gallery-manager-item ${selectedImagesForDelete.has(img.name) ? "selected" : ""}`}
-                    onClick={() => toggleGalleryImageSelection(img.name)}
-                  >
-                    {img.isRenderableImage ? (
-                      <img src={img.url} alt={img.name} />
-                    ) : (
-                      <div className="gallery-manager-item-placeholder">{img.extension}</div>
-                    )}
-                    <div className="gallery-manager-item-name">{img.name}</div>
-                    {selectedImagesForDelete.has(img.name) && (
-                      <div className="gallery-manager-item-check">✓</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="button-row"><button onClick={() => setGalleryManagerOpen(false)}>Close</button></div>
-          </div>
         </div>
       )}
 
@@ -6137,7 +6161,7 @@ export function App() {
           <div className="modal image-manager-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Image Library</h3>
-              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated project assets. Image Library stores project assets. Website Gallery controls gallery blocks shown on the site.</p>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>Image Library stores uploaded and generated project assets. Website Gallery controls images displayed inside gallery blocks on the website.</p>
               <button className="modal-close" onClick={() => setImageManagerOpen(false)} aria-label="Close Image Library">✕</button>
             </div>
             <div className="image-manager-upload">
@@ -6159,15 +6183,35 @@ export function App() {
             </div>
             
             <div className="image-manager-gallery">
-              <h4>Project Images</h4>
-              {uploadedImages.length === 0 && <p className="hint">No images uploaded yet. Upload an image above.</p>}
+              <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+              <div className="image-library-controls">
+                <label>Filter
+                  <select value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
+                    <option value="all">Show all</option>
+                    <option value="hide-blank">Hide likely blank/white</option>
+                    <option value="hide-tall">Hide tall/screenshot-like</option>
+                    <option value="generated">Generated only</option>
+                    <option value="uploaded">Uploaded only</option>
+                    <option value="used">Used on page only</option>
+                  </select>
+                </label>
+                <label>Tile fit
+                  <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
+                    <option value="cover">Cover</option>
+                    <option value="contain">Contain</option>
+                  </select>
+                </label>
+              </div>
+              {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
               <div className="image-grid">
-                {uploadedImages.map((img) => (
+                {filteredUploadedImages.map((img) => (
                   <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
                     <img
                       src={img.url}
                       alt={img.name}
                       loading="lazy"
+                      style={{ objectFit: imageTileFit }}
+                      onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
                       onError={(e) => {
                         setBrokenImages((prev) => new Set(prev).add(img.url));
                         (e.target as HTMLImageElement).style.display = "none";

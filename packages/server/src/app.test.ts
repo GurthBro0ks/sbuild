@@ -2492,6 +2492,23 @@ test("casual off-topic prompt returns conversational answer without proposal", a
   });
 });
 
+test("casual animal small-talk routes through casual router without proposal", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "does a dog bark or meow?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string };
+      assert.ok(body.ok);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.model, "casual-router");
+      assert.match(body.suggestion.toLowerCase(), /bark|meow|dogs/);
+    });
+  });
+});
+
 test("casual greeting passes through to model when not off-topic", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
@@ -2595,6 +2612,28 @@ test("content router answers What We Grow from page content", async () => {
     assert.equal(body.hasProposal, false);
     assert.match(String(body.suggestion || ""), /What We Grow/i);
     assert.match(String(body.suggestion || ""), /Heirloom Tomatoes/i);
+  });
+});
+
+test("content router answers pickup hours from page content", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what are the farm's pickup hours?",
+        targetKind: "page",
+        pageContent: "[Hours block]\nTitle: Pickup Hours\nHours 1: Monday 8:00-14:00\nHours 2: Wednesday 9:00-17:00\nHours 3: Saturday 8:00-12:00"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    assert.match(String(body.suggestion || ""), /Pickup hours/i);
+    assert.match(String(body.suggestion || ""), /Monday/i);
+    assert.match(String(body.suggestion || ""), /Saturday/i);
   });
 });
 

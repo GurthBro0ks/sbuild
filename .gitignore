@@ -21,4 +21,5 @@ project/users.json
 data/ai-memory.json
 data/ai-chat-history.json
 project/project.json
+project/user-preferences.json
 project/image-folder.json

@@ -163,7 +163,17 @@ const upload = multer({
   })
 });
 const validProviderSizes: OpenAIImageSize[] = ["1024x1024", "1024x1536", "1536x1024"];
-const localSharpEditTypes = new Set(["enhance", "black-white", "crop-fit", "color-pop"]);
+const localSharpEditTypes = new Set([
+  "enhance",
+  "black-white",
+  "brighten",
+  "sharpen",
+  "color-pop",
+  "soften-bg",
+  "crop-fit",
+  "square-crop",
+  "wide-hero-crop"
+]);
 
 const curatedFonts = [
   { family: "Playfair Display" },
@@ -1752,6 +1762,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       /\b(what (is|was|are|were) .*(capital|population|tallest|longest|biggest))\b/,
       /\b(have you ever)\b/,
       /\b(are you sure)\b/,
+      /\b(dog|cat|bark|meow|pickle color|what color is a pickle)\b/,
       /^(thanks|thank you|thx|ty|cheers)\b/i
     ];
     const hasSiteEditKeywords = /\b(site|page|block|website|heading|title|description|text|copy|layout|image|hero|section|footer|header|nav|gallery|card|button|cta|background|font|color|style|content|paragraph|subheading|tagline|blurb|intro|body|title)\b/i.test(trimmed);
@@ -1782,6 +1793,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     if (/\b(have you ever)\b/i.test(trimmed)) {
       return "I'm focused on website building — want me to help with your site's copy, layout, or images?";
     }
+    if (/\b(dog|bark|meow)\b/i.test(trimmed)) {
+      return "Dogs bark, cats meow. I can also help improve your website copy if you want.";
+    }
+    if (/\b(pickle|what color is a pickle)\b/i.test(trimmed)) {
+      return "Pickles are usually green. If you want, I can switch back to website edits and suggestions.";
+    }
     return "That's outside my scope — I help with website building and editing. Want to work on your site's copy, layout, or images?";
   }
 
@@ -1800,10 +1817,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   function answerPageContentQuestion(prompt: string, targetKind: string, blockContent: string, pageContent: string): string | null {
     const lower = prompt.trim().toLowerCase();
-    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow)/i.test(lower);
+    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours)/i.test(lower);
     if (!hasContentQuestionCue) return null;
 
-    const source = targetKind === "block" ? blockContent : pageContent;
+    const source = targetKind === "block"
+      ? [blockContent, pageContent].filter(Boolean).join("\n")
+      : pageContent;
     const lines = normalizeContentLines(source);
     if (lines.length === 0) return null;
 
@@ -1826,6 +1845,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       const cards = collectCardLines(lines).map((line) => line.replace(/^card\s+\d+:\s*/i, "").trim());
       if (cards.length > 0) {
         return `Cards on this ${targetKind === "site" ? "site" : "page"}: ${cards.join("; ")}`;
+      }
+    }
+
+    if (/pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours/i.test(lower)) {
+      const hourLines = lines
+        .filter((line) => /^(hours\s+\d+:|row\s+\d+:|mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)/i.test(line))
+        .map((line) => line.replace(/^hours\s+\d+:\s*/i, "").replace(/^row\s+\d+:\s*/i, "").trim())
+        .filter(Boolean);
+      if (hourLines.length > 0) {
+        return `Pickup hours: ${hourLines.slice(0, 10).join("; ")}`;
       }
     }
 
