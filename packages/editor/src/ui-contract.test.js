@@ -26,7 +26,7 @@ test("image manager labels gallery add and replace actions explicitly", () => {
 test("crop-fit and modal layout expose safe visible targets", () => {
   assert.match(appSource, /Crop\/Fit target:/);
   assert.match(appSource, /Crop\/Fit and replace/);
-  assert.match(appSource, /Close Image Manager/);
+  assert.match(appSource, /Close Image Library/);
   assert.match(cssSource, /\.image-action-stack/);
   assert.match(cssSource, /\.compact-tabs[\s\S]*flex-wrap: wrap/);
   assert.match(cssSource, /\.right-drawer-content[\s\S]*overflow-y: auto/);
@@ -238,6 +238,21 @@ test("saving chat provider keeps image key labels unchanged", () => {
   assert.match(appSource, /Image Gen and Image Analyze key status unchanged/);
   assert.match(appSource, /previousImageGen/);
   assert.match(appSource, /previousImageAnalyze/);
+});
+
+test("image enhance source lock keeps generated image source across actions", () => {
+  assert.match(appSource, /setAiEnhanceSourceOverride\(aiImgGenResult\)/);
+  assert.match(appSource, /setAiEnhanceSourceOverride\(data\.editedImageUrl\)/);
+  assert.match(appSource, /Source: Generated image/);
+  assert.match(appSource, /Source: Image Library/);
+  assert.match(appSource, /Source: Selected block background/);
+  assert.match(appSource, /Enhanced image applied\. Save to persist\./);
+});
+
+test("builder UI theme sync uses server preferences endpoint", () => {
+  assert.match(appSource, /\/api\/account\/preferences/);
+  assert.match(appSource, /builderUiTheme/);
+  assert.match(appSource, /builderThemePrefsReady/);
 });
 
 test("AI chat surfaces safe success and error provider states", () => {
@@ -1686,8 +1701,8 @@ test("context menu Resize/Layout calls openResizeLayoutForBlock which opens draw
   assert.match(fnSection, /setRightCollapsed\(false\)/);
 });
 
-test("context menu Image Manager opens drawer to images tab", () => {
-  assert.match(appSource, /setRightTab\("images"\); setRightDrawerMobileOpen\(true\); setRightCollapsed\(false\); setImageManagerOpen\(true\)[\s\S]{0,200}Image Manager/);
+test("context menu Image Library opens drawer to images tab", () => {
+  assert.match(appSource, /setRightTab\("images"\); setRightDrawerMobileOpen\(true\); setRightCollapsed\(false\); setImageManagerOpen\(true\)[\s\S]{0,200}Image Library/);
 });
 
 test("context menu Duplicate does not force-open drawer", () => {

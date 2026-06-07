@@ -1007,7 +1007,7 @@ function HelpGuide({ onClose }: { onClose: () => void }) {
       title: "Images",
       content: (
         <div>
-          <p>Use the <strong>Images</strong> button or <strong>Image Manager</strong> to upload images. Use the right panel <strong>Images</strong> tab to change the selected image or background.</p>
+          <p>Use the <strong>Images</strong> button or <strong>Image Library</strong> to upload images. Use the right panel <strong>Images</strong> tab to change the selected image or background.</p>
           <p>Crop, fit, enhance, and black &amp; white options are available under the Images tab when an image or background is selected.</p>
         </div>
       ),
@@ -1159,10 +1159,18 @@ export function App() {
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
   const [rightDrawerMobileOpen, setRightDrawerMobileOpen] = useState(false);
   const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
+  const [builderThemePrefsReady, setBuilderThemePrefsReady] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("sbuild_editor_theme", editorTheme);
-  }, [editorTheme]);
+    if (!builderThemePrefsReady) return;
+    void fetchJson("/api/account/preferences", {
+      method: "PUT",
+      body: JSON.stringify({ builderUiTheme: editorTheme })
+    }).catch(() => {
+      // ignore preference sync errors; localStorage remains fallback
+    });
+  }, [editorTheme, builderThemePrefsReady]);
 
   useEffect(() => {
     if (previewMode) {
@@ -1562,6 +1570,15 @@ export function App() {
       await loadProviders(secrets);
       await discoverLocalModels();
       await loadProviderConfig();
+      try {
+        const pref = await fetchJson<{ ok: boolean; preferences?: { builderUiTheme?: string } }>("/api/account/preferences");
+        const nextTheme = pref.preferences?.builderUiTheme === "Dark" ? "Dark" : pref.preferences?.builderUiTheme === "Light" ? "Light" : null;
+        if (nextTheme) setEditorTheme(nextTheme);
+      } catch {
+        // ignore; localStorage fallback stays active
+      } finally {
+        setBuilderThemePrefsReady(true);
+      }
     })();
   }, []);
 
@@ -1930,6 +1947,9 @@ export function App() {
         setChatModel(data.model || "");
         setChatBaseUrl(data.baseUrl || "");
         setChatApiKeyInput("");
+        if (data.hasApiKey && data.maskedApiKey) {
+          setProviderCheckMessage((prev) => prev || `Chat API key: ${data.maskedApiKey} (${data.apiKeySource})`);
+        }
       }
     } catch {
       // ignore
@@ -2253,6 +2273,44 @@ export function App() {
     });
   }
 
+  function extractBlockContent(block: Block): string {
+    const parts: string[] = [`[${blockTypeLabels[block.type] || block.type} block]`];
+    const d = block.data as Record<string, unknown>;
+    const s = block.styles || {};
+    if (d.heading) parts.push(`Heading: ${d.heading}`);
+    if (d.subheading) parts.push(`Subheading: ${d.subheading}`);
+    if (d.body) parts.push(`Body: ${String(d.body).slice(0, 500)}`);
+    if (d.text) parts.push(`Text: ${String(d.text).slice(0, 500)}`);
+    if (d.title) parts.push(`Title: ${d.title}`);
+    if (d.items && Array.isArray(d.items)) {
+      (d.items as Array<Record<string, unknown>>).forEach((item, i) => {
+        const itemParts: string[] = [];
+        if (item.heading || item.title) itemParts.push(String(item.heading || item.title));
+        if (item.subheading || item.description) itemParts.push(String(item.subheading || item.description));
+        if (item.body || item.text) itemParts.push(String(item.body || item.text).slice(0, 200));
+        if (itemParts.length) parts.push(`  Card ${i + 1}: ${itemParts.join(" / ")}`);
+      });
+    }
+    if (d.images && Array.isArray(d.images)) {
+      parts.push(`  ${d.images.length} gallery image(s)`);
+    }
+    if (s.backgroundImage) parts.push(`(has background image)`);
+    return parts.join("\n");
+  }
+
+  function extractPageContent(scope: "page" | "site"): string {
+    if (!project) return "";
+    const pages = scope === "site" ? project.pages : (selectedPage ? [selectedPage] : []);
+    const sections: string[] = [];
+    for (const page of pages) {
+      sections.push(`\n=== Page: ${page.title || page.slug || "home"} ===`);
+      for (const block of page.blocks) {
+        sections.push(extractBlockContent(block));
+      }
+    }
+    return sections.join("\n");
+  }
+
   async function aiAskSuggest() {
     const prompt = chatInput.trim();
     if (!prompt) return;
@@ -2273,7 +2331,9 @@ export function App() {
           targetKind: aiChatTarget,
           blockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "",
           blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "",
-          chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text }))
+          chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })),
+          pageContent: aiChatTarget !== "block" ? extractPageContent(aiChatTarget === "site" ? "site" : "page") : undefined,
+          blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined
         })
       });
       if (data.ok && data.suggestion) {
@@ -2774,8 +2834,8 @@ export function App() {
         return;
       }
       setAiEnhanceResult(data.editedImageUrl);
-      setAiEnhanceStatus("Enhanced image ready.");
-      setAiEnhanceSourceOverride(null);
+      setAiEnhanceStatus("Enhanced image ready. Source locked to enhanced image for further edits.");
+      setAiEnhanceSourceOverride(data.editedImageUrl);
     } catch (error) {
       setAiEnhanceStatus(`Image enhancement unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -4560,7 +4620,7 @@ export function App() {
           {rightTab === "images" && (
             <div className="panel image-manager-panel">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Image Manager</h3>
+              <h3 style={{ margin: 0 }}>Image Library</h3>
               <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
             </div>
               <p className="panel-status">Upload, manage, and apply images. <strong>Library</strong> = all project image assets. <strong>Gallery</strong> = images placed in a gallery block on the website.</p>
@@ -4816,7 +4876,7 @@ export function App() {
           <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
-          <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Manager opened"); }}>Images</button>
+          <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Library opened"); }}>Images</button>
           <button onClick={() => toggleAiTopMenu()} className={aiTopMenuOpen ? "active" : ""} title="AI Top Menu">AI</button>
           <button onClick={() => setHelpOpen(true)} title="Help / User Guide">?</button>
           <button onClick={() => {
@@ -5038,7 +5098,7 @@ export function App() {
                   <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
                   <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
                   <button onClick={clearAiImageGen}>Clear</button>
-                  <button onClick={() => { void openGalleryManager(); }} title="Manage all project images (library) and gallery block images">Gallery Manager</button>
+                  <button onClick={() => { void openGalleryManager(); }} title="Manage all project images (library) and gallery block images">Manage Image Library</button>
                 </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
@@ -5062,26 +5122,27 @@ export function App() {
               <div className="ai-panel-tab-content">
                 {aiEnhanceSourceOverride && (
                   <div className="ai-card ai-card-source" style={{ borderColor: "var(--editor-accent)" }}>
-                    <div className="ai-card-label">Source Image (from generated image)</div>
+                    <div className="ai-card-label">Source Image (locked — will not change with block selection)</div>
                     <div className="ai-card-body">
                       <div className="ai-source-detail">
-                        <span className="ai-source-name">Generated image</span>
+                        <span className="ai-source-name">{aiEnhanceResult ? "Source: Generated image (enhanced)" : "Source: Generated image"}</span>
                         <img src={aiEnhanceSourceOverride} alt="Source" className="ai-source-thumb" />
-                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Use selected block instead</button>
+                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Unlock: use selected block instead</button>
                       </div>
                     </div>
                   </div>
                 )}
                 {!aiEnhanceSourceOverride && (
                 <div className="ai-card ai-card-source">
-                  <div className="ai-card-label">Source Image</div>
+                  <div className="ai-card-label">Source Image (selected block)</div>
                   <div className="ai-card-body">
                     {(() => {
                       const es = getSelectedEnhanceSource();
                       if (es.kind !== "none") {
+                        const sourceLabel = es.kind === "background" ? "Source: Selected block background" : (es.kind === "gallery-image" || es.kind === "image-block") ? "Source: Image Library" : `Source: ${es.label}`;
                         return (
                           <div className="ai-source-detail">
-                            <span className="ai-source-name">{es.label}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
+                            <span className="ai-source-name">{sourceLabel}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
                             {es.src && <img src={es.src} alt="Source" className="ai-source-thumb" />}
                             {es.reason && <p className="ai-status-msg">{es.reason}</p>}
                           </div>
@@ -5139,9 +5200,9 @@ export function App() {
         <div className="modal-backdrop" onClick={() => setGalleryManagerOpen(false)}>
           <div className="modal gallery-manager-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Image Gallery Manager</h3>
-              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated images for this project (image library).</p>
-              <button className="modal-close" onClick={() => setGalleryManagerOpen(false)} aria-label="Close Gallery Manager">✕</button>
+              <h3>Image Library</h3>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated images for this project. Image Library stores project assets. Website Gallery controls gallery blocks shown on the site.</p>
+              <button className="modal-close" onClick={() => setGalleryManagerOpen(false)} aria-label="Close Image Library">✕</button>
             </div>
             <div className="gallery-manager-toolbar">
               <span>{galleryImages.length} image{galleryImages.length !== 1 ? "s" : ""} in library</span>
@@ -5620,7 +5681,7 @@ export function App() {
               <button onClick={() => { openBlockDrawer(contextMenu.blockId); setContextMenu(null); }}>Edit Properties</button>
               <button onClick={() => { openAiDrawer(contextMenu.blockId); setContextMenu(null); setAiTopMenuOpen(true); setAiTopMenuTab("chat"); }}>AI Assistant</button>
               <button onClick={() => { openResizeLayoutForBlock(contextMenu.blockId); setContextMenu(null); }}>Resize/Layout</button>
-              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); setRightTab("images"); setRightDrawerMobileOpen(true); setRightCollapsed(false); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Manager opened for block"); }}>Image Manager</button>
+              <button onClick={() => { selectBlockQuiet(contextMenu.blockId); setRightTab("images"); setRightDrawerMobileOpen(true); setRightCollapsed(false); setImageManagerOpen(true); setImageManagerTarget("block-bg"); setContextMenu(null); setStatus("Image Library opened for block"); }}>Image Library</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); startNewRow(contextMenu.blockId); closeTransientOverlays(); }}>Start new row</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); placeWithPrevious(contextMenu.blockId); closeTransientOverlays(); }}>Place with block above</button>
               <button onClick={() => { selectBlockQuiet(contextMenu.blockId); placeWithNext(contextMenu.blockId); closeTransientOverlays(); }}>Place with block below</button>
@@ -5752,10 +5813,10 @@ export function App() {
               {providerCheckMessage && <p className="panel-status">{providerCheckMessage}</p>}
             </div>}
             {settingsTab === "keys" && userRole === "admin" && <div>
-              <p className="hint">Keys are saved in local ignored secret config, never project.json.</p>
-              <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder="sk-..." /></label>
-              <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." /></label>
-              <label>AI Chat API Key<input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder="sk-..." /></label>
+              <p className="hint">Keys are saved in local ignored secret config, never project.json. They persist across hard refresh and service restarts.</p>
+              <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder={secretStatus.imageGen.maskedKey || "sk-..."} /></label>
+              <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder={secretStatus.imageAnalyze.maskedKey || "sk-..."} /></label>
+              <label>AI Chat API Key<input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder={secretStatus.chat.maskedKey || "sk-..."} /></label>
               <div className="button-row"><button onClick={() => void saveSecrets()}>Save Keys</button><button onClick={() => void testProvider("image-gen")}>Test Keys</button></div>
               <p className="panel-status">Chat source: {secretStatus.chat.source} · {secretStatus.chat.statusText} · Chat key: {secretStatus.chat.maskedKey || "not saved"}</p>
               <p className="panel-status">Image gen source: {secretStatus.imageGen.source} · {secretStatus.imageGen.statusText} · Key: {secretStatus.imageGen.maskedKey || "not saved"}</p>
@@ -6070,13 +6131,14 @@ export function App() {
         </div>
       )}
 
-      {/* Image Manager Modal */}
+      {/* Image Library Modal */}
       {imageManagerOpen && (
         <div className="modal-backdrop" onClick={() => setImageManagerOpen(false)}>
           <div className="modal image-manager-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Image Manager</h3>
-              <button className="modal-close" onClick={() => setImageManagerOpen(false)} aria-label="Close Image Manager">✕</button>
+              <h3>Image Library</h3>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated project assets. Image Library stores project assets. Website Gallery controls gallery blocks shown on the site.</p>
+              <button className="modal-close" onClick={() => setImageManagerOpen(false)} aria-label="Close Image Library">✕</button>
             </div>
             <div className="image-manager-upload">
               <label>Upload image

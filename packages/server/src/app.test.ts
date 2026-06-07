@@ -15,6 +15,8 @@ import {
   replaceChatHistory
 } from "./lib/chatHistoryStore.js";
 
+const userPreferencesFile = path.join(path.dirname(projectFile), "user-preferences.json");
+
 let baseUrl = "";
 let closeServer: (() => Promise<void>) | null = null;
 
@@ -102,6 +104,24 @@ async function withTemporarySecretsFileContent<T>(content: string, fn: () => Pro
       await fs.rm(secretsFile, { force: true });
     } else {
       await fs.writeFile(secretsFile, existingSecrets, "utf8");
+    }
+  }
+}
+
+async function withTemporaryUserPreferencesFile<T>(fn: () => Promise<T>): Promise<T> {
+  let existing: string | null = null;
+  try {
+    existing = await fs.readFile(userPreferencesFile, "utf8");
+  } catch {
+    existing = null;
+  }
+  try {
+    return await fn();
+  } finally {
+    if (existing === null) {
+      await fs.rm(userPreferencesFile, { force: true });
+    } else {
+      await fs.writeFile(userPreferencesFile, existing, "utf8");
     }
   }
 }
@@ -265,6 +285,52 @@ test("/api/secrets/image-keys updates /api/secrets/status source safely", async 
   assert.equal(body.imageGen?.configured, true);
   assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
   assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+});
+
+test("/api/secrets/image-keys persists across app restart and never leaks raw keys", async () => {
+  await withNoOpenAIKey(async () => {
+    const key = `local-key-${Date.now()}-persist`;
+    const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: key })
+    });
+    assert.equal(saveResponse.status, 200);
+
+    const app = createApp();
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+    const addr = server.address() as AddressInfo;
+    const restartBaseUrl = `http://127.0.0.1:${addr.port}`;
+    try {
+      const statusResponse = await fetch(`${restartBaseUrl}/api/secrets/status`);
+      assert.equal(statusResponse.status, 200);
+      const text = await statusResponse.text();
+      assert.equal(text.includes(key), false, "raw key must not appear in response body");
+      const body = JSON.parse(text) as { imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null } };
+      assert.equal(body.imageGen?.configured, true);
+      assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
+      assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  });
+});
+
+test("/api/secrets/image-keys does not write key material to project.json", async () => {
+  await withNoOpenAIKey(async () => {
+    const before = await fs.readFile(projectFile, "utf8");
+    const key = `local-key-${Date.now()}-project-json`;
+    const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: key, imageAnalyzeApiKey: `${key}-analyze`, chatApiKey: `${key}-chat` })
+    });
+    assert.equal(saveResponse.status, 200);
+    const after = await fs.readFile(projectFile, "utf8");
+    assert.equal(after.includes(key), false, "project.json must not contain raw key material");
+    assert.equal(before, after, "saving keys must not mutate project.json");
+  });
 });
 
 test("/api/status uses local secret key source when env key is missing", async () => {
@@ -904,6 +970,65 @@ test("auth: non-admin user cannot access admin APIs", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("auth: builder UI theme preference persists per user", async () => {
+  await withTemporaryUserPreferencesFile(async () => {
+    const server = await createAuthTestServer();
+    try {
+      const adminSession = await loginAs(server, "admin", "admin123");
+      assert.ok(adminSession.length > 0);
+
+      const saveRes = await fetch(`${server.baseUrl}/api/account/preferences`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
+        body: JSON.stringify({ builderUiTheme: "Dark" })
+      });
+      assert.equal(saveRes.status, 200);
+
+      const readRes = await fetch(`${server.baseUrl}/api/account/preferences`, {
+        headers: { cookie: `sbuild_session=${adminSession}` }
+      });
+      assert.equal(readRes.status, 200);
+      const readBody = await readRes.json() as { ok: boolean; preferences?: { builderUiTheme?: string; updatedAt?: string | null } };
+      assert.equal(readBody.ok, true);
+      assert.equal(readBody.preferences?.builderUiTheme, "Dark");
+      assert.ok(readBody.preferences?.updatedAt);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test("auth: builder UI theme preference syncs across sessions for same user", async () => {
+  await withTemporaryUserPreferencesFile(async () => {
+    const serverA = await createAuthTestServer();
+    const serverB = await createAuthTestServer();
+    try {
+      const sessionA = await loginAs(serverA, "admin", "admin123");
+      const sessionB = await loginAs(serverB, "admin", "admin123");
+      assert.ok(sessionA.length > 0);
+      assert.ok(sessionB.length > 0);
+
+      const saveRes = await fetch(`${serverA.baseUrl}/api/account/preferences`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", cookie: `sbuild_session=${sessionA}` },
+        body: JSON.stringify({ builderUiTheme: "Dark" })
+      });
+      assert.equal(saveRes.status, 200);
+
+      const readRes = await fetch(`${serverB.baseUrl}/api/account/preferences`, {
+        headers: { cookie: `sbuild_session=${sessionB}` }
+      });
+      assert.equal(readRes.status, 200);
+      const readBody = await readRes.json() as { ok: boolean; preferences?: { builderUiTheme?: string } };
+      assert.equal(readBody.ok, true);
+      assert.equal(readBody.preferences?.builderUiTheme, "Dark");
+    } finally {
+      await serverA.close();
+      await serverB.close();
+    }
+  });
 });
 
 test("auth: admin can disable non-admin user", async () => {
@@ -2416,6 +2541,60 @@ test("isCasualOffTopic: favorite movie is off-topic", async () => {
       assert.equal(body.hasProposal, false);
       assert.equal(body.model, "casual-router");
     });
+  });
+});
+
+test("casual off-topic prompt 'have you ever smelled a flower' does not create proposal", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "have you ever smelled a flower?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string };
+      assert.ok(body.ok);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.model, "casual-router");
+      assert.ok(body.suggestion.length > 0);
+    });
+  });
+});
+
+test("casual prompt 'thanks' does not create proposal", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "thanks", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string };
+      assert.ok(body.ok);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.model, "casual-router");
+    });
+  });
+});
+
+test("content router answers What We Grow from page content", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what is listed in the what we grow section?",
+        targetKind: "page",
+        pageContent: "[Cards block]\nHeading: What We Grow\nCard 1: Heirloom Tomatoes / Sweet and juicy\nCard 2: Summer Squash / Harvested weekly\nCard 3: Fresh Herbs / Basil and cilantro"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    assert.match(String(body.suggestion || ""), /What We Grow/i);
+    assert.match(String(body.suggestion || ""), /Heirloom Tomatoes/i);
   });
 });
 

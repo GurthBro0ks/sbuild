@@ -96,6 +96,7 @@ import {
   repoRoot,
   secretsFile
 } from "./lib/paths.js";
+import { getUserPreferences, normalizeBuilderTheme, setUserBuilderTheme } from "./lib/userPreferencesStore.js";
 
 const imageFolderConfigFile = path.join(path.dirname(projectFile), "image-folder.json");
 
@@ -586,6 +587,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     next();
   }
 
+  function resolveRequestUsername(req: express.Request): string | null {
+    if (!auth.enabled) return "dev";
+    const session = getSession(req);
+    return session ? session.u : null;
+  }
+
   app.get("/api/account/me", (req, res) => {
     if (!auth.enabled) {
       res.json({ ok: true, user: { username: "dev", role: "admin" } });
@@ -597,6 +604,39 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return;
     }
     res.json({ ok: true, user: { username: session.u, role: session.r } });
+  });
+
+  app.get("/api/account/preferences", async (req, res) => {
+    const username = resolveRequestUsername(req);
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const prefs = await getUserPreferences(username);
+    res.json({
+      ok: true,
+      preferences: {
+        builderUiTheme: normalizeBuilderTheme(prefs.builderUiTheme),
+        updatedAt: prefs.updatedAt || null
+      }
+    });
+  });
+
+  app.put("/api/account/preferences", async (req, res) => {
+    const username = resolveRequestUsername(req);
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const theme = normalizeBuilderTheme(req.body?.builderUiTheme);
+    const saved = await setUserBuilderTheme(username, theme);
+    res.json({
+      ok: true,
+      preferences: {
+        builderUiTheme: normalizeBuilderTheme(saved.builderUiTheme),
+        updatedAt: saved.updatedAt || null
+      }
+    });
   });
 
   app.post("/api/account/change-password", (req, res) => {
@@ -841,6 +881,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const blockId = String(req.body?.blockId || "");
     const blockType = String(req.body?.blockType || "");
     const chatHistory = Array.isArray(req.body?.chatHistory) ? req.body.chatHistory as Array<{ role: string; text: string }> : [];
+    const pageContent = String(req.body?.pageContent || "");
+    const blockContent = String(req.body?.blockContent || "");
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
@@ -892,6 +934,25 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         return;
       }
     }
+    const contentAnswer = answerPageContentQuestion(prompt, targetKind, blockContent, pageContent);
+    if (contentAnswer) {
+      res.json({
+        ok: true,
+        suggestion: contentAnswer,
+        provider: "local",
+        model: "content-router",
+        message: "Project content answer",
+        source: "local",
+        latencyMs: 0,
+        isLocal: true,
+        proposal: null,
+        hasProposal: false,
+        targetKind,
+        blockId,
+        blockType
+      });
+      return;
+    }
     if (isCasualOffTopic(prompt)) {
       const casualAnswer = answerCasualOffTopic(prompt);
       const username = auth.enabled ? (() => {
@@ -929,6 +990,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         : blockType
           ? `You are editing a ${blockType} block. `
           : "You are editing a block. ";
+    const contentContext = pageContent
+      ? `\n\nCurrent page/site content:\n${pageContent.slice(0, 4000)}\n\n`
+      : blockContent
+        ? `\n\nSelected block content:\n${blockContent.slice(0, 2000)}\n\n`
+        : "";
     const isQuestion = isQuestionPrompt(prompt);
     const fieldInstruction = !isQuestion && targetKind === "block" && blockType
       ? fieldInstructionFromPrompt(prompt, blockType)
@@ -936,7 +1002,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const proposalInstruction = !isQuestion && targetKind === "block"
       ? `If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced \`\`\`json block with {"kind":"replace-copy","replaceText":"...","targetField":"heading or subheading or body"}. Otherwise answer normally with plain text and no proposal object. `
       : "";
-    const fullPrompt = `${contextPrefix}${fieldInstruction}${proposalInstruction}${prompt}`;
+    const fullPrompt = `${contextPrefix}${contentContext}${fieldInstruction}${proposalInstruction}${prompt}`;
     const result = await chatWithProviders(fullPrompt, chatHistory);
     const rawProposal = !isQuestion && result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
@@ -1683,7 +1749,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       /\b(how are you|how do you feel|what do you think about)\b/,
       /\b(pickles|pizza|weather|sports team|movie|song|music|food|recipe|cook)\b/,
       /\b(who (is|are|was|were) .*(president|mayor|governor|ceo))\b/,
-      /\b(what (is|was|are|were) .*(capital|population|tallest|longest|biggest))\b/
+      /\b(what (is|was|are|were) .*(capital|population|tallest|longest|biggest))\b/,
+      /\b(have you ever)\b/,
+      /\b(are you sure)\b/,
+      /^(thanks|thank you|thx|ty|cheers)\b/i
     ];
     const hasSiteEditKeywords = /\b(site|page|block|website|heading|title|description|text|copy|layout|image|hero|section|footer|header|nav|gallery|card|button|cta|background|font|color|style|content|paragraph|subheading|tagline|blurb|intro|body|title)\b/i.test(trimmed);
     if (hasSiteEditKeywords) return false;
@@ -1695,6 +1764,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   function answerCasualOffTopic(prompt: string): string {
     const trimmed = prompt.trim().toLowerCase();
+    if (/^(thanks|thank you|thx|ty|cheers)\b/i.test(trimmed)) {
+      return "You're welcome! Let me know if you need help with your website.";
+    }
     if (/^(do you like|do you prefer|do you enjoy|do you love|do you hate)/i.test(trimmed)) {
       return "That's outside what I do — I'm focused on helping you build and edit your website. Want help with copy, layout, or images instead?";
     }
@@ -1704,7 +1776,72 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     if (/^(how are you|how do you feel)/i.test(trimmed)) {
       return "I'm ready to help with your website. What would you like to work on?";
     }
+    if (/\b(are you sure)\b/i.test(trimmed)) {
+      return "I can double-check or adjust if you'd like. What would you like me to change about your website?";
+    }
+    if (/\b(have you ever)\b/i.test(trimmed)) {
+      return "I'm focused on website building — want me to help with your site's copy, layout, or images?";
+    }
     return "That's outside my scope — I help with website building and editing. Want to work on your site's copy, layout, or images?";
+  }
+
+  function normalizeContentLines(input: string): string[] {
+    return String(input || "")
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter(Boolean);
+  }
+
+  function collectCardLines(lines: string[]): string[] {
+    return lines
+      .map((line) => line.trim())
+      .filter((line) => /^card\s+\d+:/i.test(line) || /^[-*]\s+/i.test(line));
+  }
+
+  function answerPageContentQuestion(prompt: string, targetKind: string, blockContent: string, pageContent: string): string | null {
+    const lower = prompt.trim().toLowerCase();
+    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow)/i.test(lower);
+    if (!hasContentQuestionCue) return null;
+
+    const source = targetKind === "block" ? blockContent : pageContent;
+    const lines = normalizeContentLines(source);
+    if (lines.length === 0) return null;
+
+    if (/what\s+we\s+grow/i.test(lower)) {
+      const start = lines.findIndex((line) => /what\s+we\s+grow/i.test(line));
+      if (start >= 0) {
+        const section: string[] = [];
+        for (let i = start + 1; i < lines.length; i += 1) {
+          const line = lines[i].trim();
+          if (/^\[.*block\]$/i.test(line) && section.length > 0) break;
+          if (/^card\s+\d+:/i.test(line)) section.push(line.replace(/^card\s+\d+:\s*/i, "").trim());
+        }
+        if (section.length > 0) {
+          return `What We Grow: ${section.join("; ")}`;
+        }
+      }
+    }
+
+    if (/what\s+cards\s+are\s+on\s+this\s+page|list\s+the\s+cards/i.test(lower)) {
+      const cards = collectCardLines(lines).map((line) => line.replace(/^card\s+\d+:\s*/i, "").trim());
+      if (cards.length > 0) {
+        return `Cards on this ${targetKind === "site" ? "site" : "page"}: ${cards.join("; ")}`;
+      }
+    }
+
+    if (/what\s+do\s+we\s+sell|what\s+is\s+listed|what\s+is\s+in/i.test(lower)) {
+      const headings = lines
+        .filter((line) => /^(heading|title|subheading):/i.test(line))
+        .map((line) => line.replace(/^(heading|title|subheading):\s*/i, "").trim())
+        .filter(Boolean);
+      const cards = collectCardLines(lines).map((line) => line.replace(/^card\s+\d+:\s*/i, "").trim());
+      const combined = [...headings, ...cards].slice(0, 12);
+      if (combined.length > 0) {
+        return `From your ${targetKind === "site" ? "site" : targetKind === "page" ? "current page" : "selected block"}: ${combined.join("; ")}`;
+      }
+    }
+
+    return null;
   }
 
   function inferTargetField(prompt: string, blockType: string): string | undefined {
