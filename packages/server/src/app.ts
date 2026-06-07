@@ -82,7 +82,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
 }
 import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
-import { getChatHistory, appendChatHistory, clearChatHistory } from "./lib/chatHistoryStore.js";
+import { getChatHistory, appendChatHistory, clearChatHistory, replaceChatHistory, sanitizeChatText as sanitizeChatTextImported } from "./lib/chatHistoryStore.js";
 import type { PersistedChatItem } from "./lib/chatHistoryStore.js";
 import {
   backupsDir,
@@ -830,7 +830,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         { role: "user", text: prompt, timestamp: Date.now() },
         { role: "assistant", text: result.response, timestamp: Date.now(), provider: result.provider, model: result.model, source: result.source, latencyMs: result.latencyMs }
       ];
-      appendChatHistory(username, undefined, persistedItems);
+      appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
     }
     res.json({ ok: true, ...result });
   });
@@ -899,30 +899,38 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         : blockType
           ? `You are editing a ${blockType} block. `
           : "You are editing a block. ";
-    const proposalInstruction = targetKind === "block"
+    const isQuestion = isQuestionPrompt(prompt);
+    const proposalInstruction = !isQuestion && targetKind === "block"
       ? "If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}. Otherwise answer normally with plain text and no proposal object. "
       : "";
     const fullPrompt = `${contextPrefix}${proposalInstruction}${prompt}`;
     const result = await chatWithProviders(fullPrompt, chatHistory);
-    const proposal = result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
+    const rawProposal = !isQuestion && result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
       : null;
+    const proposal = rawProposal && rawProposal.replaceText.length > 0 && rawProposal.replaceText.length <= 2000
+      ? rawProposal
+      : null;
     const hasProposal = Boolean(proposal);
+    let displayResponse = stripProposalJsonFromText(result.response);
+    if (hasProposal && proposal && (!displayResponse || displayResponse === result.response)) {
+      displayResponse = `Suggestion: replace the block text with "${proposal.replaceText}"`;
+    }
     const username = auth.enabled ? (() => {
       const session = getSession(req);
       return session ? session.u : null;
     })() : "dev";
     if (username) {
-      appendMemoryForUser(username, `Q: ${prompt.slice(0, 200)} A: ${result.response.slice(0, 200)}`);
+      appendMemoryForUser(username, `Q: ${prompt.slice(0, 200)} A: ${displayResponse.slice(0, 200)}`);
       const persistedItems: PersistedChatItem[] = [
         { role: "user", text: prompt, timestamp: Date.now() },
-        { role: "assistant", text: result.response, timestamp: Date.now(), provider: result.provider, model: result.model, source: result.source, latencyMs: result.latencyMs }
+        { role: "assistant", text: displayResponse, timestamp: Date.now(), provider: result.provider, model: result.model, source: result.source, latencyMs: result.latencyMs }
       ];
-      appendChatHistory(username, undefined, persistedItems);
+      appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
     }
     res.json({
       ok: true,
-      suggestion: result.response,
+      suggestion: displayResponse,
       provider: result.provider,
       model: result.model,
       message: result.message,
@@ -1007,6 +1015,39 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const projectPath = String(req.body?.projectPath || req.query?.projectPath || "");
     clearChatHistory(username, projectPath || undefined);
     res.json({ ok: true });
+  });
+
+  app.post("/api/ai/chat/save", (req, res) => {
+    const username = auth.enabled ? (() => {
+      const session = getSession(req);
+      return session ? session.u : null;
+    })() : "dev";
+    if (!username) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
+    const projectPath = String(req.body?.projectPath || "");
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages as PersistedChatItem[] : [];
+    if (messages.length === 0) {
+      const existing = getChatHistory(username, projectPath || undefined);
+      if (existing.length === 0) {
+        res.json({ ok: true, savedAt: new Date().toISOString(), message: "Nothing to save." });
+        return;
+      }
+      res.json({ ok: true, savedAt: new Date().toISOString(), message: "Chat already saved.", messageCount: existing.length });
+      return;
+    }
+    const sanitized: PersistedChatItem[] = messages.map((m) => ({
+      role: m.role === "user" || m.role === "assistant" ? m.role : "assistant",
+      text: sanitizeChatTextImported(String(m.text || "")),
+      timestamp: typeof m.timestamp === "number" ? m.timestamp : Date.now(),
+      provider: m.provider || undefined,
+      model: m.model || undefined,
+      source: m.source || undefined,
+      latencyMs: m.latencyMs != null ? m.latencyMs : undefined
+    }));
+    replaceChatHistory(username, projectPath || undefined, sanitized);
+    res.json({ ok: true, savedAt: new Date().toISOString(), message: "Chat saved.", messageCount: sanitized.length });
   });
 
   app.post("/api/ai/paint-fix", async (req, res) => {
@@ -1585,6 +1626,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return null;
   }
 
+  function isQuestionPrompt(prompt: string): boolean {
+    const trimmed = prompt.trim().toLowerCase();
+    if (/^(what|who|when|where|why|how|is |are |can |do |does |did |will |would |could |should |tell me|explain|are you sure|really|confirm)\b/i.test(trimmed)) {
+      if (/(replace|rewrite|change|update|make it|set it|write|suggest a better|rephrase|reword|improve|fix|make the|change the|set the|put |use |switch)/i.test(trimmed)) {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function stripProposalJsonFromText(text: string): string {
+    let cleaned = text;
+    cleaned = cleaned.replace(/```json\s*\{[\s\S]*?"kind"\s*:\s*"replace-copy"[\s\S]*?```/gi, "").trim();
+    cleaned = cleaned.replace(/\{\s*"kind"\s*:\s*"replace-copy"\s*,\s*"replaceText"\s*:\s*"[^"]*"\s*\}/g, "").trim();
+    if (cleaned) return cleaned;
+    const inlineMatch = text.match(/"replaceText"\s*:\s*"([^"]+)"/);
+    if (inlineMatch) return `The suggested replacement is: "${inlineMatch[1]}"`;
+    return "The model returned a structured suggestion. Please try rephrasing your question.";
+  }
+
   async function getOllamaStatus(): Promise<{ reachable: boolean; endpoint: string; model: string | null; models: LocalModelInfo[]; message: string }> {
     const endpoint = process.env.SBUILD_OLLAMA_ENDPOINT || DEFAULT_OLLAMA_ENDPOINT;
     try {
@@ -1661,9 +1723,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           };
         }
         try {
-          const systemPrompt = runtimeIdentityPrompt({ provider: "ollama", model: modelToUse, source: "local" });
+          const systemPrompt = [
+            "You are a helpful assistant for sBuild, a website editor.",
+            "Give short, direct, plain-text answers.",
+            "Do NOT wrap your answer in JSON unless the user explicitly asks for JSON.",
+            "Do NOT include your reasoning process or thinking steps.",
+            "If suggesting a replacement for block text, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\"}.",
+            "Otherwise answer normally with plain text."
+          ].join(" ");
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 90000);
+          const timer = setTimeout(() => controller.abort(), 30000);
           const historyMessages: Array<{ role: string; content: string }> = [
             { role: "system", content: systemPrompt }
           ];
@@ -1702,6 +1771,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             message?: { content?: string; thinking?: string };
           };
           let text = String(payload.message?.content || "").trim();
+          const looksLikeRawJson = text.startsWith("{") && text.includes("\"kind\"") && !cleanPrompt.toLowerCase().includes("json");
+          if (looksLikeRawJson) {
+            try {
+              const parsed = JSON.parse(text) as Record<string, unknown>;
+              if (parsed.kind === "replace-copy" && typeof parsed.replaceText === "string") {
+                text = `Suggestion: replace the block text with "${parsed.replaceText}"`;
+              } else {
+                text = String((parsed as Record<string, unknown>).replaceText || (parsed as Record<string, unknown>).text || text);
+              }
+            } catch {
+              // leave as-is
+            }
+          }
           const thinking = payload.message?.thinking || "";
           if (!text && thinking) {
             text = `[Note: response based on model reasoning]\n${thinking.trim()}`;
@@ -1731,7 +1813,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           };
         } catch (error) {
           const message = error instanceof Error && error.name === "AbortError"
-            ? `Local Ollama model ${modelToUse} timed out after 90 seconds; provider is still configured.`
+            ? `Local Ollama model ${modelToUse} timed out after 30 seconds; provider is still configured.`
             : `Local model request failed: ${error instanceof Error ? error.message : String(error)}; provider is still configured.`;
           return {
             provider: "ollama",

@@ -8,6 +8,12 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
 import { projectFile, secretsFile } from "./lib/paths.js";
+import {
+  getChatHistory,
+  appendChatHistory,
+  clearChatHistory,
+  replaceChatHistory
+} from "./lib/chatHistoryStore.js";
 
 let baseUrl = "";
 let closeServer: (() => Promise<void>) | null = null;
@@ -1201,9 +1207,8 @@ test("POST /api/ai/suggest passes local provider metadata into Ollama prompt con
       assert.equal(capturedBody?.options?.temperature, 0.2);
       const messages = Array.isArray(capturedBody?.messages) ? capturedBody.messages : [];
       assert.equal(messages[0]?.role, "system");
-      assert.match(String(messages[0]?.content || ""), /Runtime chat provider: ollama\./);
-      assert.match(String(messages[0]?.content || ""), /Runtime chat model: qwen3:4b\./);
-      assert.match(String(messages[0]?.content || ""), /Do not claim to be a cloud-hosted provider/);
+      assert.match(String(messages[0]?.content || ""), /helpful assistant for sBuild/);
+      assert.match(String(messages[0]?.content || ""), /Do NOT wrap your answer in JSON/);
     });
   });
 });
@@ -1684,6 +1689,466 @@ test("no raw secrets returned in provider status or config endpoints", async () 
         assert.doesNotMatch(text, /sk-image-secret-87654321/, `${endpoint} leaks imageGenApiKey`);
         assert.doesNotMatch(text, /sk-analyze-secret-abcdefgh/, `${endpoint} leaks imageAnalyzeApiKey`);
       }
+    });
+  });
+});
+
+test("chatHistoryStore: per-user isolation", () => {
+  const ts = Date.now();
+  appendChatHistory("user-a-isolation-test", undefined, [
+    { role: "user", text: "hello from A", timestamp: ts },
+    { role: "assistant", text: "A reply", timestamp: ts }
+  ]);
+  appendChatHistory("user-b-isolation-test", undefined, [
+    { role: "user", text: "hello from B", timestamp: ts },
+    { role: "assistant", text: "B reply", timestamp: ts }
+  ]);
+  const aHistory = getChatHistory("user-a-isolation-test");
+  const bHistory = getChatHistory("user-b-isolation-test");
+  assert.ok(aHistory.some((m) => m.text.includes("from A")));
+  assert.ok(!aHistory.some((m) => m.text.includes("from B")));
+  assert.ok(bHistory.some((m) => m.text.includes("from B")));
+  assert.ok(!bHistory.some((m) => m.text.includes("from A")));
+  clearChatHistory("user-a-isolation-test");
+  clearChatHistory("user-b-isolation-test");
+});
+
+test("chatHistoryStore: per-project isolation", () => {
+  const ts = Date.now();
+  appendChatHistory("user-proj-test", "/project/alpha", [
+    { role: "user", text: "alpha question", timestamp: ts },
+    { role: "assistant", text: "alpha answer", timestamp: ts }
+  ]);
+  appendChatHistory("user-proj-test", "/project/beta", [
+    { role: "user", text: "beta question", timestamp: ts },
+    { role: "assistant", text: "beta answer", timestamp: ts }
+  ]);
+  const alphaHistory = getChatHistory("user-proj-test", "/project/alpha");
+  const betaHistory = getChatHistory("user-proj-test", "/project/beta");
+  assert.ok(alphaHistory.some((m) => m.text.includes("alpha")));
+  assert.ok(!alphaHistory.some((m) => m.text.includes("beta")));
+  assert.ok(betaHistory.some((m) => m.text.includes("beta")));
+  assert.ok(!betaHistory.some((m) => m.text.includes("alpha")));
+  clearChatHistory("user-proj-test", "/project/alpha");
+  clearChatHistory("user-proj-test", "/project/beta");
+});
+
+test("chatHistoryStore: delete only clears targeted project", () => {
+  const ts = Date.now();
+  appendChatHistory("user-del-test", "/project/keep", [
+    { role: "user", text: "keep this", timestamp: ts }
+  ]);
+  appendChatHistory("user-del-test", "/project/remove", [
+    { role: "user", text: "remove this", timestamp: ts }
+  ]);
+  clearChatHistory("user-del-test", "/project/remove");
+  const keepHistory = getChatHistory("user-del-test", "/project/keep");
+  const removeHistory = getChatHistory("user-del-test", "/project/remove");
+  assert.ok(keepHistory.some((m) => m.text.includes("keep this")));
+  assert.equal(removeHistory.length, 0);
+  clearChatHistory("user-del-test", "/project/keep");
+});
+
+test("chatHistoryStore: redacts secrets from persisted text", () => {
+  const ts = Date.now();
+  appendChatHistory("user-secret-test", undefined, [
+    { role: "user", text: "my key is sk-AbCdEf1234567890xYz", timestamp: ts }
+  ]);
+  const history = getChatHistory("user-secret-test");
+  assert.ok(!history.some((m) => m.text.includes("sk-AbCdEf1234567890xYz")));
+  assert.ok(history.some((m) => m.text.includes("[redacted-api-key]")));
+  clearChatHistory("user-secret-test");
+});
+
+test("chatHistoryStore: caps at MAX_MESSAGES_PER_PROJECT", () => {
+  const ts = Date.now();
+  for (let i = 0; i < 110; i++) {
+    appendChatHistory("user-cap-test", "/project/cap", [
+      { role: "user", text: `msg-${i}`, timestamp: ts + i }
+    ]);
+  }
+  const history = getChatHistory("user-cap-test", "/project/cap");
+  assert.equal(history.length, 100);
+  assert.ok(history[0].text.startsWith("msg-10"));
+  assert.ok(history[99].text.startsWith("msg-109"));
+  clearChatHistory("user-cap-test", "/project/cap");
+});
+
+test("POST /api/ai/chat stores history with projectPath", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "project reply" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "project test", projectPath: "/my/project" })
+      });
+      const historyRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/my/project")}`);
+      const historyBody = await historyRes.json() as { ok: boolean; messages: Array<{ role: string; text: string }> };
+      assert.equal(historyBody.ok, true);
+      assert.ok(historyBody.messages.length >= 2);
+      const lastUser = historyBody.messages.filter((m) => m.role === "user").pop();
+      assert.ok(lastUser?.text.includes("project test"));
+      const lastAssistant = historyBody.messages.filter((m) => m.role === "assistant").pop();
+      assert.ok(lastAssistant?.text.includes("project reply"));
+      await fetch(`${baseUrl}/api/ai/chat/history`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectPath: "/my/project" })
+      });
+    });
+  });
+});
+
+test("POST /api/ai/chat/save persists chat without download", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] }, chat: { body: { message: { content: "save reply" } } } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "save test", projectPath: "/save/project" })
+      });
+      const saveRes = await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/save/project",
+          messages: [
+            { role: "user", text: "save test", timestamp: Date.now() },
+            { role: "assistant", text: "save reply", timestamp: Date.now() }
+          ]
+        })
+      });
+      assert.equal(saveRes.status, 200);
+      const cd = saveRes.headers.get("content-disposition") || "";
+      assert.equal(cd.includes("attachment"), false, "save must not create download");
+      const body = await saveRes.json() as { ok: boolean; savedAt: string; messageCount: number };
+      assert.equal(body.ok, true);
+      assert.ok(body.savedAt);
+      assert.ok(body.messageCount >= 2);
+      const historyRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/save/project")}`);
+      const historyBody = await historyRes.json() as { ok: boolean; messages: Array<{ role: string; text: string }> };
+      assert.ok(historyBody.messages.some((m) => m.text.includes("save reply")));
+      await fetch(`${baseUrl}/api/ai/chat/history`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectPath: "/save/project" })
+      });
+    });
+  });
+});
+
+test("POST /api/ai/suggest rejects proposal with empty replaceText", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: '```json\n{"kind":"replace-copy","replaceText":"  "}\n```' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "fix this",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "text"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; proposal?: unknown };
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.proposal, null);
+    });
+  });
+});
+
+test("POST /api/ai/suggest rejects proposal with replaceText exceeding 2000 chars", async () => {
+  const longText = "x".repeat(2001);
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: `\`\`\`json\n{"kind":"replace-copy","replaceText":"${longText}"}\n\`\`\`` } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "fix this",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "text"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; proposal?: unknown };
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.proposal, null);
+    });
+  });
+});
+
+test("POST /api/ai/suggest accepts valid proposal within size limit", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: '```json\n{"kind":"replace-copy","replaceText":"Hello World"}\n```' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "fix this",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "text"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; proposal?: { kind: string; replaceText: string } };
+      assert.equal(body.hasProposal, true);
+      assert.equal(body.proposal?.kind, "replace-copy");
+      assert.equal(body.proposal?.replaceText, "Hello World");
+    });
+  });
+});
+
+test("POST /api/ai/suggest strips raw JSON from suggestion when proposal exists", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: 'Here is my suggestion:\n```json\n{"kind":"replace-copy","replaceText":"New Hero Text"}\n```\nThis will improve the heading.' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "suggest a better heading",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean };
+      assert.equal(body.hasProposal, true);
+      assert.equal(body.suggestion?.includes("```json"), false, "suggestion must not contain fenced JSON");
+      assert.equal(body.suggestion?.includes('"kind"'), false, "suggestion must not contain raw proposal JSON");
+    });
+  });
+});
+
+test("POST /api/ai/suggest does not create proposal for question prompts", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: 'The background color is blue based on the CSS.' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is the background?",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; suggestion?: string };
+      assert.equal(body.hasProposal, false, "question prompts must not produce proposals");
+      assert.ok(body.suggestion);
+    });
+  });
+});
+
+test("POST /api/ai/suggest does not create proposal for 'are you sure'", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: "Yes, I'm confident in that suggestion." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "are you sure?",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean };
+      assert.equal(body.hasProposal, false);
+    });
+  });
+});
+
+test("POST /api/ai/suggest does not create proposal even when model returns JSON for question", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: '```json\n{"kind":"replace-copy","replaceText":"#ffffff"}\n```' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is the background of the selected block?",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; suggestion?: string };
+      assert.equal(body.hasProposal, false, "question prompts must not produce proposals even if model returns JSON");
+      assert.equal(body.suggestion?.includes("```json"), false, "display text must not contain fenced JSON");
+    });
+  });
+});
+
+test("POST /api/ai/suggest creates proposal for action prompts", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: '```json\n{"kind":"replace-copy","replaceText":"Welcome to our site"}\n```' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "suggest a better description for the hero",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; proposal?: { kind: string; replaceText: string } };
+      assert.equal(body.hasProposal, true);
+      assert.equal(body.proposal?.replaceText, "Welcome to our site");
+    });
+  });
+});
+
+test("POST /api/ai/suggest strips raw JSON from persisted history", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: { body: { message: { content: '```json\n{"kind":"replace-copy","replaceText":"Clean text"}\n```' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "replace the heading",
+          targetKind: "block",
+          blockId: "test-block",
+          blockType: "hero",
+          projectPath: "/strip-test"
+        })
+      });
+      const historyRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/strip-test")}`);
+      const historyBody = await historyRes.json() as { ok: boolean; messages: Array<{ role: string; text: string }> };
+      const assistantMsgs = historyBody.messages.filter((m) => m.role === "assistant");
+      assert.ok(assistantMsgs.length > 0);
+      assert.equal(assistantMsgs[assistantMsgs.length - 1].text.includes("```json"), false, "persisted history must not contain fenced JSON");
+      await fetch(`${baseUrl}/api/ai/chat/history`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectPath: "/strip-test" })
+      });
+    });
+  });
+});
+
+test("POST /api/ai/chat/save per-user per-project isolation", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/iso/project-a",
+          messages: [
+            { role: "user", text: "project a message", timestamp: Date.now() },
+            { role: "assistant", text: "reply a", timestamp: Date.now() }
+          ]
+        })
+      });
+      await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/iso/project-b",
+          messages: [
+            { role: "user", text: "project b message", timestamp: Date.now() },
+            { role: "assistant", text: "reply b", timestamp: Date.now() }
+          ]
+        })
+      });
+      const histA = await (await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/iso/project-a")}`)).json() as { messages: Array<{ text: string }> };
+      const histB = await (await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/iso/project-b")}`)).json() as { messages: Array<{ text: string }> };
+      assert.ok(histA.messages.some((m) => m.text.includes("project a")));
+      assert.ok(!histA.messages.some((m) => m.text.includes("project b")));
+      assert.ok(histB.messages.some((m) => m.text.includes("project b")));
+      assert.ok(!histB.messages.some((m) => m.text.includes("project a")));
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath: "/iso/project-a" }) });
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath: "/iso/project-b" }) });
+    });
+  });
+});
+
+test("POST /api/ai/chat/save redacts secrets from persisted messages", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/secret-redact",
+          messages: [
+            { role: "user", text: "my key is sk-abc123def456ghi789jkl012", timestamp: Date.now() },
+            { role: "assistant", text: "Bearer token_xxxxxxxxxxxxxxxx found", timestamp: Date.now() }
+          ]
+        })
+      });
+      const histRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/secret-redact")}`);
+      const histBody = await histRes.json() as { messages: Array<{ text: string }> };
+      assert.ok(histBody.messages.some((m) => m.text.includes("[redacted-api-key]")));
+      assert.ok(histBody.messages.some((m) => m.text.includes("[redacted-token]")));
+      assert.ok(!histBody.messages.some((m) => m.text.includes("sk-abc123")));
+      assert.ok(!histBody.messages.some((m) => m.text.includes("Bearer token_x")));
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath: "/secret-redact" }) });
+    });
+  });
+});
+
+test("DELETE /api/ai/chat/history deletes only current project", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen3:4b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/del/alpha",
+          messages: [{ role: "user", text: "alpha message", timestamp: Date.now() }, { role: "assistant", text: "alpha reply", timestamp: Date.now() }]
+        })
+      });
+      await fetch(`${baseUrl}/api/ai/chat/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectPath: "/del/beta",
+          messages: [{ role: "user", text: "beta message", timestamp: Date.now() }, { role: "assistant", text: "beta reply", timestamp: Date.now() }]
+        })
+      });
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath: "/del/alpha" }) });
+      const histAlpha = await (await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/del/alpha")}`)).json() as { messages: Array<{ text: string }> };
+      const histBeta = await (await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent("/del/beta")}`)).json() as { messages: Array<{ text: string }> };
+      assert.equal(histAlpha.messages.length, 0);
+      assert.ok(histBeta.messages.some((m) => m.text.includes("beta message")));
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath: "/del/beta" }) });
     });
   });
 });

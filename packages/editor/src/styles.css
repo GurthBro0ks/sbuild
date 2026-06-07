@@ -2654,10 +2654,19 @@ button:disabled {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 12px 4px;
   border-top: 1px solid var(--editor-border);
   background: var(--editor-panel-bg);
   flex-shrink: 0;
+}
+.ai-chat-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 8px;
+  background: var(--editor-panel-bg);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .ai-chat-input {
   flex: 1;
@@ -2697,9 +2706,9 @@ button:disabled {
   cursor: not-allowed;
 }
 .ai-chat-clear {
-  padding: 8px 10px;
-  font-size: 12px;
-  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 6px;
   background: var(--editor-button-bg);
   color: var(--editor-button-text);
   border: 1px solid var(--editor-button-border);
@@ -2707,10 +2716,30 @@ button:disabled {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.ai-chat-delete-history {
-  padding: 8px 10px;
+.ai-chat-save {
+  padding: 6px 10px;
   font-size: 11px;
-  border-radius: 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--editor-accent);
+  border: 1px solid var(--editor-accent);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ai-chat-save:hover {
+  background: var(--editor-accent);
+  color: #fff;
+}
+.ai-chat-save-status {
+  font-size: 11px;
+  color: var(--editor-text-muted, #888);
+  white-space: nowrap;
+}
+.ai-chat-delete-history {
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 6px;
   background: transparent;
   color: #c0392b;
   border: 1px solid #c0392b;

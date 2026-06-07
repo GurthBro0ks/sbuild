@@ -92,7 +92,7 @@ type ContextMenuState = { visible: boolean; x: number; y: number; blockId: strin
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
 type AiPanelRect = { x: number; y: number; width: number; height: number };
 type AiPanelDragState = { pointerId: number; offsetX: number; offsetY: number } | null;
-type AiPanelResizeHandle = "right" | "bottom" | "corner";
+type AiPanelResizeHandle = "corner";
 type AiPanelResizeState = { pointerId: number; handle: AiPanelResizeHandle; startX: number; startY: number; startWidth: number; startHeight: number } | null;
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
@@ -1096,6 +1096,7 @@ export function App() {
   const [status, setStatus] = useState("Loading project...");
   const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatItem[]>([]);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
   const [fontSearch, setFontSearch] = useState("");
   const [showWizard, setShowWizard] = useState(false);
@@ -1284,8 +1285,8 @@ export function App() {
         const dy = event.clientY - aiPanelResize.startY;
         setAiPanelRect((current) => clampAiPanelRect({
           ...current,
-          width: (aiPanelResize.handle === "bottom" ? current.width : aiPanelResize.startWidth + dx),
-          height: (aiPanelResize.handle === "right" ? current.height : aiPanelResize.startHeight + dy)
+          width: aiPanelResize.startWidth + dx,
+          height: aiPanelResize.startHeight + dy
         }));
       }
     };
@@ -2211,6 +2212,14 @@ export function App() {
     }]);
   }
 
+  function scrollChatToBottom() {
+    setTimeout(() => {
+      if (chatMessagesRef.current) {
+        chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+      }
+    }, 50);
+  }
+
   function resetAiPanelPosition() {
     setAiPanelRect(defaultAiPanelRect());
   }
@@ -2249,6 +2258,7 @@ export function App() {
     setAiStructuredProposal(null);
     setAiHasProposal(false);
     pushChatMessage({ role: "user", text: prompt });
+    scrollChatToBottom();
     setChatInput("");
     const startedAt = Date.now();
     try {
@@ -2320,10 +2330,7 @@ export function App() {
       pushChatMessage({ role: "assistant", text: msg, latencyMs: elapsed });
     } finally {
       setAiProposalPending(false);
-      setTimeout(() => {
-        const el = document.querySelector(".ai-chat-messages");
-        if (el) el.scrollTop = el.scrollHeight;
-      }, 50);
+      scrollChatToBottom();
     }
   }
 
@@ -2403,11 +2410,57 @@ export function App() {
     }
   }
 
+  const [chatSaveStatus, setChatSaveStatus] = useState("");
+
+  function saveChat() {
+    if (chatHistory.length === 0) return;
+    void (async () => {
+      try {
+        const data = await fetchJson<{ ok: boolean; savedAt?: string; message?: string }>("/api/ai/chat/save", {
+          method: "POST",
+          body: JSON.stringify({
+            messages: chatHistory.map((m) => ({
+              role: m.role,
+              text: m.text,
+              timestamp: m.timestamp,
+              provider: m.provider || undefined,
+              model: m.model || undefined,
+              source: m.source || undefined,
+              latencyMs: m.latencyMs != null ? m.latencyMs : undefined
+            }))
+          })
+        });
+        if (data.ok) {
+          const time = data.savedAt ? new Date(data.savedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
+          setChatSaveStatus(`Saved at ${time}`);
+          setTimeout(() => setChatSaveStatus(""), 3000);
+        } else {
+          setChatSaveStatus("Save failed.");
+          setTimeout(() => setChatSaveStatus(""), 3000);
+        }
+      } catch {
+        setChatSaveStatus("Save failed.");
+        setTimeout(() => setChatSaveStatus(""), 3000);
+      }
+    })();
+  }
+
+  function stripRawProposalJson(text: string): string {
+    let cleaned = text;
+    cleaned = cleaned.replace(/```json\s*\{[\s\S]*?"kind"\s*:\s*"replace-copy"[\s\S]*?```/gi, "").trim();
+    cleaned = cleaned.replace(/\{\s*"kind"\s*:\s*"replace-copy"\s*,\s*"replaceText"\s*:\s*"[^"]*"\s*\}/g, "").trim();
+    if (cleaned) return cleaned;
+    const inlineMatch = text.match(/"replaceText"\s*:\s*"([^"]+)"/);
+    if (inlineMatch) return `The suggested replacement is: "${inlineMatch[1]}"`;
+    return text;
+  }
+
   function renderChatMessage(msg: ChatItem) {
+    const displayText = msg.role === "assistant" ? stripRawProposalJson(msg.text) : msg.text;
     return (
       <div key={msg.id} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
         <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
-        <div className="ai-chat-msg-text">{msg.text}</div>
+        <div className="ai-chat-msg-text">{displayText}</div>
         <div className="ai-chat-msg-footer">{chatFooterText(msg)}</div>
       </div>
     );
@@ -4735,7 +4788,7 @@ export function App() {
                     )}
                   </div>
                 )}
-                <div className="ai-chat-messages">
+                <div className="ai-chat-messages" ref={chatMessagesRef}>
                   {chatHistory.length === 0 && (
                     <div className="ai-chat-greeting">
                       <div className="ai-chat-msg-text">Tell me what you want to change. I can help with copy, layout, images, or planning.</div>
@@ -4768,7 +4821,11 @@ export function App() {
                     rows={1}
                   />
                   <button onClick={() => void aiAskSuggest()} disabled={aiProposalPending || !chatInput.trim()} className="ai-chat-send">Send</button>
-                  <button onClick={clearAiChat} className="ai-chat-clear" title="Clear conversation">Clear</button>
+                </div>
+                <div className="ai-chat-controls-bar">
+                  <button onClick={clearAiChat} className="ai-chat-clear" title="Clear current conversation">Clear Chat</button>
+                  {chatHistory.length > 0 && <button onClick={saveChat} className="ai-chat-save" title="Save chat to server">Save Chat</button>}
+                  {chatSaveStatus && <span className="ai-chat-save-status">{chatSaveStatus}</span>}
                   {chatHistory.length > 0 && <button onClick={() => void deleteChatHistory()} className="ai-chat-delete-history" title="Delete saved chat history">Delete History</button>}
                 </div>
               </div>

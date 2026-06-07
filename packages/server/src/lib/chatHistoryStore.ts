@@ -87,3 +87,13 @@ export function clearChatHistory(userId: string, projectPath?: string): void {
     save(store);
   }
 }
+
+export function replaceChatHistory(userId: string, projectPath: string | undefined, messages: PersistedChatItem[]): void {
+  const store = load();
+  if (!store[userId]) store[userId] = {};
+  const pk = projectKey(userId, projectPath);
+  store[userId][pk] = { messages: messages.slice(-MAX_MESSAGES_PER_PROJECT) };
+  save(store);
+}
+
+export { sanitizeChatText };
