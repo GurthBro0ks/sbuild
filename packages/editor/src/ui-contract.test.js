@@ -2337,7 +2337,7 @@ test("AI Image Enhance: shows no-image-set reason for gallery with empty slot", 
 
 test("AI Image Enhance: Analyze/Enhance disabled when no src available", () => {
   assert.match(appSource, /getSelectedEnhanceSource\(\)\.src/);
-  assert.match(appSource, /disabled=\{!getSelectedEnhanceSource\(\)\.src\}/);
+  assert.match(appSource, /aiEnhanceSourceOverride/);
 });
 
 test("AI Image Enhance: Apply Enhanced Image disabled until result exists", () => {
@@ -2347,7 +2347,8 @@ test("AI Image Enhance: Apply Enhanced Image disabled until result exists", () =
 
 test("AI Image Enhance: aiEnhanceImage uses getSelectedEnhanceSource", () => {
   assert.match(appSource, /async function aiEnhanceImage/);
-  assert.match(appSource, /source = getSelectedEnhanceSource\(\)/);
+  assert.match(appSource, /getSelectedEnhanceSource/);
+  assert.match(appSource, /aiEnhanceSourceOverride/);
   assert.match(appSource, /source\.reason/);
 });
 

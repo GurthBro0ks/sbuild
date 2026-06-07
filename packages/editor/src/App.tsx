@@ -483,7 +483,7 @@ function blockStyleToCss(block: Block): Record<string, string | number> {
     backgroundImage: (container.backgroundImage || s.backgroundImage) ? `url(${container.backgroundImage || s.backgroundImage})` : "",
     backgroundSize: (container.backgroundFit || s.backgroundSize) === "contain" ? "contain" : (container.backgroundFit || s.backgroundSize) === "fill" ? "100% 100%" : (container.backgroundFit || s.backgroundSize) === "repeat" ? "auto" : "cover",
     backgroundRepeat: s.backgroundImage ? "no-repeat" : "",
-    backgroundPosition: s.backgroundPosition || "center",
+    backgroundPosition: s.backgroundPosition || "center center",
     color: container.textColor || s.textColor || "var(--sbuild-text)",
     fontFamily: container.fontFamily || (s.fontFamily
       ? `'${s.fontFamily}', sans-serif`
@@ -1218,6 +1218,7 @@ export function App() {
   const [aiImgGenResult, setAiImgGenResult] = useState("");
   const [aiEnhanceType, setAiEnhanceType] = useState("enhance");
   const [aiEnhancePrompt, setAiEnhancePrompt] = useState("");
+  const [aiEnhanceSourceOverride, setAiEnhanceSourceOverride] = useState<string | null>(null);
   const [chatProvider, setChatProvider] = useState("auto");
   const [chatModel, setChatModel] = useState("");
   const [chatBaseUrl, setChatBaseUrl] = useState("");
@@ -2587,11 +2588,46 @@ export function App() {
   function aiUseImageInBlock() {
     if (!aiImgGenResult) return;
     const block = selectedBlock;
-    if (!block || (block.type !== "image" && block.type !== "hero" && block.type !== "gallery")) {
+    if (!block || (block.type !== "image" && block.type !== "hero" && block.type !== "gallery" && block.type !== "cards")) {
       setAiImgGenStatus("Select an image, hero, or gallery block first.");
       return;
     }
-    applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+    const placement = imageGenPlacement;
+    if (placement === "fit-block") {
+      if (block.type === "hero" || block.type === "cards") {
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "contain", backgroundPosition: "center" } }));
+      } else if (block.type === "image") {
+        patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as ImageBlockData), src: aiImgGenResult, alt: "AI generated image" }, styles: { ...(b.styles || {}), backgroundSize: "contain" } }));
+      } else {
+        applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+      }
+    } else if (placement === "fill-block") {
+      if (block.type === "hero" || block.type === "cards") {
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "fill", backgroundPosition: "center" } }));
+      } else {
+        patchSelectedBlock((b) => ({ ...b, data: { ...(b.data as ImageBlockData), src: aiImgGenResult, alt: "AI generated image" }, styles: { ...(b.styles || {}), backgroundSize: "fill" } }));
+      }
+    } else if (placement === "center-focal") {
+      if (block.type === "hero" || block.type === "cards") {
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "cover", backgroundPosition: "center center" } }));
+      } else {
+        applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+      }
+    } else if (placement === "top-center") {
+      if (block.type === "hero" || block.type === "cards") {
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "cover", backgroundPosition: "center top" } }));
+      } else {
+        applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+      }
+    } else if (placement === "bottom-center") {
+      if (block.type === "hero" || block.type === "cards") {
+        patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "cover", backgroundPosition: "center bottom" } }));
+      } else {
+        applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+      }
+    } else {
+      applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+    }
     setDirty(true);
     setLastAction("ai-use-image");
     setAiImgGenStatus("Image applied to selected block. Save to persist.");
@@ -2715,7 +2751,8 @@ export function App() {
   }
 
   async function aiEnhanceImage() {
-    const source = getSelectedEnhanceSource();
+    const overrideSrc = aiEnhanceSourceOverride;
+    const source = overrideSrc ? { kind: "override" as const, src: overrideSrc, label: "Generated image", reason: undefined } : getSelectedEnhanceSource();
     if (!source.src) {
       setAiEnhanceStatus(source.reason || "Select an image block, gallery image, or background first.");
       return;
@@ -2738,6 +2775,7 @@ export function App() {
       }
       setAiEnhanceResult(data.editedImageUrl);
       setAiEnhanceStatus("Enhanced image ready.");
+      setAiEnhanceSourceOverride(null);
     } catch (error) {
       setAiEnhanceStatus(`Image enhancement unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -2755,6 +2793,7 @@ export function App() {
     setAiEnhanceStatus("");
     setAiEnhanceResult("");
     setAiEnhancePrompt("");
+    setAiEnhanceSourceOverride(null);
   }
 
   function targetSummary(): string {
@@ -2806,7 +2845,7 @@ export function App() {
 
   function setSelectedBlockBackground(url: string) {
     if (!selectedBlock || !url) return;
-    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: url, backgroundSize: "cover", backgroundPosition: "center" } }));
+    patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: url, backgroundSize: "cover", backgroundPosition: "center center" } }));
     setStatus(selectedBlock.type === "hero" ? "Set as Hero background" : `Set as ${blockTypeLabels[selectedBlock.type] || selectedBlock.type} background`);
   }
 
@@ -2910,7 +2949,7 @@ export function App() {
       return;
     }
     if (selectedBlock?.type === "hero") {
-      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center" } }));
+      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center center" } }));
       return;
     }
     if (selectedBlock?.type === "gallery") {
@@ -2927,7 +2966,7 @@ export function App() {
       return;
     }
     if (selectedBlock?.type === "cards") {
-      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center" } }));
+      patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: nextImage, backgroundSize: "cover", backgroundPosition: "center center" } }));
       return;
     }
     const imgBlock = defaultBlock("image");
@@ -4524,7 +4563,7 @@ export function App() {
               <h3 style={{ margin: 0 }}>Image Manager</h3>
               <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
             </div>
-              <p className="panel-status">Upload, manage, and apply images</p>
+              <p className="panel-status">Upload, manage, and apply images. <strong>Library</strong> = all project image assets. <strong>Gallery</strong> = images placed in a gallery block on the website.</p>
 
               <div className="image-manager-upload">
                 <label>Upload image
@@ -4952,6 +4991,10 @@ export function App() {
                       <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
                       <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
                     </div>
+                    <p className="ai-hint" style={{ fontSize: "11px", color: "var(--editor-muted)", margin: "4px 0 0" }}>
+                      <strong>Image Library</strong> = all uploaded/generated assets for this project.
+                      <strong> Gallery</strong> = images displayed in a gallery block on the website.
+                    </p>
                   </div>
                 </div>
                 <div className="ai-card ai-card-presets">
@@ -4972,12 +5015,15 @@ export function App() {
                     <div className="ai-preset-group">
                       <label>Placement</label>
                       <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
-                        <option value="block-background">Use as block background</option>
+                        <option value="block-background">Use as block background (cover)</option>
                         <option value="selected-image">Use as selected image</option>
-                        <option value="fit-block">Fit to selected block</option>
-                        <option value="fill-block">Fill selected block</option>
+                        <option value="fit-block">Fit to selected block (contain)</option>
+                        <option value="fill-block">Fill selected block (stretch)</option>
                         <option value="add-to-gallery">Add to gallery</option>
                         <option value="save-library">Save to library only</option>
+                        <option value="center-focal">Center focal point</option>
+                        <option value="top-center">Top center crop</option>
+                        <option value="bottom-center">Bottom center crop</option>
                       </select>
                     </div>
                   </div>
@@ -4992,7 +5038,7 @@ export function App() {
                   <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
                   <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
                   <button onClick={clearAiImageGen}>Clear</button>
-                  <button onClick={() => { void openGalleryManager(); }} title="Open Gallery Manager">Gallery Manager</button>
+                  <button onClick={() => { void openGalleryManager(); }} title="Manage all project images (library) and gallery block images">Gallery Manager</button>
                 </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
@@ -5002,9 +5048,10 @@ export function App() {
                       <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />
                       <div className="ai-preview-actions">
                         <button onClick={aiUseImageInBlock} disabled={!hasSelectedImageTarget()}>Use in Selected Block</button>
-                        <button onClick={() => { void aiSaveImageToLibrary(); }}>Save to Library</button>
-                        <button onClick={() => { void aiAddImageToGallery(); }}>Add to Gallery</button>
+                        <button onClick={() => { void aiSaveImageToLibrary(); }} title="Save this image to your project library for later use">Save to Library</button>
+                        <button onClick={() => { void aiAddImageToGallery(); }} title="Add this image to the selected gallery block on the website">Add to Gallery</button>
                         <button onClick={() => void aiGenerateImage()}>Regenerate</button>
+                        <button onClick={() => { setAiEnhanceSourceOverride(aiImgGenResult); setAiTopMenuTab("image-enhance"); }} title="Open this image in AI Image Enhance for edits">Edit/Enhance This Image</button>
                       </div>
                     </div>
                   </div>
@@ -5013,6 +5060,19 @@ export function App() {
             )}
             {aiTopMenuTab === "image-enhance" && (
               <div className="ai-panel-tab-content">
+                {aiEnhanceSourceOverride && (
+                  <div className="ai-card ai-card-source" style={{ borderColor: "var(--editor-accent)" }}>
+                    <div className="ai-card-label">Source Image (from generated image)</div>
+                    <div className="ai-card-body">
+                      <div className="ai-source-detail">
+                        <span className="ai-source-name">Generated image</span>
+                        <img src={aiEnhanceSourceOverride} alt="Source" className="ai-source-thumb" />
+                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Use selected block instead</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!aiEnhanceSourceOverride && (
                 <div className="ai-card ai-card-source">
                   <div className="ai-card-label">Source Image</div>
                   <div className="ai-card-body">
@@ -5031,6 +5091,7 @@ export function App() {
                     })()}
                   </div>
                 </div>
+                )}
                 <div className="ai-card ai-card-options">
                   <div className="ai-card-label">Enhancement</div>
                   <div className="ai-card-body">
@@ -5039,15 +5100,20 @@ export function App() {
                       <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
                         <option value="enhance">Enhance</option>
                         <option value="black-white">Black &amp; White</option>
-                        <option value="cleanup">Cleanup</option>
+                        <option value="brighten">Brighten</option>
+                        <option value="sharpen">Sharpen</option>
+                        <option value="color-pop">Color Pop</option>
+                        <option value="soften-bg">Soften Background</option>
                         <option value="crop-fit">Crop/Fit</option>
+                        <option value="square-crop">Square Crop</option>
+                        <option value="wide-hero-crop">Wide Hero Crop</option>
                       </select>
                     </div>
                     <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." />
                   </div>
                 </div>
                 <div className="ai-card-actions">
-                  <button className="ai-action-primary" onClick={() => void aiEnhanceImage()} disabled={!getSelectedEnhanceSource().src}>Analyze/Enhance</button>
+                  <button className="ai-action-primary" onClick={() => void aiEnhanceImage()} disabled={!(aiEnhanceSourceOverride || getSelectedEnhanceSource().src)}>Analyze/Enhance</button>
                   <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
                   <button onClick={clearAiEnhance}>Clear</button>
                 </div>
@@ -5074,6 +5140,7 @@ export function App() {
           <div className="modal gallery-manager-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Image Gallery Manager</h3>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>All uploaded and generated images for this project (image library).</p>
               <button className="modal-close" onClick={() => setGalleryManagerOpen(false)} aria-label="Close Gallery Manager">✕</button>
             </div>
             <div className="gallery-manager-toolbar">

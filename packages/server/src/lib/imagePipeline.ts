@@ -133,9 +133,24 @@ export async function applyLocalEditWithSharp(options: {
     case "enhance":
       pipeline = pipeline.normalize().modulate({ brightness: 1.05, saturation: 1.08 }).sharpen();
       break;
+    case "brighten":
+      pipeline = pipeline.modulate({ brightness: 1.18 }).normalize();
+      break;
+    case "sharpen":
+      pipeline = pipeline.sharpen();
+      break;
     case "color-pop":
       pipeline = pipeline.modulate({ saturation: 1.25, brightness: 1.03 }).sharpen();
       break;
+    case "soften-bg":
+      pipeline = pipeline.modulate({ brightness: 0.98 }).blur(0.6).normalize();
+      break;
+    case "square-crop":
+      pipeline = pipeline.resize(options.outputWidth, options.outputWidth, { fit: "cover" });
+      return pipeline.png().toBuffer();
+    case "wide-hero-crop":
+      pipeline = pipeline.resize(Math.max(options.outputWidth, 1536), 1024, { fit: "cover" });
+      return pipeline.png().toBuffer();
     case "crop-fit":
       break;
     default:

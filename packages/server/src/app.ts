@@ -892,6 +892,36 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         return;
       }
     }
+    if (isCasualOffTopic(prompt)) {
+      const casualAnswer = answerCasualOffTopic(prompt);
+      const username = auth.enabled ? (() => {
+        const session = getSession(req);
+        return session ? session.u : null;
+      })() : "dev";
+      if (username) {
+        const persistedItems: PersistedChatItem[] = [
+          { role: "user", text: prompt, timestamp: Date.now() },
+          { role: "assistant", text: casualAnswer, timestamp: Date.now(), provider: "local", model: "casual-router", source: "local", latencyMs: 0 }
+        ];
+        appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
+      }
+      res.json({
+        ok: true,
+        suggestion: casualAnswer,
+        provider: "local",
+        model: "casual-router",
+        message: "Casual/off-topic response",
+        source: "local",
+        latencyMs: 0,
+        isLocal: true,
+        proposal: null,
+        hasProposal: false,
+        targetKind,
+        blockId,
+        blockType
+      });
+      return;
+    }
     const contextPrefix = targetKind === "site"
       ? "You are editing the whole website project. "
       : targetKind === "page"
@@ -1644,6 +1674,39 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return false;
   }
 
+  function isCasualOffTopic(prompt: string): boolean {
+    const trimmed = prompt.trim().toLowerCase();
+    const casualPatterns = [
+      /\b(do you like|do you prefer|do you enjoy|do you love|do you hate)\b/,
+      /\b(what['']?s your favorite|what['']?s your (least )?favorite)\b/,
+      /\b(tell me a joke|tell me a story|sing|dance|play)\b/,
+      /\b(how are you|how do you feel|what do you think about)\b/,
+      /\b(pickles|pizza|weather|sports team|movie|song|music|food|recipe|cook)\b/,
+      /\b(who (is|are|was|were) .*(president|mayor|governor|ceo))\b/,
+      /\b(what (is|was|are|were) .*(capital|population|tallest|longest|biggest))\b/
+    ];
+    const hasSiteEditKeywords = /\b(site|page|block|website|heading|title|description|text|copy|layout|image|hero|section|footer|header|nav|gallery|card|button|cta|background|font|color|style|content|paragraph|subheading|tagline|blurb|intro|body|title)\b/i.test(trimmed);
+    if (hasSiteEditKeywords) return false;
+    for (const pattern of casualPatterns) {
+      if (pattern.test(trimmed)) return true;
+    }
+    return false;
+  }
+
+  function answerCasualOffTopic(prompt: string): string {
+    const trimmed = prompt.trim().toLowerCase();
+    if (/^(do you like|do you prefer|do you enjoy|do you love|do you hate)/i.test(trimmed)) {
+      return "That's outside what I do — I'm focused on helping you build and edit your website. Want help with copy, layout, or images instead?";
+    }
+    if (/^(tell me a joke|tell me a story|sing|dance|play)/i.test(trimmed)) {
+      return "I'm here to help with your website. Ask me to write copy, suggest layouts, or edit images!";
+    }
+    if (/^(how are you|how do you feel)/i.test(trimmed)) {
+      return "I'm ready to help with your website. What would you like to work on?";
+    }
+    return "That's outside my scope — I help with website building and editing. Want to work on your site's copy, layout, or images?";
+  }
+
   function inferTargetField(prompt: string, blockType: string): string | undefined {
     const lower = prompt.toLowerCase();
     const headingWords = /\b(title|heading|headline|head line)\b/;
@@ -1759,10 +1822,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             "Give short, direct, plain-text answers.",
             "Do NOT wrap your answer in JSON unless the user explicitly asks for JSON.",
             "Do NOT include your reasoning process or thinking steps.",
-            "Do NOT describe or explain what a block, section, or page does. Instead, write the actual website copy that will appear on the page.",
-            "Do NOT say things like 'The hero block showcases...' or 'This section features...'. Write the actual text the visitor will read.",
-            "When asked to write description, subheading, body, or intro text, output ONLY the replacement text — no labels, no explanation, no meta-commentary.",
-            "If suggesting a replacement for block text, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
+            "CRITICAL: When asked to write website copy (headline, description, subheading, body, tagline, intro, blurb, about text, or any on-page text), output ONLY the actual words a website visitor would read. No labels, no explanations, no meta-commentary.",
+            "BAD examples (never do this): 'The hero block showcases our latest product launch...', 'This section features a call to action...', 'Here is a suggested description: ...', 'A great headline would be: ...'",
+            "GOOD examples: 'Fresh eggs, seasonal produce, and small-batch farm goods grown close to home.', 'Hand-picked daily from our fields to your table.'",
+            "When suggesting replacement copy, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
             "Otherwise answer normally with plain text."
           ].join(" ");
           const controller = new AbortController();

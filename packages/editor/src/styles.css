@@ -1020,6 +1020,10 @@ button:disabled {
 
 /* ===== BLOCK IMAGES ===== */
 .block-image { width: 100%; border-radius: 10px; }
+.block-shell section {
+  background-origin: border-box;
+  background-clip: border-box;
+}
 .image-placeholder {
   min-height: 120px;
   border: 1px dashed #b0b8d0;
@@ -2077,6 +2081,12 @@ button:disabled {
   .canvas-frame.phone,
   .canvas-frame.tablet {
     max-width: 100%;
+  }
+
+  .block-shell section {
+    background-size: cover !important;
+    background-origin: border-box;
+    background-clip: border-box;
   }
 
   .canvas-frame.phone .row-shell.stack .row-grid {

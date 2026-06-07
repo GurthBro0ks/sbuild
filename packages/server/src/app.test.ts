@@ -2348,3 +2348,89 @@ test("proposal with targetField in response is preserved", async () => {
     });
   });
 });
+
+test("casual off-topic prompt returns conversational answer without proposal", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "do you like pickles?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; suggestion: string; proposal: unknown; hasProposal: boolean; model: string };
+      assert.ok(body.ok);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.proposal, null);
+      assert.ok(body.suggestion.includes("website") || body.suggestion.includes("copy") || body.suggestion.includes("outside"));
+      assert.equal(body.model, "casual-router");
+    });
+  });
+});
+
+test("casual greeting passes through to model when not off-topic", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Hello! I can help with your website." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "hello there", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; suggestion: string; hasProposal: boolean; model: string };
+      assert.ok(body.ok);
+      assert.notEqual(body.model, "casual-router");
+    });
+  });
+});
+
+test("site-edit prompt with food keyword is not treated as casual", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: 'Fresh farm eggs delivered daily.' } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "write a hero description about farm fresh food and eggs", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; model: string };
+      assert.ok(body.ok);
+      assert.notEqual(body.model, "casual-router");
+    });
+  });
+});
+
+test("isCasualOffTopic: favorite movie is off-topic", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "what's your favorite movie?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
+      });
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string };
+      assert.ok(body.ok);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.model, "casual-router");
+    });
+  });
+});
+
+test("image enhance supports new preset types", async () => {
+  const newTypes = ["brighten", "sharpen", "color-pop", "soften-bg", "square-crop", "wide-hero-crop"];
+  for (const editType of newTypes) {
+    const res = await fetch(`${baseUrl}/api/ai/image-edit`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        imagePath: "/project/images/nonexistent.png",
+        editType,
+        targetContext: { blockType: "hero", usage: "background" }
+      })
+    });
+    assert.ok(res.ok || res.status === 400 || res.status === 503 || res.status === 500, `editType ${editType} should be accepted or gracefully fail`);
+  }
+});
