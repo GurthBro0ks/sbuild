@@ -28,6 +28,8 @@ function isLikelyMaskedOrTestKey(value: string): boolean {
   if (!v) return true;
   if (v === "****") return true;
   if (/\.{3,}/.test(v)) return true;
+  if (/[\u2022\u2027\u00B7]{3,}/.test(v)) return true;
+  if (/\*\*\*\*/.test(v)) return true;
   if (/^sk-(test|admin-test|demo|local|fake|mock|placeholder|example)/i.test(v)) return true;
   if (/^local-(chat|image|gen)-/i.test(v)) return true;
   if (/-status$/.test(v) || /-demo$/.test(v)) return true;
@@ -298,13 +300,17 @@ async function listImagesRecursive(baseDir: string, current = ""): Promise<Image
     const stat = await fs.stat(filePath);
     const urlPath = `/project/images/${next.replace(/\\/g, "/")}`;
     const extension = path.extname(entry.name).toLowerCase();
+    const isRenderable = renderableExtensions.has(extension);
+    if (!isRenderable) continue;
+    if (entry.name.startsWith(".")) continue;
+    if (stat.size === 0 && entry.name.toLowerCase() === ".gitkeep") continue;
     out.push({
       name: entry.name,
       url: urlPath,
       folder: current.replace(/\\/g, "/") || "root",
       extension,
       contentType: inferContentType(extension),
-      isRenderableImage: renderableExtensions.has(extension),
+      isRenderableImage: isRenderable,
       size: stat.size,
       modified: stat.mtime.toISOString(),
       isEdited: current.replace(/\\/g, "/").startsWith("edited")

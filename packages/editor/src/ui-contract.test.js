@@ -23,12 +23,12 @@ test("image manager labels gallery add and replace actions explicitly", () => {
   assert.match(appSource, /Select an Image block or Gallery image slot to use this as image content\./);
 });
 
-test("image library exposes tab structure with Library, Upload, and Settings", () => {
+test("image library exposes tab structure with Browse, Upload, and Settings", () => {
   assert.match(appSource, /data-testid="image-library-tabs"/);
-  assert.match(appSource, /data-testid="image-library-tab-library"/);
+  assert.match(appSource, /data-testid="image-library-tab-browse"/);
   assert.match(appSource, /data-testid="image-library-tab-upload"/);
   assert.match(appSource, /data-testid="image-library-tab-settings"/);
-  assert.match(appSource, /imageLibraryTab === "library"/);
+  assert.match(appSource, /imageLibraryTab === "browse"/);
   assert.match(appSource, /imageLibraryTab === "upload"/);
   assert.match(appSource, /imageLibraryTab === "settings"/);
 });
@@ -45,6 +45,13 @@ test("image library provides multi-select delete with confirmation", () => {
   assert.match(appSource, /\/api\/images/);
 });
 
+test("image library filters out non-renderable entries (.gitkeep) on load", () => {
+  assert.match(appSource, /isRenderableImageMeta/);
+  assert.match(appSource, /RENDERABLE_IMAGE_EXTENSIONS/);
+  assert.match(cssSource, /\.image-card-checkbox/);
+  assert.match(cssSource, /\.image-card\.multi-selected/);
+});
+
 test("image library selected image action modal exposes Actions/Details/History", () => {
   assert.match(appSource, /data-testid="image-action-modal"/);
   assert.match(appSource, /imageActionTab === "actions"/);
@@ -54,9 +61,60 @@ test("image library selected image action modal exposes Actions/Details/History"
   assert.match(appSource, /data-testid="image-action-history"/);
 });
 
+test("dedicated image edit modal opens with locked source and full options", () => {
+  assert.match(appSource, /data-testid="image-edit-modal"/);
+  assert.match(appSource, /data-testid="image-edit-modal-source"/);
+  assert.match(appSource, /data-testid="image-edit-modal-source-thumb"/);
+  assert.match(appSource, /data-testid="image-edit-modal-type-select"/);
+  assert.match(appSource, /data-testid="image-edit-modal-instruction"/);
+  assert.match(appSource, /data-testid="image-edit-modal-run"/);
+  assert.match(appSource, /data-testid="image-edit-modal-save-to-library"/);
+  assert.match(appSource, /openImageEditModal/);
+  assert.match(appSource, /closeImageEditModal/);
+  assert.match(appSource, /cancelImageEditModal/);
+});
+
+test("dedicated image edit modal offers 9 edit types", () => {
+  assert.match(appSource, /value="enhance"[^>]*>Enhance/);
+  assert.match(appSource, /value="brighten"[^>]*>Brighten/);
+  assert.match(appSource, /value="sharpen"[^>]*>Sharpen/);
+  assert.match(appSource, /value="color-pop"[^>]*>Color Pop/);
+  assert.match(appSource, /value="black-white"[^>]*>Black/);
+  assert.match(appSource, /value="soften-bg"[^>]*>Soften/);
+  assert.match(appSource, /value="crop-fit"[^>]*>Crop\/Fit/);
+  assert.match(appSource, /value="square-crop"[^>]*>Square/);
+  assert.match(appSource, /value="wide-hero-crop"[^>]*>Wide/);
+});
+
+test("AI image gen post-generation offers 'Edit image' opening the dedicated modal", () => {
+  assert.match(appSource, /data-testid="open-image-edit-modal-from-gen"/);
+  assert.match(appSource, /openImageEditModal\(aiImgGenResult, "Generated image"\)/);
+});
+
 test("image library hide-blank filter remains available for white/blank cleanup", () => {
   assert.match(appSource, /Hide likely blank\/white/);
   assert.match(appSource, /hide-blank/);
+});
+
+test("AI chat auto-scrolls to latest message on open and on new messages", () => {
+  assert.match(appSource, /scrollChatToBottom/);
+  assert.match(appSource, /requestAnimationFrame/);
+  assert.match(appSource, /aiTopMenuOpen[\s\S]{0,200}aiTopMenuTab === "chat"/);
+  assert.match(appSource, /chatHistory\.map\(\(m\) => m\.id\)\.join/);
+});
+
+test("chat-log CSS uses max-height 320px and supports smooth scroll", () => {
+  assert.match(cssSource, /\.chat-log[\s\S]{0,400}max-height:\s*320px/);
+  assert.match(cssSource, /\.chat-log[\s\S]{0,400}overflow-y:\s*auto/);
+});
+
+test("dedicated image edit modal CSS exists for desktop and mobile", () => {
+  assert.match(cssSource, /\.image-edit-modal-backdrop/);
+  assert.match(cssSource, /\.image-edit-modal/);
+  assert.match(cssSource, /\.image-edit-modal-source-thumb/);
+  assert.match(cssSource, /\.image-edit-modal-preview-image/);
+  assert.match(cssSource, /\.image-edit-modal-primary/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1500}\.image-edit-modal[\s\S]{0,200}width:\s*100vw/);
 });
 
 test("mobile AI panel uses dynamic viewport height and allows internal scrolling", () => {
@@ -289,12 +347,13 @@ test("saving chat provider keeps image key labels unchanged", () => {
 });
 
 test("image enhance source lock keeps generated image source across actions", () => {
-  assert.match(appSource, /setAiEnhanceSourceOverride\(aiImgGenResult\)/);
+  assert.match(appSource, /openImageEditModal\(aiImgGenResult,\s*"Generated image"\)/);
   assert.match(appSource, /setAiEnhanceSourceOverride\(data\.editedImageUrl\)/);
   assert.match(appSource, /Source: Generated image/);
   assert.match(appSource, /Source: Image Library/);
   assert.match(appSource, /Source: Selected block background/);
   assert.match(appSource, /Enhanced image applied\. Save to persist\./);
+  assert.match(appSource, /imageEditSnapshot/);
 });
 
 test("builder UI theme sync uses server preferences endpoint", () => {

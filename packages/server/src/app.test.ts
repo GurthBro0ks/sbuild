@@ -2785,3 +2785,201 @@ test("selected block child context is included when calling AI chat for cards bl
     });
   });
 });
+
+test("masked UI placeholder cannot overwrite a real saved Image Generation API key", async () => {
+  await withNoOpenAIKey(async () => {
+    const realKey = `sk-itest-real-image-${Date.now()}-abcdefghijklmn1234567890`;
+    const saveReal = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realKey })
+    });
+    assert.equal(saveReal.status, 200);
+
+    const maskedAttempts = ["****", "sk-p...wxyz", "sk-p•••wxyz", "sk-abcd...wxyz"];
+    for (const attempt of maskedAttempts) {
+      const res = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageGenApiKey: attempt })
+      });
+      assert.equal(res.status, 200, `masked attempt should be accepted (silently dropped): ${attempt}`);
+    }
+
+    const status = await fetch(`${baseUrl}/api/secrets/status`);
+    const body = await status.json() as { imageGen?: { configured: boolean; source: string; maskedKey?: string | null } };
+    const expectedMask = `${realKey.slice(0, 4)}...${realKey.slice(-4)}`;
+    assert.equal(body.imageGen?.configured, true);
+    assert.equal(body.imageGen?.maskedKey, expectedMask, "real key must survive masked placeholder attempts");
+  });
+});
+
+test("saving one channel cannot clobber the other channels", async () => {
+  await withNoOpenAIKey(async () => {
+    const realImage = `sk-itest-img-persist-${Date.now()}-abcdefghijklmn1234567890`;
+    const realAnalyze = `sk-itest-anlz-persist-${Date.now()}-abcdefghijklmn1234567890`;
+    const realChat = `sk-itest-chat-persist-${Date.now()}-abcdefghijklmn1234567890`;
+
+    await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realImage, imageAnalyzeApiKey: realAnalyze, chatApiKey: realChat })
+    });
+
+    await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realImage })
+    });
+
+    const status = await fetch(`${baseUrl}/api/secrets/status`);
+    const body = await status.json() as {
+      imageGen?: { maskedKey?: string | null };
+      imageAnalyze?: { maskedKey?: string | null };
+      chat?: { maskedKey?: string | null };
+    };
+    assert.equal(body.imageGen?.maskedKey, `${realImage.slice(0, 4)}...${realImage.slice(-4)}`);
+    assert.equal(body.imageAnalyze?.maskedKey, `${realAnalyze.slice(0, 4)}...${realAnalyze.slice(-4)}`);
+    assert.equal(body.chat?.maskedKey, `${realChat.slice(0, 4)}...${realChat.slice(-4)}`);
+  });
+});
+
+test("saving chat provider config does not overwrite image channel secrets", async () => {
+  await withNoOpenAIKey(async () => {
+    const realImage = `sk-itest-img-keep-${Date.now()}-abcdefghijklmn1234567890`;
+    const realAnalyze = `sk-itest-anlz-keep-${Date.now()}-abcdefghijklmn1234567890`;
+    await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realImage, imageAnalyzeApiKey: realAnalyze })
+    });
+
+    await fetch(`${baseUrl}/api/ai/providers/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "ollama", model: "qwen2.5:1.5b" })
+    });
+
+    const status = await fetch(`${baseUrl}/api/secrets/status`);
+    const body = await status.json() as {
+      imageGen?: { maskedKey?: string | null };
+      imageAnalyze?: { maskedKey?: string | null };
+    };
+    assert.equal(body.imageGen?.maskedKey, `${realImage.slice(0, 4)}...${realImage.slice(-4)}`);
+    assert.equal(body.imageAnalyze?.maskedKey, `${realAnalyze.slice(0, 4)}...${realAnalyze.slice(-4)}`);
+  });
+});
+
+test("service restart preserves ignored secret config", async () => {
+  await withNoOpenAIKey(async () => {
+    const realKey = `sk-itest-restart-${Date.now()}-abcdefghijklmn1234567890`;
+    await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realKey })
+    });
+
+    const savedAuthUsername = process.env.SBUILD_AUTH_USERNAME;
+    const savedAuthPassword = process.env.SBUILD_AUTH_PASSWORD_HASH;
+    const savedSessionSecret = process.env.SBUILD_SESSION_SECRET;
+    delete process.env.SBUILD_AUTH_USERNAME;
+    delete process.env.SBUILD_AUTH_PASSWORD_HASH;
+    delete process.env.SBUILD_SESSION_SECRET;
+
+    const app2 = createApp();
+    const server2 = app2.listen(0);
+    await new Promise<void>((resolve) => server2.once("listening", () => resolve()));
+    const addr2 = server2.address() as AddressInfo;
+    const url2 = `http://127.0.0.1:${addr2.port}`;
+    try {
+      const status = await fetch(`${url2}/api/secrets/status`);
+      assert.equal(status.status, 200);
+      const body = await status.json() as { imageGen?: { configured?: boolean; maskedKey?: string | null } };
+      assert.equal(body.imageGen?.configured, true, "newly created server should see the saved key");
+      assert.equal(body.imageGen?.maskedKey, `${realKey.slice(0, 4)}...${realKey.slice(-4)}`);
+    } finally {
+      await new Promise<void>((resolve, reject) => server2.close((err) => err ? reject(err) : resolve()));
+      if (savedAuthUsername !== undefined) process.env.SBUILD_AUTH_USERNAME = savedAuthUsername;
+      if (savedAuthPassword !== undefined) process.env.SBUILD_AUTH_PASSWORD_HASH = savedAuthPassword;
+      if (savedSessionSecret !== undefined) process.env.SBUILD_SESSION_SECRET = savedSessionSecret;
+    }
+  });
+});
+
+test("test fixture key cannot become a default runtime key", async () => {
+  await withNoOpenAIKey(async () => {
+    const testKeys = ["sk-test", "sk-admin-test", "sk-demo", "sk-local", "sk-fake", "sk-mock", "sk-placeholder", "sk-example"];
+    for (const k of testKeys) {
+      await fetch(`${baseUrl}/api/secrets/image-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageGenApiKey: k })
+      });
+    }
+    const status = await fetch(`${baseUrl}/api/secrets/status`);
+    const body = await status.json() as { imageGen?: { configured: boolean; maskedKey?: string | null } };
+    assert.equal(body.imageGen?.configured, false, "no real key was saved, so imageGen should be unconfigured");
+    assert.equal(body.imageGen?.maskedKey, null, "masked key must remain null after test fixture attempts");
+  });
+});
+
+test("local-chat-...-status / local-image-...-status / local-key-...-demo patterns cannot pollute runtime config", async () => {
+  await withNoOpenAIKey(async () => {
+    const stamp = Date.now();
+    const attempts = [
+      `local-chat-${stamp}-status`,
+      `local-image-${stamp}-demo`,
+      `local-key-${stamp}-status`,
+      `local-chat-${stamp}-demo`
+    ];
+    for (const k of attempts) {
+      await fetch(`${baseUrl}/api/secrets/image-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageGenApiKey: k })
+      });
+    }
+    const status = await fetch(`${baseUrl}/api/secrets/status`);
+    const body = await status.json() as { imageGen?: { configured: boolean; maskedKey?: string | null } };
+    assert.equal(body.imageGen?.configured, false);
+    assert.equal(body.imageGen?.maskedKey, null);
+  });
+});
+
+test("project.json never receives raw key material during image key save", async () => {
+  await withNoOpenAIKey(async () => {
+    const before = await fs.readFile(projectFile, "utf8");
+    const realKey = `sk-itest-no-project-${Date.now()}-abcdefghijklmn1234567890`;
+    await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realKey, imageAnalyzeApiKey: realKey, chatApiKey: realKey })
+    });
+    const after = await fs.readFile(projectFile, "utf8");
+    assert.equal(after.includes(realKey), false, "raw key must not appear in project.json");
+    assert.equal(before, after, "project.json must be byte-identical after saving image keys");
+  });
+});
+
+test("chat provider config masked key attempt cannot overwrite real chat key", async () => {
+  await withNoOpenAIKey(async () => {
+    const realChat = `sk-itest-real-chat-${Date.now()}-abcdefghijklmn1234567890`;
+    await fetch(`${baseUrl}/api/ai/providers/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: realChat })
+    });
+
+    const masked = `sk-p...wxyz`;
+    const res = await fetch(`${baseUrl}/api/ai/providers/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: masked })
+    });
+    assert.equal(res.status, 200);
+
+    const configRes = await fetch(`${baseUrl}/api/ai/providers/config`);
+    const config = await configRes.json() as { maskedApiKey?: string | null };
+    assert.equal(config.maskedApiKey, `${realChat.slice(0, 4)}...${realChat.slice(-4)}`);
+  });
+});

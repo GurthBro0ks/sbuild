@@ -95,9 +95,22 @@ type AiPanelRect = { x: number; y: number; width: number; height: number };
 type AiPanelDragState = { pointerId: number; offsetX: number; offsetY: number } | null;
 type AiPanelResizeHandle = "corner";
 type AiPanelResizeState = { pointerId: number; handle: AiPanelResizeHandle; startX: number; startY: number; startWidth: number; startHeight: number } | null;
-type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean };
+type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean; extension?: string; isRenderableImage?: boolean };
 type ImageLibraryFilter = "all" | "hide-blank" | "hide-tall" | "generated" | "uploaded" | "used";
 type ImageTileFit = "cover" | "contain";
+
+const RENDERABLE_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]);
+
+function isRenderableImageMeta(meta: ImageMeta): boolean {
+  if (meta.isRenderableImage === true) return true;
+  if (meta.isRenderableImage === false) return false;
+  if (typeof meta.extension === "string" && meta.extension) {
+    return RENDERABLE_IMAGE_EXTENSIONS.has(meta.extension.toLowerCase());
+  }
+  if (typeof meta.name === "string" && meta.name.startsWith(".")) return false;
+  if (typeof meta.size === "number" && meta.size === 0) return false;
+  return true;
+}
 type ImageDiagnostics = { width: number; height: number; likelyWhite: boolean; likelyTallCapture: boolean };
 type RowRenderItem = { kind: "single"; block: Block } | { kind: "row"; rowId: string; blocks: Block[] };
 
@@ -1304,6 +1317,12 @@ export function App() {
   const [aiEnhanceType, setAiEnhanceType] = useState("enhance");
   const [aiEnhancePrompt, setAiEnhancePrompt] = useState("");
   const [aiEnhanceSourceOverride, setAiEnhanceSourceOverride] = useState<string | null>(null);
+  const [aiEnhanceSourceLabel, setAiEnhanceSourceLabel] = useState<string>("");
+  const [imageEditModalOpen, setImageEditModalOpen] = useState(false);
+  const [imageEditModalTab, setImageEditModalTab] = useState<"options" | "preview" | "history">("options");
+  const [imageEditSnapshot, setImageEditSnapshot] = useState<{ src: string; label: string; openedAt: number } | null>(null);
+  const [imageEditApplied, setImageEditApplied] = useState(false);
+  const [imageEditCustomInstruction, setImageEditCustomInstruction] = useState("");
   const [chatProvider, setChatProvider] = useState("auto");
   const [chatModel, setChatModel] = useState("");
   const [chatBaseUrl, setChatBaseUrl] = useState("");
@@ -1317,7 +1336,7 @@ export function App() {
   const [imageDiagnostics, setImageDiagnostics] = useState<Record<string, ImageDiagnostics>>({});
   const [providerConfigSaved, setProviderConfigSaved] = useState(false);
   const [aiEnhanceStatus, setAiEnhanceStatus] = useState("");
-  const [imageLibraryTab, setImageLibraryTab] = useState<"library" | "upload" | "settings">("library");
+  const [imageLibraryTab, setImageLibraryTab] = useState<"browse" | "upload" | "settings">("browse");
   const [selectedImageUrls, setSelectedImageUrls] = useState<Set<string>>(new Set());
   const [imageActionPanelOpen, setImageActionPanelOpen] = useState(false);
   const [imageActionTab, setImageActionTab] = useState<"actions" | "details" | "history">("actions");
@@ -1948,10 +1967,20 @@ export function App() {
   async function loadImages() {
     try {
       const data = await fetchJson<{ ok: boolean; images: ImageMeta[]; folder?: string }>("/api/images");
-      const next = data.images || [];
+      const all = data.images || [];
+      const next = all.filter((img) => isRenderableImageMeta(img));
       setUploadedImages(next);
       if (data.folder) setPhotoFolder(data.folder);
-      if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0].url);
+      setSelectedImageUrls((prev) => {
+        const known = new Set(next.map((img) => img.url));
+        const filtered = Array.from(prev).filter((url) => known.has(url));
+        return filtered.length === prev.size ? prev : new Set(filtered);
+      });
+      if (selectedUploadImage && !next.some((img) => img.url === selectedUploadImage)) {
+        setSelectedUploadImage(next[0]?.url || "");
+      } else if (!selectedUploadImage && next.length > 0) {
+        setSelectedUploadImage(next[0].url);
+      }
     } catch { setUploadedImages([]); }
   }
 
@@ -2392,12 +2421,49 @@ export function App() {
   }
 
   function scrollChatToBottom() {
+    if (!chatMessagesRef.current) return;
+    chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
     setTimeout(() => {
       if (chatMessagesRef.current) {
         chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
       }
-    }, 50);
+    }, 16);
+    setTimeout(() => {
+      if (chatMessagesRef.current) {
+        chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+      }
+    }, 120);
   }
+
+  useEffect(() => {
+    if (aiTopMenuTab !== "chat") return;
+    scrollChatToBottom();
+  }, [aiTopMenuTab, chatHistory.length, aiProposalPending]);
+
+  useEffect(() => {
+    if (aiTopMenuTab !== "chat" || !aiTopMenuOpen) return;
+    const last = chatHistory[chatHistory.length - 1];
+    if (!last) return;
+    const id = last.id;
+    requestAnimationFrame(() => {
+      if (chatMessagesRef.current) {
+        chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+      }
+    });
+    const t = setTimeout(() => {
+      if (chatMessagesRef.current) {
+        chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [chatHistory.map((m) => m.id).join("|"), aiTopMenuOpen, aiTopMenuTab]);
+
+  useEffect(() => {
+    if (!aiTopMenuOpen) return;
+    if (aiTopMenuTab === "chat") {
+      scrollChatToBottom();
+    }
+  }, [aiTopMenuOpen, aiTopMenuTab]);
 
   function resetAiPanelPosition() {
     setAiPanelRect(defaultAiPanelRect());
@@ -2647,6 +2713,9 @@ export function App() {
           latencyMs: m.latencyMs
         }));
         setChatHistory(items);
+        if (aiTopMenuTab === "chat") {
+          scrollChatToBottom();
+        }
       }
     } catch {
       // silently ignore - history is optional
@@ -2965,6 +3034,32 @@ export function App() {
     setDirty(true);
     setLastAction("ai-apply-enhance");
     setAiEnhanceStatus("Enhanced image applied. Save to persist.");
+    setImageEditApplied(true);
+  }
+
+  function openImageEditModal(src: string, label: string) {
+    setAiEnhanceSourceOverride(src);
+    setAiEnhanceSourceLabel(label);
+    setAiEnhanceResult("");
+    setAiEnhanceStatus("");
+    setAiEnhanceType("enhance");
+    setImageEditSnapshot({ src, label, openedAt: Date.now() });
+    setImageEditApplied(false);
+    setImageEditModalTab("options");
+    setImageEditModalOpen(true);
+  }
+
+  function closeImageEditModal() {
+    setImageEditModalOpen(false);
+  }
+
+  function cancelImageEditModal() {
+    setImageEditModalOpen(false);
+    setImageEditSnapshot(null);
+    setAiEnhanceResult("");
+    setAiEnhanceStatus("");
+    setAiEnhanceType("enhance");
+    setImageEditCustomInstruction("");
   }
 
   function clearAiEnhance() {
@@ -3389,8 +3484,19 @@ export function App() {
         </div>
         <div className="image-action-stack">
           <h4>Edit Selected Image</h4>
-          <button disabled={!hasImage} onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Enhance</button>
-          <button disabled={!hasImage} onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Black &amp; white</button>
+          <button
+            data-testid="open-image-edit-modal"
+            disabled={!hasImage}
+            onClick={() => {
+              if (!selectedUploadImage) return;
+              const label = selectedUploadImage.split("/").pop() || "Selected image";
+              openImageEditModal(selectedUploadImage, label);
+            }}
+          >
+            Edit image (full options)
+          </button>
+          <button disabled={!hasImage} onClick={() => { setPhotoEditType("enhance"); setPhotoEditInstruction("Enhance"); void applyPhotoEdit({ editType: "enhance", instruction: "Enhance" }); }}>Quick Enhance</button>
+          <button disabled={!hasImage} onClick={() => { setPhotoEditType("black-white"); setPhotoEditInstruction("Black and white"); void applyPhotoEdit({ editType: "black-white", instruction: "Black and white" }); }}>Quick B&amp;W</button>
         </div>
       </div>
     );
@@ -4743,7 +4849,7 @@ export function App() {
             </div>
               <p className="panel-status" data-testid="image-library-intro">Image Library stores all uploaded and generated project assets. The Website Gallery controls which images are displayed inside gallery blocks on the website.</p>
               <div className="image-library-tabs" data-testid="image-library-tabs" style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
-                <button data-testid="image-library-tab-library" className={imageLibraryTab === "library" ? "selected" : ""} onClick={() => setImageLibraryTab("library")}>Library</button>
+                <button data-testid="image-library-tab-browse" className={imageLibraryTab === "browse" ? "selected" : ""} onClick={() => setImageLibraryTab("browse")}>Browse</button>
                 <button data-testid="image-library-tab-upload" className={imageLibraryTab === "upload" ? "selected" : ""} onClick={() => setImageLibraryTab("upload")}>Upload</button>
                 <button data-testid="image-library-tab-settings" className={imageLibraryTab === "settings" ? "selected" : ""} onClick={() => setImageLibraryTab("settings")}>Settings</button>
               </div>
@@ -4774,7 +4880,7 @@ export function App() {
                 </div>
               )}
 
-              {imageLibraryTab === "library" && (
+              {imageLibraryTab === "browse" && (
                 <>
                   <div className="image-manager-gallery" data-testid="image-library-library-section">
                     <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
@@ -5139,6 +5245,202 @@ export function App() {
   }
 
   return (
+    <>
+    {imageEditModalOpen && imageEditSnapshot && (
+      <div
+        className="image-edit-modal-backdrop"
+        data-testid="image-edit-modal"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeImageEditModal();
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit image"
+      >
+        <div className="image-edit-modal">
+          <div className="image-edit-modal-header" data-testid="image-edit-modal-header">
+            <h3>Editing: {imageEditSnapshot.label}</h3>
+            <p className="hint">Source image is locked — selecting a different block will not change the source mid-edit.</p>
+            <button
+              className="image-edit-modal-close"
+              data-testid="image-edit-modal-close"
+              onClick={() => closeImageEditModal()}
+              aria-label="Close edit modal"
+            >✕</button>
+          </div>
+          <div className="image-edit-modal-tabs" data-testid="image-edit-modal-tabs">
+            <button
+              className={imageEditModalTab === "options" ? "selected" : ""}
+              onClick={() => setImageEditModalTab("options")}
+              data-testid="image-edit-modal-tab-options"
+            >Options</button>
+            <button
+              className={imageEditModalTab === "preview" ? "selected" : ""}
+              onClick={() => setImageEditModalTab("preview")}
+              data-testid="image-edit-modal-tab-preview"
+              disabled={!aiEnhanceResult}
+            >Preview</button>
+            <button
+              className={imageEditModalTab === "history" ? "selected" : ""}
+              onClick={() => setImageEditModalTab("history")}
+              data-testid="image-edit-modal-tab-history"
+            >History</button>
+          </div>
+
+          <div className="image-edit-modal-source" data-testid="image-edit-modal-source">
+            <strong>Source preview</strong>
+            <div className="image-edit-modal-source-row">
+              <img
+                src={imageEditSnapshot.src}
+                alt={`Source: ${imageEditSnapshot.label}`}
+                className="image-edit-modal-source-thumb"
+                data-testid="image-edit-modal-source-thumb"
+              />
+              <div className="image-edit-modal-source-meta">
+                <p><strong>Name:</strong> {imageEditSnapshot.label}</p>
+                <p><strong>Locked at:</strong> {new Date(imageEditSnapshot.openedAt).toLocaleString()}</p>
+                {aiEnhanceResult && (
+                  <p data-testid="image-edit-modal-locked-to-enhanced">
+                    <strong>Now editing:</strong> edited version
+                  </p>
+                )}
+              </div>
+            </div>
+            {aiEnhanceResult && aiEnhanceResult !== imageEditSnapshot.src && (
+              <p className="hint" style={{ marginTop: 6 }}>
+                Next edit will operate on the edited preview, not the original. Original source is preserved.
+              </p>
+            )}
+          </div>
+
+          {imageEditModalTab === "options" && (
+            <div className="image-edit-modal-body" data-testid="image-edit-modal-options">
+              <div className="image-edit-modal-edit-type">
+                <label><strong>Edit type</strong>
+                  <select
+                    data-testid="image-edit-modal-type-select"
+                    value={aiEnhanceType}
+                    onChange={(e) => setAiEnhanceType(e.target.value)}
+                  >
+                    <option value="enhance">Enhance (auto)</option>
+                    <option value="brighten">Brighten</option>
+                    <option value="sharpen">Sharpen</option>
+                    <option value="color-pop">Color Pop</option>
+                    <option value="black-white">Black &amp; White</option>
+                    <option value="soften-bg">Soften Background</option>
+                    <option value="crop-fit">Crop/Fit to selected block</option>
+                    <option value="square-crop">Square Crop</option>
+                    <option value="wide-hero-crop">Wide / Hero Crop</option>
+                  </select>
+                </label>
+              </div>
+              <div className="image-edit-modal-instruction">
+                <label><strong>Custom instruction (optional)</strong>
+                  <textarea
+                    data-testid="image-edit-modal-instruction"
+                    value={aiEnhancePrompt}
+                    onChange={(e) => {
+                      setAiEnhancePrompt(e.target.value);
+                      setImageEditCustomInstruction(e.target.value);
+                    }}
+                    rows={3}
+                    placeholder="Describe what to enhance or change. Leave blank for default behavior of the selected edit type."
+                  />
+                </label>
+              </div>
+              <div className="image-edit-modal-actions-row">
+                <button
+                  className="image-edit-modal-primary"
+                  data-testid="image-edit-modal-run"
+                  onClick={() => void aiEnhanceImage()}
+                  disabled={!aiEnhanceSourceOverride}
+                >
+                  {aiEnhanceStatus && aiEnhanceStatus.startsWith("Processing") ? "Processing..." : "Run edit"}
+                </button>
+                <button
+                  onClick={() => {
+                    setAiEnhancePrompt("");
+                    setImageEditCustomInstruction("");
+                    setAiEnhanceType("enhance");
+                  }}
+                >Reset options</button>
+              </div>
+              {aiEnhanceStatus && (
+                <div className="image-edit-modal-status" data-testid="image-edit-modal-status">
+                  <p>{aiEnhanceStatus}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {imageEditModalTab === "preview" && (
+            <div className="image-edit-modal-body" data-testid="image-edit-modal-preview">
+              {!aiEnhanceResult && (
+                <p className="hint">No edited preview yet. Run an edit from the Options tab to see a preview here.</p>
+              )}
+              {aiEnhanceResult && (
+                <>
+                  <p><strong>Edited preview</strong></p>
+                  <img
+                    src={aiEnhanceResult}
+                    alt="Edited preview"
+                    className="image-edit-modal-preview-image"
+                    data-testid="image-edit-modal-preview-image"
+                  />
+                  <p className="hint" data-testid="image-edit-modal-preview-hint">
+                    The preview is generated from the locked source above. The website is NOT updated until you choose one of the actions below.
+                  </p>
+                  <div className="image-edit-modal-apply-actions">
+                    <button
+                      data-testid="image-edit-modal-save-to-library"
+                      onClick={() => {
+                        applyImageToSelectedBlock(aiEnhanceResult, `AI enhanced (${aiEnhanceType})`);
+                        setImageEditApplied(true);
+                        setAiEnhanceStatus("Saved to Image Library and applied to selected block.");
+                        void loadImages();
+                      }}
+                    >Save to Image Library &amp; apply to selected block</button>
+                    {selectedBlock?.type === "gallery" && (
+                      <button
+                        data-testid="image-edit-modal-add-to-gallery"
+                        onClick={() => {
+                          if (!aiEnhanceResult) return;
+                          addGalleryImage(aiEnhanceResult);
+                          setAiEnhanceStatus("Added to selected gallery block.");
+                          setImageEditApplied(true);
+                        }}
+                      >Add to selected gallery</button>
+                    )}
+                    <button
+                      data-testid="image-edit-modal-cancel"
+                      onClick={() => cancelImageEditModal()}
+                    >Cancel</button>
+                  </div>
+                  {imageEditApplied && (
+                    <p className="image-edit-modal-applied" data-testid="image-edit-modal-applied">
+                      Applied. Save the project to persist this change.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {imageEditModalTab === "history" && (
+            <div className="image-edit-modal-body" data-testid="image-edit-modal-history">
+              <p className="hint">This edit session started at {new Date(imageEditSnapshot.openedAt).toLocaleString()}.</p>
+              <ul>
+                <li>Source locked: {imageEditSnapshot.label}</li>
+                {aiEnhanceResult && <li>Latest edit: {aiEnhanceType} → preview ready</li>}
+                {imageEditApplied && <li>Applied to selected block or library</li>}
+                {!aiEnhanceResult && !imageEditApplied && <li>No edits yet</li>}
+              </ul>
+              <p className="hint">Closing this modal does not delete the source image. Cancel discards any preview before applying.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
     <div className={`app sbuild-editor-shell ${previewMode ? "preview" : "edit"} ${editorTheme === "Dark" ? "theme-dark" : ""} ${isMobileViewport ? "mobile-shell" : ""} ${isMobileViewport && !leftCollapsed ? "mobile-left-open" : ""} ${isMobileViewport && rightDrawerMobileOpen ? "mobile-right-open" : ""} ${paintMode && !previewMode ? "paint-active" : ""}`}>
       <header ref={topbarRef} className="topbar">
         <div className="topbar-mobile-row topbar-mobile-row-main">
@@ -5383,7 +5685,11 @@ export function App() {
                         <button onClick={() => { void aiSaveImageToLibrary(); }} title="Save this image to your project library for later use">Save to Library</button>
                         <button onClick={() => { void aiAddImageToGallery(); }} title="Add this image to the selected gallery block on the website">Add to Gallery</button>
                         <button onClick={() => void aiGenerateImage()}>Regenerate</button>
-                        <button onClick={() => { setAiEnhanceSourceOverride(aiImgGenResult); setAiTopMenuTab("image-enhance"); }} title="Open this image in AI Image Enhance for edits">Edit/Enhance This Image</button>
+                        <button
+                          onClick={() => { openImageEditModal(aiImgGenResult, "Generated image"); }}
+                          title="Open dedicated image edit modal with full options"
+                          data-testid="open-image-edit-modal-from-gen"
+                        >Edit image</button>
                       </div>
                     </div>
                   </div>
@@ -6439,5 +6745,6 @@ export function App() {
         </div>
       )}
     </div>
+    </>
   );
 }
