@@ -16,3 +16,6 @@ export const publishedPreviewDir = path.join(repoRoot, "published-preview");
 export const backupsDir = path.join(projectDir, "backups");
 export const editorDistDir = path.join(repoRoot, "packages", "editor", "dist");
 export const secretsFile = path.join(repoRoot, ".sbuild-secrets.json");
+export const dataDir = path.join(repoRoot, "data");
+export const previewCacheDir = path.join(dataDir, "preview-cache");
+export const previewCacheManifest = path.join(dataDir, "preview-cache.json");

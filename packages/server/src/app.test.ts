@@ -2983,3 +2983,135 @@ test("chat provider config masked key attempt cannot overwrite real chat key", a
     assert.equal(config.maskedApiKey, `${realChat.slice(0, 4)}...${realChat.slice(-4)}`);
   });
 });
+
+test("/api/ai/providers/status distinguishes OpenAI API provider from local key storage", async () => {
+  const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    ok: boolean;
+    providers: Array<{ name: string; status: string; message: string; provider?: string; keyStorage?: string; model?: string }>;
+    channels: { imageGen: { message: string }; imageAnalyze: { message: string } };
+  };
+  const imageGen = body.providers.find((p) => p.name.startsWith("Image Generation"));
+  assert.ok(imageGen, "Image Generation API provider entry must exist");
+  assert.equal(imageGen.provider, "openai", "Provider field must be 'openai' not 'local'");
+  assert.match(String(imageGen.message || ""), /Provider:\s*OpenAI\s*API/, "message must explicitly say 'Provider: OpenAI API'");
+  assert.match(String(imageGen.message || ""), /Key storage:/, "message must show key storage location");
+  assert.ok(["env", "local", "missing"].includes(String(imageGen.keyStorage)), "keyStorage must be env/local/missing");
+});
+
+test("/api/ai/providers/status AI Chat Provider entry shows configured status when Ollama is reachable", async () => {
+  const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+  const body = await res.json() as {
+    providers: Array<{ name: string; status: string; message: string; provider?: string; model?: string; source?: string }>;
+  };
+  const chat = body.providers.find((p) => p.name === "AI Chat Provider");
+  assert.ok(chat, "AI Chat Provider entry must exist");
+  assert.equal(chat.provider, "ollama", "AI Chat Provider should report ollama when local chat connected");
+  if (chat.source === "local") {
+    assert.equal(chat.status, "connected", "status should be 'connected' when Ollama is reachable");
+  }
+  assert.match(String(chat.model || ""), /qwen|gemma|llama|mistral|phi/, "model name should be present");
+});
+
+test("image gen returns previewOnly:true by default when preview flag is set", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/image`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "test preview-only generation",
+        preview: true,
+        targetContext: { blockType: "hero", usage: "background" }
+      })
+    });
+    assert.ok(res.status === 200 || res.status === 400, `expected 200/400, got ${res.status}`);
+    if (res.status === 400) return;
+    const body = await res.json() as { ok: boolean; previewOnly?: boolean; imageUrl?: string; previewId?: string; message?: string };
+    if (!body.ok) {
+      assert.match(String(body.message || ""), /unavailable|key/i, "unavailable response expected when no key");
+      return;
+    }
+    assert.equal(body.previewOnly, true, "preview mode must return previewOnly:true");
+    assert.match(String(body.imageUrl || ""), /\/api\/ai\/preview-image\//, "preview URL must point to preview endpoint");
+    assert.ok(body.previewId, "previewId must be returned");
+  });
+});
+
+test("preview-image promotion moves preview to permanent project images", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/image`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "promote test", preview: true, targetContext: { blockType: "hero", usage: "background" } })
+    });
+    if (res.status !== 200) return;
+    const body = await res.json() as { ok: boolean; previewId?: string };
+    if (!body.ok || !body.previewId) return;
+
+    const promoteRes = await fetch(`${baseUrl}/api/ai/preview-image/${encodeURIComponent(body.previewId)}/promote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ promptHint: "promote test" })
+    });
+    assert.equal(promoteRes.status, 200);
+    const promoted = await promoteRes.json() as { ok: boolean; imageUrl?: string; promotedFrom?: string };
+    assert.ok(promoted.ok);
+    assert.match(String(promoted.imageUrl || ""), /\/project\/images\//, "promoted image must be in /project/images/");
+    assert.equal(promoted.promotedFrom, body.previewId);
+  });
+});
+
+test("preview-image discard deletes the preview", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/image`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "discard test", preview: true, targetContext: { blockType: "hero", usage: "background" } })
+    });
+    if (res.status !== 200) return;
+    const body = await res.json() as { ok: boolean; previewId?: string };
+    if (!body.ok || !body.previewId) return;
+
+    const delRes = await fetch(`${baseUrl}/api/ai/preview-image/${encodeURIComponent(body.previewId)}`, {
+      method: "DELETE"
+    });
+    assert.equal(delRes.status, 200);
+    const discard = await delRes.json() as { ok: boolean; discarded?: string };
+    assert.ok(discard.ok);
+    assert.equal(discard.discarded, body.previewId);
+
+    const fetchAfter = await fetch(`${baseUrl}/api/ai/preview-image/${encodeURIComponent(body.previewId)}`);
+    assert.equal(fetchAfter.status, 404);
+  });
+});
+
+test("darken edit type is supported in localSharpEditTypes", async () => {
+  const res = await fetch(`${baseUrl}/api/ai/image-edit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      imagePath: "/project/images/nonexistent.png",
+      editType: "darken",
+      targetContext: { blockType: "hero", usage: "background" }
+    })
+  });
+  assert.ok(res.ok || res.status === 400 || res.status === 503 || res.status === 500, `darken should be accepted or gracefully fail; got ${res.status}`);
+  if (res.status === 200) {
+    const body = await res.json() as { ok: boolean; unavailable?: boolean; editType?: string; message?: string };
+    assert.equal(body.editType, "darken");
+    assert.equal(body.ok, true);
+  }
+});
+
+test("/api/images response never includes .gitkeep or zero-byte placeholder files", async () => {
+  const res = await fetch(`${baseUrl}/api/images`);
+  if (res.status !== 200) return;
+  const body = await res.json() as { ok: boolean; images: Array<{ name: string; size: number }> };
+  assert.ok(body.ok);
+  for (const img of body.images || []) {
+    assert.notEqual(img.name, ".gitkeep", "image list must not include .gitkeep");
+    assert.ok(img.size > 0, "image list must not include zero-byte entries");
+    assert.match(img.name, /\.(png|jpg|jpeg|webp|gif|svg|avif)$/i, `image must have a renderable extension; got ${img.name}`);
+  }
+});

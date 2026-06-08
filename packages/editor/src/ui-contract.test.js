@@ -45,6 +45,17 @@ test("image library provides multi-select delete with confirmation", () => {
   assert.match(appSource, /\/api\/images/);
 });
 
+test("image library multi-select delete warns when an image is currently used by the project", () => {
+  assert.match(appSource, /data-testid="image-library-delete-inuse-warning"/);
+  assert.match(appSource, /currently used by the project/);
+  assert.match(appSource, /usedImageUrls/);
+  assert.match(appSource, /image-library-confirm-warn/);
+});
+
+test("image library bulk delete confirmation skips .gitkeep placeholder if any slip through", () => {
+  assert.match(appSource, /\.gitkeep/);
+});
+
 test("image library filters out non-renderable entries (.gitkeep) on load", () => {
   assert.match(appSource, /isRenderableImageMeta/);
   assert.match(appSource, /RENDERABLE_IMAGE_EXTENSIONS/);
@@ -74,9 +85,10 @@ test("dedicated image edit modal opens with locked source and full options", () 
   assert.match(appSource, /cancelImageEditModal/);
 });
 
-test("dedicated image edit modal offers 9 edit types", () => {
+test("dedicated image edit modal offers 10 edit types including Darken", () => {
   assert.match(appSource, /value="enhance"[^>]*>Enhance/);
   assert.match(appSource, /value="brighten"[^>]*>Brighten/);
+  assert.match(appSource, /value="darken"[^>]*>Darken/);
   assert.match(appSource, /value="sharpen"[^>]*>Sharpen/);
   assert.match(appSource, /value="color-pop"[^>]*>Color Pop/);
   assert.match(appSource, /value="black-white"[^>]*>Black/);
@@ -86,9 +98,41 @@ test("dedicated image edit modal offers 9 edit types", () => {
   assert.match(appSource, /value="wide-hero-crop"[^>]*>Wide/);
 });
 
+test("dedicated image edit modal Preview tab has separate Save / Apply / Save and Apply / Cancel", () => {
+  assert.match(appSource, /data-testid="image-edit-modal-save-to-library"/);
+  assert.match(appSource, /data-testid="image-edit-modal-apply-to-block"/);
+  assert.match(appSource, /data-testid="image-edit-modal-save-and-apply"/);
+  assert.match(appSource, /data-testid="image-edit-modal-cancel"/);
+  assert.match(appSource, />Save to Image Library</);
+  assert.match(appSource, />Apply to Selected Block</);
+  assert.match(appSource, />Save and Apply</);
+  assert.match(appSource, />Cancel</);
+});
+
 test("AI image gen post-generation offers 'Edit image' opening the dedicated modal", () => {
-  assert.match(appSource, /data-testid="open-image-edit-modal-from-gen"/);
+  assert.match(appSource, /data-testid="ai-img-gen-edit-image"/);
   assert.match(appSource, /openImageEditModal\(aiImgGenResult, "Generated image"\)/);
+});
+
+test("AI image gen is preview-only by default and has separate Save / Apply / Save and Apply buttons", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-preview"/);
+  assert.match(appSource, /data-testid="ai-img-gen-preview-badge"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-to-library"/);
+  assert.match(appSource, /data-testid="ai-img-gen-apply-to-block"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-and-apply"/);
+  assert.match(appSource, /data-testid="ai-img-gen-cancel"/);
+  assert.match(appSource, /data-testid="ai-img-gen-add-to-gallery"/);
+  assert.match(appSource, /preview:\s*true/);
+  assert.match(appSource, /aiImgGenPreviewId/);
+  assert.match(appSource, /aiImgGenIsPreview/);
+  assert.match(appSource, /\/api\/ai\/preview-image\//);
+  assert.match(appSource, /\/api\/ai\/preview-image\/\$\{encodeURIComponent\(aiImgGenPreviewId\)\}\/promote/);
+});
+
+test("AI image gen preview discarded via DELETE /api/ai/preview-image/:id", () => {
+  assert.match(appSource, /aiDiscardPreview/);
+  assert.match(appSource, /method:\s*"DELETE"/);
+  assert.match(appSource, /\/api\/ai\/preview-image\/\$\{encodeURIComponent\(aiImgGenPreviewId\)\}/);
 });
 
 test("image library hide-blank filter remains available for white/blank cleanup", () => {
@@ -115,6 +159,37 @@ test("dedicated image edit modal CSS exists for desktop and mobile", () => {
   assert.match(cssSource, /\.image-edit-modal-preview-image/);
   assert.match(cssSource, /\.image-edit-modal-primary/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1500}\.image-edit-modal[\s\S]{0,200}width:\s*100vw/);
+});
+
+test("shared modal / card / button classes exist for normalized look", () => {
+  assert.match(cssSource, /\.sbuild-modal-backdrop/);
+  assert.match(cssSource, /\.sbuild-modal/);
+  assert.match(cssSource, /\.sbuild-modal-header/);
+  assert.match(cssSource, /\.sbuild-modal-body/);
+  assert.match(cssSource, /\.sbuild-modal-footer/);
+  assert.match(cssSource, /\.sbuild-card/);
+  assert.match(cssSource, /\.sbuild-button/);
+  assert.match(cssSource, /\.sbuild-button-primary/);
+});
+
+test("left drawer has balanced padding and inner sections for professional spacing", () => {
+  assert.match(cssSource, /\.left-drawer\s*\{[\s\S]{0,400}padding:\s*16px/);
+  assert.match(cssSource, /\.left-drawer\s*\{[\s\S]{0,400}border:\s*1px solid/);
+  assert.match(cssSource, /\.left-drawer\s*\{[\s\S]{0,400}border-radius:\s*12px/);
+  assert.match(cssSource, /\.left-drawer\s*\{[\s\S]{0,400}box-sizing:\s*border-box/);
+  assert.match(cssSource, /\.left-drawer\s*>\s*section[\s\S]{0,300}border:\s*1px solid/);
+  assert.match(cssSource, /\.left-drawer\s*>\s*section[\s\S]{0,300}border-radius:\s*10px/);
+  assert.match(cssSource, /\.left-drawer\s*>\s*section[\s\S]{0,300}background:\s*var\(--editor-panel-bg-2\)/);
+});
+
+test("canvas controls use grouped labels for View and Selected", () => {
+  assert.match(appSource, /data-testid="canvas-controls"/);
+  assert.match(appSource, /canvas-controls-group/);
+  assert.match(appSource, /canvas-controls-label/);
+  assert.match(cssSource, /\.canvas-controls[\s\S]{0,200}background:\s*var\(--editor-panel-bg-2\)/);
+  assert.match(cssSource, /\.canvas-controls[\s\S]{0,300}border:\s*1px solid var\(--editor-border\)/);
+  assert.match(cssSource, /\.canvas-controls[\s\S]{0,300}border-radius:\s*10px/);
+  assert.match(cssSource, /\.canvas-controls-group[\s\S]{0,200}border-right:\s*1px solid/);
 });
 
 test("mobile AI panel uses dynamic viewport height and allows internal scrolling", () => {
@@ -1512,8 +1587,9 @@ test("preview mode hides right panel on desktop", () => {
 test("preview mode hides Duplicate Delete Up Down action controls", () => {
   const controlsIdx = appSource.indexOf("canvas-controls");
   assert.ok(controlsIdx > 0, "canvas-controls exists");
-  const section = appSource.substring(controlsIdx, controlsIdx + 800);
-  assert.match(section, /\{!previewMode &&/);
+  const section = appSource.substring(controlsIdx, controlsIdx + 1200);
+  assert.match(section, /canvas-controls-group/);
+  assert.match(section, /\{!previewMode &&[\s\S]{0,300}canvas-controls-group/);
   assert.match(section, /Duplicate/);
   assert.match(section, /Delete/);
 });

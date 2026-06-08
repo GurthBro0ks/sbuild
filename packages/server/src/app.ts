@@ -114,12 +114,55 @@ import {
   projectFile,
   projectImagesDir,
   publishedPreviewDir,
+  previewCacheDir,
+  previewCacheManifest,
   repoRoot,
   secretsFile
 } from "./lib/paths.js";
 import { getUserPreferences, normalizeBuilderTheme, setUserBuilderTheme } from "./lib/userPreferencesStore.js";
 
 const imageFolderConfigFile = path.join(path.dirname(projectFile), "image-folder.json");
+
+type PreviewManifestEntry = { filename: string; createdAt: string; prompt?: string };
+type PreviewManifest = Record<string, PreviewManifestEntry>;
+
+async function readPreviewManifest(): Promise<PreviewManifest> {
+  try {
+    const raw = await fs.readFile(previewCacheManifest, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as PreviewManifest;
+  } catch {
+    return {};
+  }
+}
+
+async function writePreviewManifest(manifest: PreviewManifest): Promise<void> {
+  await fs.mkdir(path.dirname(previewCacheManifest), { recursive: true });
+  await fs.writeFile(previewCacheManifest, JSON.stringify(manifest, null, 2), "utf8");
+}
+
+async function registerPreviewEntry(id: string, entry: PreviewManifestEntry): Promise<void> {
+  const manifest = await readPreviewManifest();
+  manifest[id] = entry;
+  const keys = Object.keys(manifest);
+  if (keys.length > 200) {
+    const oldest = keys.sort((a, b) => (manifest[a]?.createdAt || "").localeCompare(manifest[b]?.createdAt || ""))[0];
+    if (oldest && oldest !== id) {
+      try { await fs.unlink(path.join(previewCacheDir, manifest[oldest].filename)); } catch { /* ignore */ }
+      delete manifest[oldest];
+    }
+  }
+  await writePreviewManifest(manifest);
+}
+
+async function unregisterPreviewEntry(id: string): Promise<void> {
+  const manifest = await readPreviewManifest();
+  if (manifest[id]) {
+    delete manifest[id];
+    await writePreviewManifest(manifest);
+  }
+}
 
 async function readImageFolderSetting(): Promise<string> {
   try {
@@ -188,6 +231,7 @@ const localSharpEditTypes = new Set([
   "enhance",
   "black-white",
   "brighten",
+  "darken",
   "sharpen",
   "color-pop",
   "soften-bg",
@@ -1216,6 +1260,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     let sizeDecision = decideImageSize(targetContext);
     sizeDecision = withExplicitSize(sizeDecision, req.body?.explicitSize ?? req.body?.size);
     const warnings: string[] = [...sizeDecision.warnings];
+    const previewOnly = req.body?.preview === true || req.body?.preview === "true";
 
     const keyStatus = await getImageApiKeyStatus();
     const key = keyStatus.genKey;
@@ -1279,41 +1324,69 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         return;
       }
 
-      const generatedDir = await ensureImageSubdir("generated");
-      const stem = safeFilenameStem(prompt).slice(0, 48);
-      const suffix = randomSuffix();
-      const originalPath = path.join(generatedDir, `${stem}-original-${suffix}.png`);
-
       const originalBuffer = item.b64_json
         ? Buffer.from(item.b64_json, "base64")
         : await fetchUrlToBuffer(item.url!);
-      await saveBufferAsPng(originalPath, originalBuffer);
 
-      let imagePath = originalPath;
+      let imagePath: string;
+      let fittedBuffer: Buffer | null = null;
       const sharpMod = await loadSharp();
-      if (!sharpMod) {
-        warnings.push("sharp not available; returning original generated image.");
-      } else {
+      if (sharpMod) {
         try {
-          const fitted = await fitWithSharp({
+          fittedBuffer = await fitWithSharp({
             input: originalBuffer,
             cropMode: sizeDecision.cropMode,
             outputWidth: sizeDecision.outputWidth,
             outputHeight: sizeDecision.outputHeight
           });
-          const fittedPath = path.join(generatedDir, `${stem}-fitted-${suffix}.png`);
-          await saveBufferAsPng(fittedPath, fitted);
-          imagePath = fittedPath;
         } catch (error) {
           warnings.push(`Image fitting failed; original kept. ${String(error)}`);
         }
+      } else {
+        warnings.push("sharp not available; returning original generated image.");
+      }
+      const finalBuffer = fittedBuffer || originalBuffer;
+
+      if (previewOnly) {
+        const previewId = randomSuffix();
+        await fs.mkdir(previewCacheDir, { recursive: true });
+        const previewFilename = `${previewId}.png`;
+        const previewPath = path.join(previewCacheDir, previewFilename);
+        await saveBufferAsPng(previewPath, finalBuffer);
+        await registerPreviewEntry(previewId, {
+          filename: previewFilename,
+          createdAt: new Date().toISOString(),
+          prompt: prompt.slice(0, 200)
+        });
+        res.json({
+          ok: true,
+          model,
+          previewOnly: true,
+          previewId,
+          imageUrl: `/api/ai/preview-image/${previewId}`,
+          sizeDecision,
+          warnings
+        });
+        return;
       }
 
+      const generatedDir = await ensureImageSubdir("generated");
+      const stem = safeFilenameStem(prompt).slice(0, 48);
+      const suffix = randomSuffix();
+      const originalPath = path.join(generatedDir, `${stem}-original-${suffix}.png`);
+      await saveBufferAsPng(originalPath, originalBuffer);
+      let finalPath = originalPath;
+      if (fittedBuffer) {
+        const fittedPath = path.join(generatedDir, `${stem}-fitted-${suffix}.png`);
+        await saveBufferAsPng(fittedPath, fittedBuffer);
+        finalPath = fittedPath;
+      }
       res.json({
         ok: true,
         model,
-        imageUrl: projectImageUrlFromAbsolute(imagePath),
-        originalImageUrl: imagePath === originalPath ? undefined : projectImageUrlFromAbsolute(originalPath),
+        previewOnly: false,
+        imageUrl: projectImageUrlFromAbsolute(finalPath),
+        originalImageUrl: finalPath === originalPath ? undefined : projectImageUrlFromAbsolute(originalPath),
         sizeDecision,
         warnings
       });
@@ -1326,6 +1399,62 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         warnings
       });
     }
+  });
+
+  app.get("/api/ai/preview-image/:id", async (req, res) => {
+    const id = String(req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) {
+      res.status(400).type("text/plain").send("Invalid preview id");
+      return;
+    }
+    const filePath = path.join(previewCacheDir, `${id}.png`);
+    try {
+      await fs.access(filePath);
+      res.set("Cache-Control", "private, max-age=300");
+      res.sendFile(filePath);
+    } catch {
+      res.status(404).type("text/plain").send("Preview not found or expired");
+    }
+  });
+
+  app.post("/api/ai/preview-image/:id/promote", async (req, res) => {
+    const id = String(req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) {
+      res.status(400).json({ ok: false, error: "Invalid preview id" });
+      return;
+    }
+    const srcPath = path.join(previewCacheDir, `${id}.png`);
+    let buffer: Buffer;
+    try {
+      buffer = await fs.readFile(srcPath);
+    } catch {
+      res.status(404).json({ ok: false, error: "Preview not found" });
+      return;
+    }
+    const generatedDir = await ensureImageSubdir("generated");
+    const stem = safeFilenameStem(String(req.body?.promptHint || "preview")).slice(0, 48);
+    const suffix = randomSuffix();
+    const finalPath = path.join(generatedDir, `${stem}-promoted-${suffix}.png`);
+    await saveBufferAsPng(finalPath, buffer);
+    try { await fs.unlink(srcPath); } catch { /* ignore */ }
+    await unregisterPreviewEntry(id);
+    res.json({
+      ok: true,
+      imageUrl: projectImageUrlFromAbsolute(finalPath),
+      promotedFrom: id
+    });
+  });
+
+  app.delete("/api/ai/preview-image/:id", async (req, res) => {
+    const id = String(req.params.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+    if (!id) {
+      res.status(400).json({ ok: false, error: "Invalid preview id" });
+      return;
+    }
+    const srcPath = path.join(previewCacheDir, `${id}.png`);
+    try { await fs.unlink(srcPath); } catch { /* ignore */ }
+    await unregisterPreviewEntry(id);
+    res.json({ ok: true, discarded: id });
   });
 
   async function handleImageEdit(req: express.Request, res: express.Response): Promise<void> {
@@ -2372,6 +2501,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const openCode = detectOpenCode();
     const keyStatus = await getImageApiKeyStatus();
     const chatStatus = await getChatProviderStatus();
+    const imageGenModel = process.env.SBUILD_IMAGE_MODEL || "gpt-image-1";
+    const imageAnalyzeModel = process.env.SBUILD_IMAGE_ANALYZE_MODEL || "gpt-4o-mini";
+
+    const keyStorageLabel = (source: "env" | "local" | "missing" | string): string => {
+      if (source === "env") return "Key storage: environment variable (SBUILD_OPENAI_*_API_KEY or OPENAI_API_KEY)";
+      if (source === "local") return "Key storage: local ignored secret config (.sbuild-secrets.json)";
+      return "Key storage: not configured";
+    };
+
     const channels = {
       chat: {
         ...channelSummaryFromSource(chatStatus.source),
@@ -2381,11 +2519,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       },
       imageGen: {
         ...channelSummaryFromSource(keyStatus.genSource as "env" | "local" | "missing"),
-        message: keyStatus.genSource !== "missing" ? `Key configured from ${keyStatus.genSource}` : "Missing image generation API key."
+        message: keyStatus.genSource !== "missing"
+          ? `Provider: OpenAI API. ${keyStorageLabel(keyStatus.genSource)}. Model: ${imageGenModel}.`
+          : "Provider: OpenAI API. Missing image generation API key. Set OPENAI_API_KEY or enter in Settings → Image/API Keys."
       },
       imageAnalyze: {
         ...channelSummaryFromSource(keyStatus.analyzeSource as "env" | "local" | "missing"),
-        message: keyStatus.analyzeSource !== "missing" ? `Key configured from ${keyStatus.analyzeSource}` : "Missing image analysis API key."
+        message: keyStatus.analyzeSource !== "missing"
+          ? `Provider: OpenAI API. ${keyStorageLabel(keyStatus.analyzeSource)}. Model: ${imageAnalyzeModel}.`
+          : "Provider: OpenAI API. Missing image analysis API key."
       }
     };
     const providers = [
@@ -2411,18 +2553,33 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         message: openCode.detected ? "OpenCode detected. Run 'opencode auth status' to verify." : "Requires OpenCode CLI."
       },
       {
-        name: "Image Generation API",
+        name: "Image Generation API (OpenAI)",
         status: keyStatus.genSource !== "missing" ? "connected" : "not_configured",
-        message: keyStatus.genSource !== "missing" ? `Key configured from ${keyStatus.genSource}` : "Missing. Set OPENAI_API_KEY or enter below."
+        provider: "openai",
+        model: imageGenModel,
+        keyStorage: keyStatus.genSource,
+        modelSelectionSupported: process.env.SBUILD_IMAGE_MODEL ? true : false,
+        message: keyStatus.genSource !== "missing"
+          ? `Provider: OpenAI API. Key storage: ${keyStatus.genSource === "env" ? "environment variable" : "local ignored secret config"}. Model: ${imageGenModel}.`
+          : "Missing. Set OPENAI_API_KEY env var or enter below in Settings → Image/API Keys."
       },
       {
-        name: "Image Analysis API",
+        name: "Image Analysis API (OpenAI)",
         status: keyStatus.analyzeSource !== "missing" ? "connected" : "not_configured",
-        message: keyStatus.analyzeSource !== "missing" ? `Key configured from ${keyStatus.analyzeSource}` : "Missing. Set OPENAI_API_KEY or enter below."
+        provider: "openai",
+        model: imageAnalyzeModel,
+        keyStorage: keyStatus.analyzeSource,
+        modelSelectionSupported: process.env.SBUILD_IMAGE_ANALYZE_MODEL ? true : false,
+        message: keyStatus.analyzeSource !== "missing"
+          ? `Provider: OpenAI API. Key storage: ${keyStatus.analyzeSource === "env" ? "environment variable" : "local ignored secret config"}. Model: ${imageAnalyzeModel}.`
+          : "Missing. Set OPENAI_API_KEY env var or enter below in Settings → Image/API Keys."
       },
       {
         name: "AI Chat Provider",
+        provider: chatStatus.provider,
+        model: chatStatus.model || "unknown",
         status: chatStatus.status,
+        source: chatStatus.source,
         message: chatStatus.message
       }
     ];

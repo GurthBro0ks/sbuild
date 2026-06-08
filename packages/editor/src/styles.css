@@ -190,6 +190,19 @@ button:disabled {
   max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 16px 18px 18px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+.left-drawer > section {
+  padding: 12px 14px;
+  border: 1px solid var(--editor-border);
+  border-radius: 10px;
+  background: var(--editor-panel-bg-2);
+}
+.left-drawer > section > h3,
+.left-drawer > section > h4 {
+  margin-top: 0;
 }
 .right-drawer {
   width: 100%;
@@ -771,8 +784,29 @@ button:disabled {
 }
 .canvas-controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--editor-panel-bg-2);
+  border: 1px solid var(--editor-border);
+  border-radius: 10px;
+}
+.canvas-controls .canvas-controls-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding-right: 8px;
+  border-right: 1px solid var(--editor-border);
+}
+.canvas-controls .canvas-controls-group:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+.canvas-controls .canvas-controls-label {
+  font-size: 11px;
+  color: var(--editor-text-muted);
+  margin-right: 4px;
 }
 .canvas-frame {
   position: relative;
@@ -3471,3 +3505,140 @@ button:disabled {
   }
 }
 
+
+/* ===== SHARED MODAL / CARD / BUTTON NORMALIZATION ===== */
+.sbuild-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.sbuild-modal {
+  background: var(--editor-panel-bg);
+  border: 1px solid var(--editor-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+  color: var(--editor-text);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  overflow: hidden;
+}
+.sbuild-modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--editor-border);
+  background: color-mix(in srgb, var(--editor-accent) 6%, var(--editor-panel-bg));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sbuild-modal-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--editor-text);
+}
+.sbuild-modal-body {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sbuild-modal-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--editor-border);
+  background: var(--editor-panel-bg-2);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.sbuild-modal-close {
+  background: var(--editor-button-bg);
+  color: var(--editor-button-text);
+  border: 1px solid var(--editor-button-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.sbuild-card {
+  background: var(--editor-panel-bg);
+  border: 1px solid var(--editor-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sbuild-button {
+  background: var(--editor-button-bg);
+  color: var(--editor-button-text);
+  border: 1px solid var(--editor-button-border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sbuild-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sbuild-button-primary {
+  background: var(--editor-accent);
+  color: var(--editor-button-text);
+  border: 1px solid var(--editor-accent);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sbuild-button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (max-width: 768px) {
+  .sbuild-modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .sbuild-modal {
+    width: 100vw;
+    max-height: 92dvh;
+    border-radius: 14px 14px 0 0;
+  }
+  .sbuild-modal-footer {
+    flex-direction: column;
+  }
+  .sbuild-modal-footer button {
+    width: 100%;
+  }
+}
+
+/* ===== AI PREVIEW BADGE ===== */
+.ai-preview-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--editor-accent) 18%, var(--editor-panel-bg));
+  color: var(--editor-text);
+  border: 1px solid var(--editor-accent);
+  vertical-align: middle;
+}
+.ai-preview-badge-saved {
+  background: color-mix(in srgb, #2ecc71 20%, var(--editor-panel-bg));
+  border-color: #2ecc71;
+}

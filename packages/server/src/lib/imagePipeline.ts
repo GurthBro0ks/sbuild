@@ -134,7 +134,10 @@ export async function applyLocalEditWithSharp(options: {
       pipeline = pipeline.normalize().modulate({ brightness: 1.05, saturation: 1.08 }).sharpen();
       break;
     case "brighten":
-      pipeline = pipeline.modulate({ brightness: 1.18 }).normalize();
+      pipeline = pipeline.modulate({ brightness: 1.25 }).normalize();
+      break;
+    case "darken":
+      pipeline = pipeline.modulate({ brightness: 0.78 }).normalize();
       break;
     case "sharpen":
       pipeline = pipeline.sharpen();

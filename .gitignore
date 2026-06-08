@@ -8,6 +8,7 @@ packages/*/dist
 packages/editor/.vite
 project/images/*
 !project/images/.gitkeep
+data/preview-cache/
 proof/
 .last-proof-dir
 
@@ -20,6 +21,7 @@ project/backups
 project/users.json
 data/ai-memory.json
 data/ai-chat-history.json
+data/preview-cache.json
 project/project.json
 project/user-preferences.json
 project/image-folder.json

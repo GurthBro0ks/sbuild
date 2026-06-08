@@ -1314,6 +1314,8 @@ export function App() {
   const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("block");
   const [aiImgGenStatus, setAiImgGenStatus] = useState("");
   const [aiImgGenResult, setAiImgGenResult] = useState("");
+  const [aiImgGenPreviewId, setAiImgGenPreviewId] = useState<string>("");
+  const [aiImgGenIsPreview, setAiImgGenIsPreview] = useState<boolean>(true);
   const [aiEnhanceType, setAiEnhanceType] = useState("enhance");
   const [aiEnhancePrompt, setAiEnhancePrompt] = useState("");
   const [aiEnhanceSourceOverride, setAiEnhanceSourceOverride] = useState<string | null>(null);
@@ -2855,8 +2857,15 @@ export function App() {
   async function aiGenerateImage() {
     const prompt = aiImgGenPrompt.trim();
     if (!prompt) { setAiImgGenStatus("Enter an image prompt first."); return; }
+    if (aiImgGenPreviewId) {
+      try {
+        await fetchJson(`/api/ai/preview-image/${encodeURIComponent(aiImgGenPreviewId)}`, { method: "DELETE" });
+      } catch { /* ignore */ }
+    }
     setAiImgGenStatus("Generating image...");
     setAiImgGenResult("");
+    setAiImgGenPreviewId("");
+    setAiImgGenIsPreview(true);
     try {
       const targetContext = currentTargetContext();
       const stylePreset = IMAGE_GEN_STYLE_PRESETS.find((s) => s.id === imageGenStyle);
@@ -2865,19 +2874,88 @@ export function App() {
       if (stylePreset && stylePreset.id !== "custom" && stylePreset.promptSuffix) {
         finalPrompt = `${prompt}\n\n${stylePreset.promptSuffix}`;
       }
-      const data = await fetchJson<{ ok: boolean; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
+      const data = await fetchJson<{ ok: boolean; previewOnly?: boolean; previewId?: string; unavailable?: boolean; message?: string; imageUrl?: string; error?: string; warnings?: string[] }>("/api/ai/image", {
         method: "POST",
-        body: JSON.stringify({ prompt: finalPrompt, targetContext, explicitSize: sizePreset?.providerSize || undefined })
+        body: JSON.stringify({ prompt: finalPrompt, targetContext, explicitSize: sizePreset?.providerSize || undefined, preview: true })
       });
       if (!data.ok || !data.imageUrl) {
         setAiImgGenStatus(data.message || data.error || "Image generation unavailable.");
         return;
       }
       setAiImgGenResult(data.imageUrl);
-      setAiImgGenStatus(`Image generated.${(data.warnings || []).join(" ")}`);
+      setAiImgGenPreviewId(data.previewId || "");
+      setAiImgGenIsPreview(data.previewOnly !== false);
+      setAiImgGenStatus(`Image generated.${(data.warnings || []).join(" ")} Preview only — use Save to Library, Apply, or Save and Apply.`);
     } catch (error) {
       setAiImgGenStatus(`Image generation unavailable: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  async function aiSavePreviewToLibrary(): Promise<void> {
+    if (!aiImgGenPreviewId) {
+      setAiImgGenStatus("No preview to save. Generate an image first.");
+      return;
+    }
+    try {
+      const data = await fetchJson<{ ok: boolean; imageUrl?: string; error?: string }>(`/api/ai/preview-image/${encodeURIComponent(aiImgGenPreviewId)}/promote`, {
+        method: "POST",
+        body: JSON.stringify({ promptHint: aiImgGenPrompt.slice(0, 64) })
+      });
+      if (!data.ok || !data.imageUrl) {
+        setAiImgGenStatus(data.error || "Save failed.");
+        return;
+      }
+      setAiImgGenResult(data.imageUrl);
+      setAiImgGenIsPreview(false);
+      setAiImgGenPreviewId("");
+      setAiImgGenStatus("Saved to Image Library. Use Apply to push it to the selected block.");
+      await loadImages();
+    } catch (error) {
+      setAiImgGenStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function aiApplyPreviewToBlock(): Promise<void> {
+    if (!aiImgGenResult) {
+      setAiImgGenStatus("No preview to apply. Generate an image first.");
+      return;
+    }
+    if (aiImgGenIsPreview && aiImgGenPreviewId) {
+      try {
+        const data = await fetchJson<{ ok: boolean; imageUrl?: string; error?: string }>(`/api/ai/preview-image/${encodeURIComponent(aiImgGenPreviewId)}/promote`, {
+          method: "POST",
+          body: JSON.stringify({ promptHint: aiImgGenPrompt.slice(0, 64) })
+        });
+        if (data.ok && data.imageUrl) {
+          setAiImgGenResult(data.imageUrl);
+          setAiImgGenIsPreview(false);
+          setAiImgGenPreviewId("");
+          await loadImages();
+        }
+      } catch { /* fall through and try to apply the preview URL directly */ }
+    }
+    aiUseImageInBlock();
+    setAiImgGenStatus("Applied preview to selected block. Save project to persist.");
+  }
+
+  async function aiSaveAndApplyPreview(): Promise<void> {
+    await aiSavePreviewToLibrary();
+    if (aiImgGenResult) {
+      aiUseImageInBlock();
+      setAiImgGenStatus("Saved to Image Library AND applied to selected block. Save project to persist.");
+    }
+  }
+
+  async function aiDiscardPreview(): Promise<void> {
+    if (aiImgGenPreviewId) {
+      try {
+        await fetchJson(`/api/ai/preview-image/${encodeURIComponent(aiImgGenPreviewId)}`, { method: "DELETE" });
+      } catch { /* ignore */ }
+    }
+    setAiImgGenResult("");
+    setAiImgGenPreviewId("");
+    setAiImgGenIsPreview(false);
+    setAiImgGenStatus("Preview discarded.");
   }
 
   function aiUseImageInBlock() {
@@ -4921,22 +4999,35 @@ export function App() {
                     </div>
                     {bulkDeletePending && (
                       <div className="image-library-confirm" data-testid="image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
-                        <p>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}? This cannot be undone.</p>
-                        <div className="button-row compact">
-                          <button
-                            data-testid="image-library-delete-confirm-yes"
-                            onClick={async () => {
-                              const filenames = Array.from(selectedImageUrls)
-                                .map((url) => url.split("/").pop() || "")
-                                .filter(Boolean);
-                              const result = await deleteImages(filenames);
-                              setBulkDeletePending(false);
-                              setBulkDeleteMessage(`Deleted ${result.deletedCount} image(s).`);
-                              clearImageSelection();
-                            }}
-                          >Yes, delete</button>
-                          <button onClick={() => { setBulkDeletePending(false); setBulkDeleteMessage(""); }}>Cancel</button>
-                        </div>
+                        {(() => {
+                          const selectedMetas = uploadedImages.filter((img) => selectedImageUrls.has(img.url));
+                          const inUse = selectedMetas.filter((m) => usedImageUrls.has(m.url));
+                          return (
+                            <>
+                              <p>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}? This cannot be undone.</p>
+                              {inUse.length > 0 && (
+                                <p className="image-library-confirm-warn" data-testid="image-library-delete-inuse-warning" style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}>
+                                  Warning: {inUse.length} selected image{inUse.length === 1 ? " is" : "s are"} currently used by the project (backgrounds, image blocks, or gallery items). Deleting {inUse.length === 1 ? "it" : "them"} will leave those references broken until you replace the images.
+                                </p>
+                              )}
+                              <div className="button-row compact">
+                                <button
+                                  data-testid="image-library-delete-confirm-yes"
+                                  onClick={async () => {
+                                    const filenames = Array.from(selectedImageUrls)
+                                      .map((url) => url.split("/").pop() || "")
+                                      .filter((name) => name && name !== ".gitkeep");
+                                    const result = await deleteImages(filenames);
+                                    setBulkDeletePending(false);
+                                    setBulkDeleteMessage(`Deleted ${result.deletedCount} image(s).`);
+                                    clearImageSelection();
+                                  }}
+                                >Yes, delete</button>
+                                <button onClick={() => { setBulkDeletePending(false); setBulkDeleteMessage(""); }}>Cancel</button>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                     {bulkDeleteMessage && <p className="panel-status" data-testid="image-library-delete-message">{bulkDeleteMessage}</p>}
@@ -5323,7 +5414,8 @@ export function App() {
                     onChange={(e) => setAiEnhanceType(e.target.value)}
                   >
                     <option value="enhance">Enhance (auto)</option>
-                    <option value="brighten">Brighten</option>
+                    <option value="brighten">Brighten (+25% brightness)</option>
+                    <option value="darken">Darken (–22% brightness)</option>
                     <option value="sharpen">Sharpen</option>
                     <option value="color-pop">Color Pop</option>
                     <option value="black-white">Black &amp; White</option>
@@ -5394,12 +5486,30 @@ export function App() {
                     <button
                       data-testid="image-edit-modal-save-to-library"
                       onClick={() => {
-                        applyImageToSelectedBlock(aiEnhanceResult, `AI enhanced (${aiEnhanceType})`);
                         setImageEditApplied(true);
-                        setAiEnhanceStatus("Saved to Image Library and applied to selected block.");
+                        setAiEnhanceStatus("Edited preview is already in the Image Library (the edit handler saves to the library). Use Apply to push it to the selected block.");
                         void loadImages();
                       }}
-                    >Save to Image Library &amp; apply to selected block</button>
+                    >Save to Image Library</button>
+                    <button
+                      data-testid="image-edit-modal-apply-to-block"
+                      onClick={() => {
+                        applyImageToSelectedBlock(aiEnhanceResult, `AI enhanced (${aiEnhanceType})`);
+                        setImageEditApplied(true);
+                        setAiEnhanceStatus("Applied preview to selected block. Save project to persist.");
+                      }}
+                      disabled={!selectedBlock}
+                    >Apply to Selected Block</button>
+                    <button
+                      data-testid="image-edit-modal-save-and-apply"
+                      onClick={() => {
+                        applyImageToSelectedBlock(aiEnhanceResult, `AI enhanced (${aiEnhanceType})`);
+                        setImageEditApplied(true);
+                        setAiEnhanceStatus("Saved to Image Library AND applied to selected block. Save project to persist.");
+                        void loadImages();
+                      }}
+                      disabled={!selectedBlock}
+                    >Save and Apply</button>
                     {selectedBlock?.type === "gallery" && (
                       <button
                         data-testid="image-edit-modal-add-to-gallery"
@@ -5409,7 +5519,7 @@ export function App() {
                           setAiEnhanceStatus("Added to selected gallery block.");
                           setImageEditApplied(true);
                         }}
-                      >Add to selected gallery</button>
+                      >Add to Website Gallery</button>
                     )}
                     <button
                       data-testid="image-edit-modal-cancel"
@@ -5418,7 +5528,7 @@ export function App() {
                   </div>
                   {imageEditApplied && (
                     <p className="image-edit-modal-applied" data-testid="image-edit-modal-applied">
-                      Applied. Save the project to persist this change.
+                      Action taken. Save the project to persist any block changes.
                     </p>
                   )}
                 </>
@@ -5670,25 +5780,55 @@ export function App() {
                 </div>
                 <div className="ai-card-actions">
                   <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
-                  <button onClick={aiUseImageInBlock} disabled={!aiImgGenResult || !hasSelectedImageTarget()}>Use in Selected Block</button>
-                  <button onClick={clearAiImageGen}>Clear</button>
+                  <button onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim() || !aiImgGenResult} title="Generate a fresh image with the same prompt">Regenerate</button>
                   <button onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }} title="Open the shared project image library">Open Image Library</button>
                 </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
-                  <div className="ai-card ai-card-preview">
-                    <div className="ai-card-label">Preview</div>
+                  <div className="ai-card ai-card-preview" data-testid="ai-img-gen-preview">
+                    <div className="ai-card-label">
+                      Preview {aiImgGenIsPreview ? <span className="ai-preview-badge" data-testid="ai-img-gen-preview-badge">Preview only</span> : <span className="ai-preview-badge ai-preview-badge-saved" data-testid="ai-img-gen-preview-badge-saved">Saved to Library</span>}
+                    </div>
                     <div className="ai-card-body">
-                      <img src={aiImgGenResult} alt="Generated" className="ai-result-image" />
-                      <div className="ai-preview-actions">
-                        <button onClick={aiUseImageInBlock} disabled={!hasSelectedImageTarget()}>Use in Selected Block</button>
-                        <button onClick={() => { void aiSaveImageToLibrary(); }} title="Save this image to your project library for later use">Save to Library</button>
-                        <button onClick={() => { void aiAddImageToGallery(); }} title="Add this image to the selected gallery block on the website">Add to Gallery</button>
-                        <button onClick={() => void aiGenerateImage()}>Regenerate</button>
+                      <img src={aiImgGenResult} alt="Generated preview" className="ai-result-image" data-testid="ai-img-gen-preview-image" />
+                      <p className="ai-hint" data-testid="ai-img-gen-preview-hint">
+                        {aiImgGenIsPreview
+                          ? "This preview is stored in a temp cache (gitignored) until you choose to save it. It is NOT in the Image Library and NOT applied to any block."
+                          : "This image is now in the Image Library. Use Apply to Selected Block to push it to the page."}
+                      </p>
+                      <div className="ai-preview-actions" data-testid="ai-img-gen-apply-actions">
                         <button
+                          data-testid="ai-img-gen-save-to-library"
+                          onClick={() => void aiSavePreviewToLibrary()}
+                          disabled={!aiImgGenIsPreview}
+                          title="Save this preview into the Image Library (does not apply to any block)"
+                        >Save to Library</button>
+                        <button
+                          data-testid="ai-img-gen-apply-to-block"
+                          onClick={() => void aiApplyPreviewToBlock()}
+                          disabled={!hasSelectedImageTarget()}
+                          title="Apply this image to the selected block"
+                        >Apply to Selected Block</button>
+                        <button
+                          data-testid="ai-img-gen-save-and-apply"
+                          onClick={() => void aiSaveAndApplyPreview()}
+                          disabled={!hasSelectedImageTarget() || !aiImgGenIsPreview}
+                          title="Save to Library AND apply to selected block"
+                        >Save and Apply</button>
+                        <button
+                          data-testid="ai-img-gen-add-to-gallery"
+                          onClick={() => { void aiAddImageToGallery(); }}
+                          disabled={!hasSelectedImageTarget() || (selectedBlock?.type !== "gallery")}
+                          title="Add to selected gallery block"
+                        >Add to Website Gallery</button>
+                        <button
+                          data-testid="ai-img-gen-cancel"
+                          onClick={() => void aiDiscardPreview()}
+                        >Cancel</button>
+                        <button
+                          data-testid="ai-img-gen-edit-image"
                           onClick={() => { openImageEditModal(aiImgGenResult, "Generated image"); }}
                           title="Open dedicated image edit modal with full options"
-                          data-testid="open-image-edit-modal-from-gen"
                         >Edit image</button>
                       </div>
                     </div>
@@ -5861,17 +6001,21 @@ export function App() {
         </aside>
 
         <main className="canvas-area">
-          <div ref={canvasControlsRef} className="canvas-controls">
-            <button onClick={() => setDeviceMode("desktop")} className={deviceMode === "desktop" ? "selected" : ""}>Desktop</button>
-            <button onClick={() => setDeviceMode("tablet")} className={deviceMode === "tablet" ? "selected" : ""}>Tablet</button>
-            <button onClick={() => setDeviceMode("phone")} className={deviceMode === "phone" ? "selected" : ""}>Phone</button>
+          <div ref={canvasControlsRef} className="canvas-controls" data-testid="canvas-controls">
+            <div className="canvas-controls-group">
+              <span className="canvas-controls-label">View</span>
+              <button onClick={() => setDeviceMode("desktop")} className={deviceMode === "desktop" ? "selected" : ""}>Desktop</button>
+              <button onClick={() => setDeviceMode("tablet")} className={deviceMode === "tablet" ? "selected" : ""}>Tablet</button>
+              <button onClick={() => setDeviceMode("phone")} className={deviceMode === "phone" ? "selected" : ""}>Phone</button>
+            </div>
             {!previewMode && (
-              <>
+              <div className="canvas-controls-group">
+                <span className="canvas-controls-label">Selected</span>
                 <button onClick={() => duplicateBlock()}>Duplicate</button>
                 <button onClick={() => deleteBlock()}>Delete</button>
                 <button onClick={() => moveBlock("up")}>Up</button>
                 <button onClick={() => moveBlock("down")}>Down</button>
-              </>
+              </div>
             )}
           </div>
           {!previewMode && (
