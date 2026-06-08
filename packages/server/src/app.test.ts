@@ -252,44 +252,46 @@ test("/api/project remains available with editor static serving", async () => {
 });
 
 test("/api/secrets/image-keys updates /api/secrets/status source safely", async () => {
-  const key = `local-key-${Date.now()}-demo`;
-  const chatKey = `local-chat-${Date.now()}-demo`;
-  const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ imageGenApiKey: key, chatApiKey: chatKey })
-  });
-  assert.equal(saveResponse.status, 200);
+  await withNoOpenAIKey(async () => {
+    const key = `sk-itest-source-${Date.now()}-abcdefghij1234567890`;
+    const chatKey = `sk-itest-chat-${Date.now()}-abcdefghij1234567890`;
+    const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: key, chatApiKey: chatKey })
+    });
+    assert.equal(saveResponse.status, 200);
 
-  const statusResponse = await fetch(`${baseUrl}/api/secrets/status`);
-  assert.equal(statusResponse.status, 200);
-  const rawText = await statusResponse.text();
-  assert.ok(!rawText.includes(key));
-  assert.ok(!rawText.includes(chatKey));
-  const body = JSON.parse(rawText) as {
-    channels?: {
-      chat?: { configured?: boolean; source?: string };
-      imageGen?: { configured?: boolean; source?: string };
-      imageAnalyze?: { configured?: boolean; source?: string };
+    const statusResponse = await fetch(`${baseUrl}/api/secrets/status`);
+    assert.equal(statusResponse.status, 200);
+    const rawText = await statusResponse.text();
+    assert.ok(!rawText.includes(key));
+    assert.ok(!rawText.includes(chatKey));
+    const body = JSON.parse(rawText) as {
+      channels?: {
+        chat?: { configured?: boolean; source?: string };
+        imageGen?: { configured?: boolean; source?: string };
+        imageAnalyze?: { configured?: boolean; source?: string };
+      };
+      chat?: { configured?: boolean; source?: string; maskedKey?: string | null };
+      imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
     };
-    chat?: { configured?: boolean; source?: string; maskedKey?: string | null };
-    imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
-  };
-  assert.equal(body.channels?.chat?.configured, true);
-  assert.ok(body.channels?.chat?.source === "local" || body.channels?.chat?.source === "env");
-  assert.equal(body.channels?.imageGen?.configured, true);
-  assert.ok(body.channels?.imageGen?.source === "local" || body.channels?.imageGen?.source === "env");
-  assert.equal(body.chat?.configured, true);
-  assert.ok(body.chat?.source === "local" || body.chat?.source === "env");
-  assert.ok((body.chat?.maskedKey || "").length >= 4);
-  assert.equal(body.imageGen?.configured, true);
-  assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
-  assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+    assert.equal(body.channels?.chat?.configured, true);
+    assert.ok(body.channels?.chat?.source === "local" || body.channels?.chat?.source === "env");
+    assert.equal(body.channels?.imageGen?.configured, true);
+    assert.ok(body.channels?.imageGen?.source === "local" || body.channels?.imageGen?.source === "env");
+    assert.equal(body.chat?.configured, true);
+    assert.ok(body.chat?.source === "local" || body.chat?.source === "env");
+    assert.ok((body.chat?.maskedKey || "").length >= 4);
+    assert.equal(body.imageGen?.configured, true);
+    assert.ok(body.imageGen?.source === "local" || body.imageGen?.source === "env");
+    assert.ok((body.imageGen?.maskedKey || "").length >= 4);
+  });
 });
 
 test("/api/secrets/image-keys persists across app restart and never leaks raw keys", async () => {
   await withNoOpenAIKey(async () => {
-    const key = `local-key-${Date.now()}-persist`;
+    const key = `sk-itest-persist-${Date.now()}-abcdefghij1234567890`;
     const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -320,7 +322,7 @@ test("/api/secrets/image-keys persists across app restart and never leaks raw ke
 test("/api/secrets/image-keys does not write key material to project.json", async () => {
   await withNoOpenAIKey(async () => {
     const before = await fs.readFile(projectFile, "utf8");
-    const key = `local-key-${Date.now()}-project-json`;
+    const key = `sk-itest-project-${Date.now()}-abcdefghij1234567890`;
     const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -334,15 +336,11 @@ test("/api/secrets/image-keys does not write key material to project.json", asyn
 });
 
 test("/api/status uses local secret key source when env key is missing", async () => {
-  const oldA = process.env.SBUILD_OPENAI_API_KEY;
-  const oldB = process.env.OPENAI_API_KEY;
-  delete process.env.SBUILD_OPENAI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  try {
+  await withNoOpenAIKey(async () => {
     const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ imageGenApiKey: `local-key-${Date.now()}-status` })
+      body: JSON.stringify({ imageGenApiKey: `sk-itest-status-${Date.now()}-abcdefghij1234567890` })
     });
     assert.equal(saveResponse.status, 200);
 
@@ -354,24 +352,15 @@ test("/api/status uses local secret key source when env key is missing", async (
     };
     assert.equal(body.ok, true);
     assert.equal(body.status?.imageApi, "configured-local");
-  } finally {
-    if (oldA === undefined) delete process.env.SBUILD_OPENAI_API_KEY;
-    else process.env.SBUILD_OPENAI_API_KEY = oldA;
-    if (oldB === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = oldB;
-  }
+  });
 });
 
 test("/api/status reports chat API source and model", async () => {
-  const oldChat = process.env.SBUILD_OPENAI_CHAT_API_KEY;
-  const oldOpenAI = process.env.OPENAI_API_KEY;
-  delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  try {
+  await withNoOpenAIKey(async () => {
     const saveResponse = await fetch(`${baseUrl}/api/secrets/image-keys`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chatApiKey: `local-chat-${Date.now()}-status` })
+      body: JSON.stringify({ chatApiKey: `sk-itest-statuschat-${Date.now()}-abcdefghij1234567890` })
     });
     assert.equal(saveResponse.status, 200);
 
@@ -393,12 +382,7 @@ test("/api/status reports chat API source and model", async () => {
     assert.equal(typeof body.status?.chat?.configured, "boolean");
     assert.equal(typeof body.status?.imageGen?.configured, "boolean");
     assert.equal(typeof body.status?.imageAnalyze?.configured, "boolean");
-  } finally {
-    if (oldChat === undefined) delete process.env.SBUILD_OPENAI_CHAT_API_KEY;
-    else process.env.SBUILD_OPENAI_CHAT_API_KEY = oldChat;
-    if (oldOpenAI === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = oldOpenAI;
-  }
+  });
 });
 
 test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
@@ -2651,4 +2635,153 @@ test("image enhance supports new preset types", async () => {
     });
     assert.ok(res.ok || res.status === 400 || res.status === 503 || res.status === 500, `editType ${editType} should be accepted or gracefully fail`);
   }
+});
+
+test("masked and test-pattern keys cannot overwrite saved real API keys", async () => {
+  await withNoOpenAIKey(async () => {
+    const realKey = `sk-itest-realone-${Date.now()}-abcdefghij1234567890`;
+    const save1 = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageGenApiKey: realKey })
+    });
+    assert.equal(save1.status, 200);
+
+    const maskedAttempts = [
+      "****",
+      "sk-a...wxyz",
+      `local-chat-${Date.now()}-status`,
+      "sk-admin-test",
+      "sk-test",
+      "sk-demo",
+      "sk-local",
+      "sk-fake",
+      "sk-mock",
+      "sk-placeholder",
+      "sk-example",
+      `local-image-${Date.now()}-demo`,
+      `local-key-${Date.now()}-status`,
+      ""
+    ];
+    for (const attempt of maskedAttempts) {
+      const saveAttempt = await fetch(`${baseUrl}/api/secrets/image-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageGenApiKey: attempt })
+      });
+      assert.equal(saveAttempt.status, 200, `attempt should be accepted (filtered): ${attempt.slice(0, 20)}`);
+    }
+
+    const statusResponse = await fetch(`${baseUrl}/api/secrets/status`);
+    const text = await statusResponse.text();
+    assert.equal(text.includes(realKey), false, "raw real key must not appear in response body");
+    const body = JSON.parse(text) as { imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null } };
+    assert.equal(body.imageGen?.configured, true);
+    const masked = body.imageGen?.maskedKey || "";
+    const expectedMask = `${realKey.slice(0, 4)}...${realKey.slice(-4)}`;
+    assert.equal(masked, expectedMask, `saved real key should still be intact after masked attempts; got masked=${masked}, expected=${expectedMask}`);
+  });
+});
+
+test("masked chat key cannot overwrite saved real chat key", async () => {
+  await withNoOpenAIKey(async () => {
+    const realChatKey = `sk-itest-realchat-${Date.now()}-abcdefghij1234567890`;
+    const save1 = await fetch(`${baseUrl}/api/ai/providers/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: realChatKey })
+    });
+    assert.equal(save1.status, 200);
+
+    const masked = `sk-p...wxyz`;
+    const save2 = await fetch(`${baseUrl}/api/ai/providers/config`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: masked })
+    });
+    assert.equal(save2.status, 200);
+
+    const configRes = await fetch(`${baseUrl}/api/ai/providers/config`);
+    const config = await configRes.json() as { maskedApiKey?: string | null };
+    const expectedMask = `${realChatKey.slice(0, 4)}...${realChatKey.slice(-4)}`;
+    assert.equal(config.maskedApiKey, expectedMask, "real chat key must survive masked overwrite attempt");
+  });
+});
+
+test("selected block content router answers child card titles for cards blocks", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what is the title of each card?",
+        targetKind: "block",
+        blockId: "cards-1",
+        blockType: "cards",
+        pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets",
+        blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    const text = String(body.suggestion || "");
+    assert.match(text, /Seasonal Vegetables/i, "must list Seasonal Vegetables as a card title");
+    assert.match(text, /Herbs\s*&\s*Greens/i, "must list Herbs & Greens as a card title");
+    assert.match(text, /Farm Flowers/i, "must list Farm Flowers as a card title");
+    assert.doesNotMatch(text, /Hero block/i, "must not list block names as card titles");
+    assert.doesNotMatch(text, /Welcome/i, "must not list heading text as a card title");
+  });
+});
+
+test("selected block content router answers child card descriptions for cards blocks", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what is the description of each card?",
+        targetKind: "block",
+        blockId: "cards-1",
+        blockType: "cards",
+        blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Hand-picked daily from our fields\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    const text = String(body.suggestion || "");
+    assert.match(text, /Hand-picked daily/i, "must list card 1 description");
+    assert.match(text, /Fresh-cut weekly/i, "must list card 2 description");
+  });
+});
+
+test("selected block child context is included when calling AI chat for cards block", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "list the titles of the cards inside this block",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "content-router");
+      const text = String(body.suggestion || "");
+      assert.match(text, /Seasonal Vegetables/i);
+      assert.match(text, /Herbs\s*&\s*Greens/i);
+      assert.match(text, /Farm Flowers/i);
+    });
+  });
 });

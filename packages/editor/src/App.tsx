@@ -1216,6 +1216,27 @@ export function App() {
   const [rightDrawerMobileOpen, setRightDrawerMobileOpen] = useState(false);
   const [editorTheme, setEditorTheme] = useState(() => localStorage.getItem("sbuild_editor_theme") || "Light");
   const [builderThemePrefsReady, setBuilderThemePrefsReady] = useState(false);
+  const [builderThemeSaveStatus, setBuilderThemeSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [builderThemeSavedAt, setBuilderThemeSavedAt] = useState<string>("");
+
+  async function saveBuilderTheme(): Promise<void> {
+    setBuilderThemeSaveStatus("saving");
+    try {
+      localStorage.setItem("sbuild_editor_theme", editorTheme);
+      const res = await fetchJson<{ ok: boolean; preferences?: { updatedAt?: string } }>("/api/account/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ builderUiTheme: editorTheme })
+      });
+      if (res?.ok) {
+        setBuilderThemeSaveStatus("saved");
+        setBuilderThemeSavedAt(res.preferences?.updatedAt || new Date().toISOString());
+      } else {
+        setBuilderThemeSaveStatus("error");
+      }
+    } catch {
+      setBuilderThemeSaveStatus("error");
+    }
+  }
 
   useEffect(() => {
     localStorage.setItem("sbuild_editor_theme", editorTheme);
@@ -1296,6 +1317,12 @@ export function App() {
   const [imageDiagnostics, setImageDiagnostics] = useState<Record<string, ImageDiagnostics>>({});
   const [providerConfigSaved, setProviderConfigSaved] = useState(false);
   const [aiEnhanceStatus, setAiEnhanceStatus] = useState("");
+  const [imageLibraryTab, setImageLibraryTab] = useState<"library" | "upload" | "settings">("library");
+  const [selectedImageUrls, setSelectedImageUrls] = useState<Set<string>>(new Set());
+  const [imageActionPanelOpen, setImageActionPanelOpen] = useState(false);
+  const [imageActionTab, setImageActionTab] = useState<"actions" | "details" | "history">("actions");
+  const [bulkDeletePending, setBulkDeletePending] = useState(false);
+  const [bulkDeleteMessage, setBulkDeleteMessage] = useState("");
   const [aiEnhanceResult, setAiEnhanceResult] = useState("");
   const [buildInfo, setBuildInfo] = useState<SBuildBuildInfo | null>(null);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
@@ -1926,6 +1953,39 @@ export function App() {
       if (data.folder) setPhotoFolder(data.folder);
       if (!selectedUploadImage && next.length > 0) setSelectedUploadImage(next[0].url);
     } catch { setUploadedImages([]); }
+  }
+
+  async function deleteImages(filenames: string[]): Promise<{ ok: boolean; deletedCount: number; results: Array<{ filename: string; deleted: boolean; error?: string }> }> {
+    if (filenames.length === 0) return { ok: true, deletedCount: 0, results: [] };
+    const data = await fetchJson<{ ok: boolean; deletedCount: number; results: Array<{ filename: string; deleted: boolean; error?: string }> }>("/api/images", {
+      method: "DELETE",
+      body: JSON.stringify({ filenames })
+    });
+    await loadImages();
+    return data;
+  }
+
+  function toggleImageSelected(url: string): void {
+    setSelectedImageUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  }
+
+  function selectAllFilteredImages(): void {
+    setSelectedImageUrls(new Set(filteredUploadedImages.map((img) => img.url)));
+  }
+
+  function clearImageSelection(): void {
+    setSelectedImageUrls(new Set());
+  }
+
+  function openImageActionPanel(): void {
+    if (!selectedUploadImage) return;
+    setImageActionPanelOpen(true);
+    setImageActionTab("actions");
   }
 
   function captureImageDiagnostics(url: string, name: string, element: HTMLImageElement) {
@@ -4681,76 +4741,210 @@ export function App() {
               <h3 style={{ margin: 0 }}>Image Library</h3>
               <button onClick={() => setImageManagerOpen(false)} style={{ padding: "4px 8px" }}>✕</button>
             </div>
-              <p className="panel-status">Image Library stores uploaded and generated project assets. Website Gallery controls images displayed inside gallery blocks on the website.</p>
-
-              <div className="image-manager-upload">
-                <label>Upload image
-                  <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
-                </label>
-                {uploadingImage && <span className="hint">Uploading...</span>}
-                {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
+              <p className="panel-status" data-testid="image-library-intro">Image Library stores all uploaded and generated project assets. The Website Gallery controls which images are displayed inside gallery blocks on the website.</p>
+              <div className="image-library-tabs" data-testid="image-library-tabs" style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+                <button data-testid="image-library-tab-library" className={imageLibraryTab === "library" ? "selected" : ""} onClick={() => setImageLibraryTab("library")}>Library</button>
+                <button data-testid="image-library-tab-upload" className={imageLibraryTab === "upload" ? "selected" : ""} onClick={() => setImageLibraryTab("upload")}>Upload</button>
+                <button data-testid="image-library-tab-settings" className={imageLibraryTab === "settings" ? "selected" : ""} onClick={() => setImageLibraryTab("settings")}>Settings</button>
               </div>
 
-              <div className="image-manager-folder">
-                <h4>Project Photo Folder</h4>
-                <label>Folder path
-                  <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
-                </label>
-                <p className="hint">Photos uploaded here. Default: project/images</p>
-                <div className="button-row compact">
-                  <button onClick={() => void savePhotoFolder()}>Save folder</button>
-                  <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+              {imageLibraryTab === "upload" && (
+                <div className="image-manager-upload" data-testid="image-library-upload-section">
+                  <h4>Upload Images</h4>
+                  <label>Upload image
+                    <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
+                  </label>
+                  {uploadingImage && <span className="hint">Uploading...</span>}
+                  {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
+                  <p className="hint">Tip: uploads are saved to the project image folder (see Settings tab). You can also upload generated images from the AI Image Generator tab.</p>
                 </div>
-              </div>
+              )}
 
-              <div className="image-manager-gallery">
-                <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
-                <div className="image-library-controls">
-                  <label>Filter
-                    <select value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
-                      <option value="all">Show all</option>
-                      <option value="hide-blank">Hide likely blank/white</option>
-                      <option value="hide-tall">Hide tall/screenshot-like</option>
-                      <option value="generated">Generated only</option>
-                      <option value="uploaded">Uploaded only</option>
-                      <option value="used">Used on page only</option>
-                    </select>
+              {imageLibraryTab === "settings" && (
+                <div className="image-manager-folder" data-testid="image-library-settings-section">
+                  <h4>Project Photo Folder</h4>
+                  <label>Folder path
+                    <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
                   </label>
-                  <label>Tile fit
-                    <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
-                      <option value="cover">Cover</option>
-                      <option value="contain">Contain</option>
-                    </select>
-                  </label>
+                  <p className="hint">Photos uploaded here. Default: project/images</p>
+                  <div className="button-row compact">
+                    <button onClick={() => void savePhotoFolder()}>Save folder</button>
+                    <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+                  </div>
                 </div>
-                {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
-                <div className="image-grid">
-                  {filteredUploadedImages.map((img) => (
-                    <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
-                      <img
-                        src={img.url}
-                        alt={img.name}
-                        loading="lazy"
-                        style={{ objectFit: imageTileFit }}
-                        onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
-                        onError={(e) => {
-                          setBrokenImages((prev) => new Set(prev).add(img.url));
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                      {brokenImages.has(img.url) && (
-                        <div className="image-fallback">
-                          <div className="image-fallback-icon">🖼️</div>
-                          <div className="image-fallback-name">{img.name}</div>
-                        </div>
-                      )}
-                      <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
+              )}
+
+              {imageLibraryTab === "library" && (
+                <>
+                  <div className="image-manager-gallery" data-testid="image-library-library-section">
+                    <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+                    <div className="image-library-controls">
+                      <label>Filter
+                        <select data-testid="image-library-filter" value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
+                          <option value="all">Show all</option>
+                          <option value="hide-blank">Hide likely blank/white</option>
+                          <option value="hide-tall">Hide tall/screenshot-like</option>
+                          <option value="generated">Generated only</option>
+                          <option value="uploaded">Uploaded only</option>
+                          <option value="used">Used on page only</option>
+                        </select>
+                      </label>
+                      <label>Tile fit
+                        <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
+                          <option value="cover">Cover</option>
+                          <option value="contain">Contain</option>
+                        </select>
+                      </label>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div className="image-library-bulk" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                      <button data-testid="image-library-select-all" onClick={() => selectAllFilteredImages()}>Select all filtered</button>
+                      <button onClick={() => clearImageSelection()}>Clear selection</button>
+                      <span className="hint">{selectedImageUrls.size} selected</span>
+                      <button
+                        data-testid="image-library-delete-selected"
+                        disabled={selectedImageUrls.size === 0 || bulkDeletePending}
+                        onClick={() => {
+                          if (selectedImageUrls.size === 0) return;
+                          setBulkDeletePending(true);
+                          setBulkDeleteMessage("");
+                        }}
+                        style={{ marginLeft: "auto" }}
+                      >
+                        {bulkDeletePending ? "Confirm delete?" : "Delete selected"}
+                      </button>
+                    </div>
+                    {bulkDeletePending && (
+                      <div className="image-library-confirm" data-testid="image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
+                        <p>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}? This cannot be undone.</p>
+                        <div className="button-row compact">
+                          <button
+                            data-testid="image-library-delete-confirm-yes"
+                            onClick={async () => {
+                              const filenames = Array.from(selectedImageUrls)
+                                .map((url) => url.split("/").pop() || "")
+                                .filter(Boolean);
+                              const result = await deleteImages(filenames);
+                              setBulkDeletePending(false);
+                              setBulkDeleteMessage(`Deleted ${result.deletedCount} image(s).`);
+                              clearImageSelection();
+                            }}
+                          >Yes, delete</button>
+                          <button onClick={() => { setBulkDeletePending(false); setBulkDeleteMessage(""); }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                    {bulkDeleteMessage && <p className="panel-status" data-testid="image-library-delete-message">{bulkDeleteMessage}</p>}
+                    {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
+                    <div className="image-grid" data-testid="image-library-grid">
+                      {filteredUploadedImages.map((img) => {
+                        const isSelected = selectedImageUrls.has(img.url);
+                        const isPrimary = selectedUploadImage === img.url;
+                        const diag = imageDiagnostics[img.url];
+                        return (
+                          <div
+                            key={img.url}
+                            className={`image-card ${isPrimary ? "selected" : ""} ${isSelected ? "multi-selected" : ""}`}
+                            onClick={() => setSelectedUploadImage(img.url)}
+                            data-testid="image-library-card"
+                            data-image-url={img.url}
+                          >
+                            <label className="image-card-checkbox" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleImageSelected(img.url)}
+                                aria-label={`Select ${img.name}`}
+                                data-testid="image-library-card-checkbox"
+                              />
+                            </label>
+                            <img
+                              src={img.url}
+                              alt={img.name}
+                              loading="lazy"
+                              style={{ objectFit: imageTileFit }}
+                              onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
+                              onError={(e) => {
+                                setBrokenImages((prev) => new Set(prev).add(img.url));
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                            {brokenImages.has(img.url) && (
+                              <div className="image-fallback">
+                                <div className="image-fallback-icon">🖼️</div>
+                                <div className="image-fallback-name">{img.name}</div>
+                              </div>
+                            )}
+                            <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}{diag?.likelyWhite ? " (blank)" : ""}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-              {renderImageManagerActions(false)}
+                  {selectedUploadImage && (
+                    <div className="image-library-selected-panel" data-testid="image-library-selected-panel" style={{ marginTop: 12 }}>
+                      <div className="button-row compact">
+                        <button onClick={() => openImageActionPanel()}>Open actions for selected image</button>
+                        <span className="hint">Actions like Enhance, B&amp;W, and Set as Hero are in the action panel below.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {imageActionPanelOpen && selectedUploadImage && (
+                    <div className="image-action-modal-backdrop" data-testid="image-action-modal" onClick={() => setImageActionPanelOpen(false)}>
+                      <div className="image-action-modal" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <h4 style={{ margin: 0 }}>Selected Image: {selectedUploadImage.split("/").pop()}</h4>
+                          <button onClick={() => setImageActionPanelOpen(false)} style={{ padding: "2px 8px" }}>✕</button>
+                        </div>
+                        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+                          <button className={imageActionTab === "actions" ? "selected" : ""} onClick={() => setImageActionTab("actions")}>Actions</button>
+                          <button className={imageActionTab === "details" ? "selected" : ""} onClick={() => setImageActionTab("details")}>Details</button>
+                          <button className={imageActionTab === "history" ? "selected" : ""} onClick={() => setImageActionTab("history")}>History</button>
+                        </div>
+                        {imageActionTab === "actions" && (
+                          <div className="image-action-modal-body">
+                            {renderImageManagerActions(true)}
+                          </div>
+                        )}
+                        {imageActionTab === "details" && (() => {
+                          const meta = uploadedImages.find((m) => m.url === selectedUploadImage);
+                          const diag = imageDiagnostics[selectedUploadImage];
+                          return (
+                            <div className="image-action-modal-body" data-testid="image-action-details">
+                              <p><strong>Name:</strong> {meta?.name || selectedUploadImage.split("/").pop()}</p>
+                              <p><strong>Folder:</strong> {meta?.folder || "—"}</p>
+                              <p><strong>Size:</strong> {meta?.size ? `${Math.round(meta.size / 1024)} KB` : "—"}</p>
+                              <p><strong>Modified:</strong> {meta?.modified || "—"}</p>
+                              <p><strong>Edited:</strong> {meta?.isEdited ? "yes" : "no"}</p>
+                              {diag && (
+                                <>
+                                  <p><strong>Width x Height:</strong> {diag.width} x {diag.height}</p>
+                                  <p><strong>Likely blank/white:</strong> {diag.likelyWhite ? "yes" : "no"}</p>
+                                  <p><strong>Likely tall capture:</strong> {diag.likelyTallCapture ? "yes" : "no"}</p>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {imageActionTab === "history" && (() => {
+                          const meta = uploadedImages.find((m) => m.url === selectedUploadImage);
+                          return (
+                            <div className="image-action-modal-body" data-testid="image-action-history">
+                              <p className="hint">Edit history for this image:</p>
+                              <ul>
+                                {meta?.isEdited && <li>Edited via photo tools</li>}
+                                <li>Uploaded to project image folder</li>
+                              </ul>
+                              <p className="hint">For more, check git history of the project.</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -5758,12 +5952,20 @@ export function App() {
                 <p><strong>Builder UI Theme</strong> changes only the editor toolbar, panels, buttons, and modals.</p>
                 <p><strong>Website Theme</strong> changes only the page preview, including your site header/nav and content blocks.</p>
                 <p className="hint">The SBUILD topbar, left/right panels, and all editor buttons always use Builder UI Theme colors — Website Theme never affects them.</p>
-                <label style={{ marginTop: 12, display: "block" }}>Editor Theme
-                  <select value={editorTheme} onChange={(e) => setEditorTheme(e.target.value)} style={{ marginLeft: 8 }}>
-                    <option value="Light">Light</option>
-                    <option value="Dark">Dark</option>
-                  </select>
-                </label>
+                <div className="builder-theme-row" data-testid="builder-theme-row" style={{ marginTop: 12 }}>
+                  <label style={{ display: "block", marginBottom: 6 }}>Editor Theme
+                    <select data-testid="builder-theme-select" value={editorTheme} onChange={(e) => setEditorTheme(e.target.value)} style={{ marginLeft: 8 }}>
+                      <option value="Light">Light</option>
+                      <option value="Dark">Dark</option>
+                    </select>
+                  </label>
+                  <div className="button-row compact" style={{ marginTop: 4 }}>
+                    <button data-testid="save-builder-theme" onClick={() => void saveBuilderTheme()}>{builderThemeSaveStatus === "saving" ? "Saving..." : "Save Theme"}</button>
+                    {builderThemeSaveStatus === "saved" && <span className="panel-status" data-testid="builder-theme-save-status">Saved (Builder UI Theme will persist across refresh and service restart).</span>}
+                    {builderThemeSaveStatus === "error" && <span className="panel-status" style={{ color: "#c0392b" }}>Save failed. Check that you are signed in.</span>}
+                    {builderThemeSavedAt && builderThemeSaveStatus === "saved" && <span className="hint" style={{ marginLeft: 8 }}>updatedAt: {builderThemeSavedAt}</span>}
+                  </div>
+                </div>
                 <hr style={{ margin: "16px 0" }} />
                 <button className="logout-btn" onClick={() => { void (async () => { try { await fetch("/logout", { method: "POST" }); } catch { /* */ } window.location.href = "/login"; })(); }}>Logout</button>
               </div>

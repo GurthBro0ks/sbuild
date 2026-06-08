@@ -23,6 +23,54 @@ test("image manager labels gallery add and replace actions explicitly", () => {
   assert.match(appSource, /Select an Image block or Gallery image slot to use this as image content\./);
 });
 
+test("image library exposes tab structure with Library, Upload, and Settings", () => {
+  assert.match(appSource, /data-testid="image-library-tabs"/);
+  assert.match(appSource, /data-testid="image-library-tab-library"/);
+  assert.match(appSource, /data-testid="image-library-tab-upload"/);
+  assert.match(appSource, /data-testid="image-library-tab-settings"/);
+  assert.match(appSource, /imageLibraryTab === "library"/);
+  assert.match(appSource, /imageLibraryTab === "upload"/);
+  assert.match(appSource, /imageLibraryTab === "settings"/);
+});
+
+test("image library provides multi-select delete with confirmation", () => {
+  assert.match(appSource, /data-testid="image-library-select-all"/);
+  assert.match(appSource, /data-testid="image-library-delete-selected"/);
+  assert.match(appSource, /data-testid="image-library-delete-confirm"/);
+  assert.match(appSource, /data-testid="image-library-delete-confirm-yes"/);
+  assert.match(appSource, /selectAllFilteredImages/);
+  assert.match(appSource, /toggleImageSelected/);
+  assert.match(appSource, /deleteImages/);
+  assert.match(appSource, /method:\s*"DELETE"/);
+  assert.match(appSource, /\/api\/images/);
+});
+
+test("image library selected image action modal exposes Actions/Details/History", () => {
+  assert.match(appSource, /data-testid="image-action-modal"/);
+  assert.match(appSource, /imageActionTab === "actions"/);
+  assert.match(appSource, /imageActionTab === "details"/);
+  assert.match(appSource, /imageActionTab === "history"/);
+  assert.match(appSource, /data-testid="image-action-details"/);
+  assert.match(appSource, /data-testid="image-action-history"/);
+});
+
+test("image library hide-blank filter remains available for white/blank cleanup", () => {
+  assert.match(appSource, /Hide likely blank\/white/);
+  assert.match(appSource, /hide-blank/);
+});
+
+test("mobile AI panel uses dynamic viewport height and allows internal scrolling", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,300}max-height:\s*92dvh/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,400}min-height:\s*60dvh/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel-tab-content[\s\S]{0,200}overflow-y:\s*auto/);
+  assert.match(cssSource, /safe-area-inset-bottom/);
+});
+
+test("mobile AI panel exposes ai-card-actions buttons that wrap and stay reachable", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.ai-card-actions[\s\S]{0,200}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.ai-preview-actions[\s\S]{0,200}flex-direction:\s*column/);
+});
+
 test("crop-fit and modal layout expose safe visible targets", () => {
   assert.match(appSource, /Crop\/Fit target:/);
   assert.match(appSource, /Crop\/Fit and replace/);
@@ -253,6 +301,21 @@ test("builder UI theme sync uses server preferences endpoint", () => {
   assert.match(appSource, /\/api\/account\/preferences/);
   assert.match(appSource, /builderUiTheme/);
   assert.match(appSource, /builderThemePrefsReady/);
+});
+
+test("builder UI theme exposes an explicit Save Theme button in Settings", () => {
+  assert.match(appSource, /data-testid="save-builder-theme"/);
+  assert.match(appSource, /data-testid="builder-theme-select"/);
+  assert.match(appSource, /Save Theme/);
+  assert.match(appSource, /saveBuilderTheme/);
+  assert.match(appSource, /builderThemeSaveStatus/);
+});
+
+test("builder UI theme save uses PUT /api/account/preferences and persists across reload", () => {
+  assert.match(appSource, /method:\s*"PUT"/);
+  assert.match(appSource, /\/api\/account\/preferences/);
+  assert.match(appSource, /body:\s*JSON\.stringify\(\{\s*builderUiTheme:\s*editorTheme\s*\}\)/);
+  assert.match(appSource, /localStorage\.setItem\("sbuild_editor_theme"/);
 });
 
 test("AI chat surfaces safe success and error provider states", () => {

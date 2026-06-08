@@ -23,6 +23,25 @@ const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
 const DEFAULT_LOCAL_CHAT_MODEL = "qwen2.5:1.5b";
 const OLD_DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
 
+function isLikelyMaskedOrTestKey(value: string): boolean {
+  const v = String(value || "").trim();
+  if (!v) return true;
+  if (v === "****") return true;
+  if (/\.{3,}/.test(v)) return true;
+  if (/^sk-(test|admin-test|demo|local|fake|mock|placeholder|example)/i.test(v)) return true;
+  if (/^local-(chat|image|gen)-/i.test(v)) return true;
+  if (/-status$/.test(v) || /-demo$/.test(v)) return true;
+  if (/^sk-[A-Za-z0-9_-]{0,12}$/i.test(v) && !/^sk-(proj-|or-|sv-|[A-Za-z0-9_-]{20,})/i.test(v)) return true;
+  return false;
+}
+
+function sanitizeApiKeyInput(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (isLikelyMaskedOrTestKey(raw)) return "";
+  return raw;
+}
+
 type LocalModelInfo = {
   name: string;
   size?: number;
@@ -1629,7 +1648,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         ? baseUrl
         : "";
     }
-    if (cfg.apiKey !== undefined && cfg.apiKey) secrets.chatApiKey = cfg.apiKey;
+    if (cfg.apiKey !== undefined && cfg.apiKey) {
+      const cleanedKey = sanitizeApiKeyInput(cfg.apiKey);
+      if (cleanedKey) secrets.chatApiKey = cleanedKey;
+    }
     await saveSecrets(secrets);
   }
 
@@ -1815,9 +1837,38 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       .filter((line) => /^card\s+\d+:/i.test(line) || /^[-*]\s+/i.test(line));
   }
 
+  function collectChildCardTitles(blockContentLines: string[]): string[] {
+    return blockContentLines
+      .map((line) => line.trim())
+      .filter((line) => /^card\s+\d+:/i.test(line))
+      .map((line) => {
+        const stripped = line.replace(/^card\s+\d+:\s*/i, "").trim();
+        const sepMatch = stripped.match(/^(.+?)\s*(?:\/|—|–|\||\.\s|:\s)/);
+        return (sepMatch ? sepMatch[1] : stripped).trim();
+      })
+      .filter(Boolean);
+  }
+
+  function collectChildCardDescriptions(blockContentLines: string[]): string[] {
+    return blockContentLines
+      .map((line) => line.trim())
+      .filter((line) => /^card\s+\d+:/i.test(line))
+      .map((line) => {
+        const stripped = line.replace(/^card\s+\d+:\s*/i, "").trim();
+        const sepMatch = stripped.match(/^(.+?)\s*(?:\/|—|–|\||\.\s|:\s)(.+)$/);
+        return (sepMatch ? sepMatch[2] : "").trim();
+      })
+      .filter(Boolean);
+  }
+
+  function blockHasCardsBlockContext(blockContentLines: string[]): boolean {
+    return blockContentLines.some((line) => /^\[cards\s+block\]/i.test(line.trim()))
+      || blockContentLines.some((line) => /^card\s+\d+:/i.test(line.trim()));
+  }
+
   function answerPageContentQuestion(prompt: string, targetKind: string, blockContent: string, pageContent: string): string | null {
     const lower = prompt.trim().toLowerCase();
-    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours)/i.test(lower);
+    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours|titles?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|descriptions?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|name\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column))/i.test(lower);
     if (!hasContentQuestionCue) return null;
 
     const source = targetKind === "block"
@@ -1838,6 +1889,29 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         if (section.length > 0) {
           return `What We Grow: ${section.join("; ")}`;
         }
+      }
+    }
+
+    const blockContentLines = targetKind === "block" && blockContent
+      ? normalizeContentLines(blockContent)
+      : [];
+    const blockHasCards = blockContentLines.length > 0 && blockHasCardsBlockContext(blockContentLines);
+
+    if (targetKind === "block" && blockHasCards) {
+      const childTitles = collectChildCardTitles(blockContentLines);
+      const childDescriptions = collectChildCardDescriptions(blockContentLines);
+
+      const asksForTitles = /\btitles?\b|name\b|what\s+(are|is)\s+(the|each)|list\b/i.test(lower) && !/descriptions?\b/i.test(lower);
+      const asksForDescriptions = /\bdescriptions?\b|\bdetails?\b|\bbodies?\b|\babout\b/i.test(lower);
+
+      if (asksForTitles && childTitles.length > 0) {
+        return `Card titles in this block: ${childTitles.join("; ")}`;
+      }
+      if (asksForDescriptions && childDescriptions.length > 0) {
+        return `Card descriptions in this block: ${childDescriptions.join("; ")}`;
+      }
+      if (childTitles.length > 0) {
+        return `This block contains ${childTitles.length} cards: ${childTitles.join("; ")}`;
       }
     }
 
@@ -1994,8 +2068,6 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             "When suggesting replacement copy, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
             "Otherwise answer normally with plain text."
           ].join(" ");
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 30000);
           const historyMessages: Array<{ role: string; content: string }> = [
             { role: "system", content: systemPrompt }
           ];
@@ -2010,12 +2082,17 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           const userMessage = `${cleanPrompt}\n\nPlease respond concisely and directly. Do not include your reasoning process.`;
           historyMessages.push({ role: "user", content: userMessage });
           const isQwen3 = modelToUse.startsWith("qwen3");
+          const isSmallQwen25 = /^qwen2\.5:(\d+(\.\d+)?)b/i.test(modelToUse) || /^qwen2\.5:1\.5/i.test(modelToUse);
+          const numPredict = isSmallQwen25 ? 200 : 512;
+          const timeoutMs = isSmallQwen25 ? 22000 : 30000;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
           const requestBody: any = {
             model: modelToUse,
             stream: false,
             options: {
               temperature: 0.2,
-              num_predict: 512
+              num_predict: numPredict
             },
             messages: historyMessages
           };
@@ -2481,9 +2558,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   });
 
   app.post("/api/secrets/image-keys", requireAdminMw, async (req, res) => {
-    const genKey = String(req.body?.imageGenApiKey || "").trim();
-    const analyzeKey = String(req.body?.imageAnalyzeApiKey || "").trim();
-    const chatKey = String(req.body?.chatApiKey || "").trim();
+    const genKey = sanitizeApiKeyInput(req.body?.imageGenApiKey);
+    const analyzeKey = sanitizeApiKeyInput(req.body?.imageAnalyzeApiKey);
+    const chatKey = sanitizeApiKeyInput(req.body?.chatApiKey);
     const secrets = await loadSecrets();
     if (genKey) secrets.imageGenApiKey = genKey;
     if (analyzeKey) secrets.imageAnalyzeApiKey = analyzeKey;
