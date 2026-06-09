@@ -2808,3 +2808,61 @@ test("Image Library: image grid has a generous max-height so the grid uses the a
   const cssSection = cssSource.substring(cssIdx, cssIdx + 400);
   assert.match(cssSection, /max-height:\s*60vh/);
 });
+
+test("Image Library Modal: has Browse / Upload / Settings tabs with data-testid prefix modal-", () => {
+  assert.match(appSource, /data-testid="modal-image-library-tabs"/);
+  assert.match(appSource, /data-testid="modal-image-library-tab-browse"/);
+  assert.match(appSource, /data-testid="modal-image-library-tab-upload"/);
+  assert.match(appSource, /data-testid="modal-image-library-tab-settings"/);
+});
+
+test("Image Library Modal: browse tab has multi-select with checkboxes, selected count, and delete", () => {
+  assert.match(appSource, /data-testid="modal-image-library-grid"/);
+  assert.match(appSource, /data-testid="modal-image-library-card-checkbox"/);
+  assert.match(appSource, /data-testid="modal-image-library-selected-count"/);
+  assert.match(appSource, /data-testid="modal-image-library-bulk-bar"/);
+  assert.match(appSource, /data-testid="modal-image-library-delete-selected"/);
+  assert.match(appSource, /data-testid="modal-image-library-select-all"/);
+  assert.match(appSource, /data-testid="modal-image-library-clear-selection"/);
+  assert.match(appSource, /data-testid="modal-image-library-select-mode-toggle"/);
+  assert.match(appSource, /data-testid="modal-image-library-delete-confirm"/);
+  assert.match(appSource, /data-testid="modal-image-library-delete-confirm-yes"/);
+});
+
+test("Image Library Modal: browse tab has Refresh and Open folder buttons", () => {
+  assert.match(appSource, /data-testid="modal-image-library-refresh"/);
+  assert.match(appSource, /data-testid="modal-image-library-open-folder"/);
+  assert.match(appSource, /data-testid="modal-image-library-library-section"/);
+});
+
+test("Image Library Modal: settings tab has folder refresh, folder list, and honest unavailable message", () => {
+  assert.match(appSource, /data-testid="modal-image-library-folder-refresh"/);
+  assert.match(appSource, /data-testid="modal-image-library-folder-current"/);
+  assert.match(appSource, /data-testid="modal-image-library-folder-active"/);
+  assert.match(appSource, /data-testid="modal-image-library-folder-list-details"/);
+  assert.match(appSource, /Open folder is unavailable in this browser build/);
+});
+
+test("Image Library Modal: all openers (Images button, AI Image Gen, AI Image Enhance, context menu) share setImageManagerOpen", () => {
+  const openers = appSource.match(/setImageManagerOpen\(true\)/g) || [];
+  assert.ok(openers.length >= 4, `at least 4 setImageManagerOpen(true) calls, found ${openers.length}`);
+  assert.match(appSource, /setImageManagerOpen\(true\); setImageManagerTarget\("block-bg"\)/);
+});
+
+test("Image Library Modal: delete confirmation shows in-use warning and .gitkeep skip", () => {
+  assert.match(appSource, /data-testid="modal-image-library-delete-inuse-warning"/);
+  assert.match(appSource, /modal-image-library-delete-message/);
+});
+
+test("AI Image Gen: Generate Image button exists directly below the prompt textarea", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-generate-near-prompt"/);
+  assert.match(appSource, /data-testid="ai-img-gen-generate"/);
+  const promptCardIdx = appSource.indexOf("ai-card-prompt");
+  const nearPromptIdx = appSource.indexOf("ai-img-gen-generate-near-prompt");
+  assert.ok(nearPromptIdx > promptCardIdx, "Generate near-prompt button is inside or after the prompt card");
+});
+
+test("AI Image Gen: default placement is preview-only and default target is library", () => {
+  assert.match(appSource, /useState<string>\("preview-only"\)/);
+  assert.match(appSource, /Preview only — do not apply/);
+});

@@ -6159,6 +6159,13 @@ export function App() {
                   <div className="ai-card-label">Image Prompt</div>
                   <div className="ai-card-body">
                     <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." />
+                    <button
+                      className="ai-action-primary"
+                      onClick={() => void aiGenerateImage()}
+                      disabled={!aiImgGenPrompt.trim()}
+                      data-testid="ai-img-gen-generate-near-prompt"
+                      style={{ marginTop: 8, width: "100%", padding: "8px 12px", fontSize: "13px" }}
+                    >Generate Image</button>
                   </div>
                 </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
@@ -7192,74 +7199,264 @@ export function App() {
               <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#888" }}>Image Library stores uploaded and generated project assets. Website Gallery controls images displayed inside gallery blocks on the website.</p>
               <button className="modal-close" onClick={() => setImageManagerOpen(false)} aria-label="Close Image Library">✕</button>
             </div>
-            <div className="image-manager-upload">
-              <label>Upload image
-                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
-              </label>
-              {uploadingImage && <span className="hint">Uploading...</span>}
+            <div className="image-library-tabs" data-testid="modal-image-library-tabs" style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+              <button data-testid="modal-image-library-tab-browse" className={imageLibraryTab === "browse" ? "selected" : ""} onClick={() => setImageLibraryTab("browse")}>Browse</button>
+              <button data-testid="modal-image-library-tab-upload" className={imageLibraryTab === "upload" ? "selected" : ""} onClick={() => setImageLibraryTab("upload")}>Upload</button>
+              <button
+                data-testid="modal-image-library-tab-settings"
+                className={imageLibraryTab === "settings" ? "selected" : ""}
+                onClick={() => { setImageLibraryTab("settings"); void refreshFolderList(); }}
+              >Settings</button>
             </div>
-            <div className="image-manager-folder">
-              <h4>Project Photo Folder</h4>
-              <p className="hint">Photos uploaded here. Default: project/images</p>
-              <label>Folder path
-                <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
-              </label>
-              <div className="button-row compact">
-                <button onClick={() => void savePhotoFolder()}>Save folder</button>
-                <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
-              </div>
-            </div>
-            
-            <div className="image-manager-gallery">
-              <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
-              <div className="image-library-controls">
-                <label>Filter
-                  <select value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
-                    <option value="all">Show all</option>
-                    <option value="hide-blank">Hide likely blank/white</option>
-                    <option value="hide-tall">Hide tall/screenshot-like</option>
-                    <option value="generated">Generated only</option>
-                    <option value="uploaded">Uploaded only</option>
-                    <option value="used">Used on page only</option>
-                  </select>
+
+            {imageLibraryTab === "upload" && (
+              <div className="image-manager-upload" data-testid="modal-image-library-upload-section">
+                <h4>Upload Images</h4>
+                <label>Upload image
+                  <input type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={(e) => void uploadImages(e.target.files)} />
                 </label>
-                <label>Tile fit
-                  <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
-                    <option value="cover">Cover</option>
-                    <option value="contain">Contain</option>
-                  </select>
-                </label>
+                {uploadingImage && <span className="hint">Uploading...</span>}
+                {photoEditStatus && <p className="panel-status">{photoEditStatus}</p>}
+                <p className="hint">Tip: uploads are saved to the project image folder (see Settings tab). You can also upload generated images from the AI Image Generator tab.</p>
               </div>
-              {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
-              <div className="image-grid">
-                {filteredUploadedImages.map((img) => (
-                  <div key={img.url} className={`image-card ${selectedUploadImage === img.url ? "selected" : ""}`} onClick={() => setSelectedUploadImage(img.url)}>
-                    <img
-                      src={img.url}
-                      alt={img.name}
-                      loading="lazy"
-                      style={{ objectFit: imageTileFit }}
-                      onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
-                      onError={(e) => {
-                        setBrokenImages((prev) => new Set(prev).add(img.url));
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                    {brokenImages.has(img.url) && (
-                      <div className="image-fallback">
-                        <div className="image-fallback-icon">🖼️</div>
-                        <div className="image-fallback-name">{img.name}</div>
-                      </div>
-                    )}
-                    <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}</div>
+            )}
+
+            {imageLibraryTab === "settings" && (
+              <div className="image-manager-folder" data-testid="modal-image-library-settings-section">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h4 style={{ margin: 0 }}>Project Photo Folder</h4>
+                  <button
+                    data-testid="modal-image-library-folder-refresh"
+                    onClick={() => void refreshFolderList()}
+                    style={{ padding: "4px 8px" }}
+                  >Refresh / Rescan</button>
+                </div>
+                <p className="hint" style={{ marginTop: 6 }}>
+                  Manage your project image folders without terminal access. All operations stay inside <code>project/images</code>.
+                </p>
+                <div className="image-folder-current" data-testid="modal-image-library-folder-current" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <strong>Active folder:</strong>
+                  <code data-testid="modal-image-library-folder-active">{photoFolder}</code>
+                  <button onClick={() => void savePhotoFolder()} data-testid="modal-image-library-folder-save-active">Save as active</button>
+                  <button onClick={() => setPhotoFolder("project/images")} data-testid="modal-image-library-folder-reset">Reset to project/images</button>
+                </div>
+                <p className="hint" style={{ color: "var(--editor-text-muted)", fontSize: "11px" }}>
+                  Open folder is unavailable in this browser build. Use folder path + Refresh.
+                </p>
+                <details className="image-folder-section" data-testid="modal-image-library-folder-list-details" open>
+                  <summary style={{ cursor: "pointer", fontWeight: 600, padding: "4px 0" }}>Folders</summary>
+                  <div className="image-folder-list" data-testid="modal-image-library-folder-list-section" style={{ marginBottom: 10 }}>
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 180, overflowY: "auto", border: "1px solid var(--editor-border)", borderRadius: 6 }}>
+                      {folderList.map((folder) => {
+                        const isActive = folder === photoFolder;
+                        const isRoot = folder === "project/images";
+                        return (
+                          <li key={folder} data-testid="modal-image-library-folder-item" data-folder={folder} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderBottom: "1px solid var(--editor-border)", background: isActive ? "var(--editor-status-bg)" : "transparent" }}>
+                            <code style={{ flex: 1, fontSize: 12 }}>{folder}</code>
+                            {!isActive && (<button data-testid="modal-image-library-folder-switch" onClick={() => setPhotoFolder(folder)} style={{ fontSize: 11, padding: "2px 6px" }}>Set active</button>)}
+                            {!isRoot && (<button data-testid="modal-image-library-folder-delete" onClick={() => void deleteImageFolder(folder)} style={{ fontSize: 11, padding: "2px 6px" }} title="Delete folder (must be empty)">Delete</button>)}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
-                ))}
+                </details>
+                {folderManagerStatus && (
+                  <p data-testid="modal-image-library-folder-status" className="panel-status" style={{ color: folderManagerStatusOk ? "var(--editor-accent)" : "var(--editor-warning, #c0392b)" }}>{folderManagerStatus}</p>
+                )}
               </div>
-            </div>
-            
-            {renderImageManagerActions(true)}
-            <div className="image-manager-footer">
-              <button onClick={() => setImageManagerOpen(false)}>Cancel</button>
+            )}
+
+            {imageLibraryTab === "browse" && (
+              <>
+                <div className="image-manager-gallery" data-testid="modal-image-library-library-section">
+                  <div className="image-library-header">
+                    <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+                    <div className="image-library-header-actions">
+                      <button data-testid="modal-image-library-refresh" onClick={() => void loadImages()} title="Reload the image list from disk">Refresh</button>
+                      <button
+                        data-testid="modal-image-library-open-folder"
+                        onClick={() => {
+                          setImageLibraryTab("settings");
+                          void refreshFolderList();
+                        }}
+                        title="Open the in-app folder manager (browser-safe; no native OS picker is launched)"
+                      >Open folder</button>
+                    </div>
+                  </div>
+                  <div className="image-library-controls">
+                    <label>Filter
+                      <select data-testid="modal-image-library-filter" value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
+                        <option value="all">Show all</option>
+                        <option value="hide-blank">Hide likely blank/white</option>
+                        <option value="hide-tall">Hide tall/screenshot-like</option>
+                        <option value="generated">Generated only</option>
+                        <option value="uploaded">Uploaded only</option>
+                        <option value="used">Used on page only</option>
+                      </select>
+                    </label>
+                    <label>Tile fit
+                      <select value={imageTileFit} onChange={(e) => setImageTileFit(e.target.value as ImageTileFit)}>
+                        <option value="cover">Cover</option>
+                        <option value="contain">Contain</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="image-library-bulk" data-testid="modal-image-library-bulk-bar">
+                    <div className="image-library-bulk-row" data-testid="modal-image-library-bulk-row-top">
+                      <span className="image-library-selected-count" data-testid="modal-image-library-selected-count" aria-live="polite">
+                        {selectMode ? `Selected: ${selectedImageUrls.size}` : "Selection off"}
+                      </span>
+                      <button data-testid="modal-image-library-select-all" onClick={() => selectAllFilteredImages()} disabled={!selectMode}>Select all visible</button>
+                      <button data-testid="modal-image-library-clear-selection" onClick={() => clearImageSelection()} disabled={!selectMode || selectedImageUrls.size === 0}>Clear selection</button>
+                      <button
+                        data-testid="modal-image-library-select-mode-toggle"
+                        className={selectMode ? "selected" : ""}
+                        aria-pressed={selectMode}
+                        onClick={() => {
+                          setSelectMode((prev) => !prev);
+                          if (selectMode) clearImageSelection();
+                        }}
+                        title={selectMode ? "Turn selection off" : "Turn selection on"}
+                      >{selectMode ? "Selection: on" : "Selection: off"}</button>
+                      <button
+                        data-testid="modal-image-library-delete-selected"
+                        disabled={!selectMode || selectedImageUrls.size === 0 || bulkDeletePending}
+                        onClick={() => {
+                          if (selectedImageUrls.size === 0) return;
+                          setBulkDeletePending(true);
+                          setBulkDeleteMessage("");
+                        }}
+                        className="image-library-delete-button"
+                      >
+                        {bulkDeletePending ? "Confirm delete" : `Delete selected (${selectedImageUrls.size})`}
+                      </button>
+                    </div>
+                  </div>
+                  {bulkDeletePending && (
+                    <div className="image-library-confirm" data-testid="modal-image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-warning, #c0392b)", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                      {(() => {
+                        const selectedMetas = uploadedImages.filter((img) => selectedImageUrls.has(img.url));
+                        const inUse = selectedMetas.filter((m) => usedImageUrls.has(m.url));
+                        const gitkeepSlipped = selectedMetas.some((m) => m.name === ".gitkeep" || m.name.startsWith("."));
+                        return (
+                          <>
+                            <p style={{ marginTop: 0 }}><strong>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}?</strong> This cannot be undone.</p>
+                            {inUse.length > 0 && (
+                              <p className="image-library-confirm-warn" data-testid="modal-image-library-delete-inuse-warning" style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}>
+                                {inUse.length} of the selected image{inUse.length === 1 ? " is" : "s are"} currently used by the project. They will be blocked from deletion. Replace their usage first.
+                              </p>
+                            )}
+                            {gitkeepSlipped && (
+                              <p style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}>
+                                Note: hidden / system files (.gitkeep) will be skipped automatically.
+                              </p>
+                            )}
+                            <div className="button-row compact">
+                              <button
+                                data-testid="modal-image-library-delete-confirm-yes"
+                                onClick={async () => {
+                                  const paths = Array.from(selectedImageUrls)
+                                    .map((url) => url.replace(/^\/+/, ""))
+                                    .filter((url) => {
+                                      if (!url) return false;
+                                      if (url.startsWith("project/images/")) return true;
+                                      return false;
+                                    });
+                                  const result = await bulkDeleteImages(paths);
+                                  const blocked = result.results.filter((r) => !r.deleted && r.skipped).length;
+                                  const errCount = result.results.filter((r) => !r.deleted && r.error && !r.skipped).length;
+                                  let msg = `Deleted ${result.deletedCount} image(s).`;
+                                  if (blocked > 0) msg += ` ${blocked} blocked (in use).`;
+                                  if (errCount > 0) msg += ` ${errCount} error(s).`;
+                                  setBulkDeletePending(false);
+                                  setBulkDeleteMessage(msg);
+                                  clearImageSelection();
+                                  await loadImages();
+                                }}
+                                style={{ background: "var(--editor-warning, #c0392b)", color: "#fff", borderColor: "var(--editor-warning, #c0392b)" }}
+                              >Yes, delete</button>
+                              <button onClick={() => { setBulkDeletePending(false); setBulkDeleteMessage(""); }}>Cancel</button>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  {bulkDeleteMessage && <p className="panel-status" data-testid="modal-image-library-delete-message">{bulkDeleteMessage}</p>}
+                  {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
+                  <div className="image-grid" data-testid="modal-image-library-grid" data-select-mode={selectMode ? "on" : "off"}>
+                    {filteredUploadedImages.map((img) => {
+                      const isSelected = selectedImageUrls.has(img.url);
+                      const isPrimary = selectedUploadImage === img.url;
+                      const diag = imageDiagnostics[img.url];
+                      return (
+                        <div
+                          key={img.url}
+                          className={`image-card ${isPrimary ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${selectMode ? "select-mode" : ""}`}
+                          onClick={() => { if (!selectMode) setSelectedUploadImage(img.url); else toggleImageSelected(img.url); }}
+                          onContextMenu={(e) => { e.preventDefault(); toggleImageSelected(img.url); }}
+                          data-testid="modal-image-library-card"
+                          data-image-url={img.url}
+                          data-selected={isSelected ? "true" : "false"}
+                          role="button"
+                          aria-pressed={isSelected}
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleImageSelected(img.url); } }}
+                        >
+                          <label
+                            className={`image-card-checkbox ${selectMode ? "image-card-checkbox-prominent" : ""}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleImageSelected(img.url)}
+                              aria-label={`Select ${img.name}`}
+                              data-testid="modal-image-library-card-checkbox"
+                            />
+                          </label>
+                          <img
+                            src={img.url}
+                            alt={img.name}
+                            loading="lazy"
+                            style={{ objectFit: imageTileFit }}
+                            onLoad={(e) => captureImageDiagnostics(img.url, img.name, e.currentTarget)}
+                            onError={(e) => {
+                              setBrokenImages((prev) => new Set(prev).add(img.url));
+                              (e.target as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                          {brokenImages.has(img.url) && (
+                            <div className="image-fallback">
+                              <div className="image-fallback-icon">🖼️</div>
+                              <div className="image-fallback-name">{img.name}</div>
+                            </div>
+                          )}
+                          <div className="image-meta">{img.name}{img.isEdited ? " (edited)" : ""}{diag?.likelyWhite ? " (blank)" : ""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {selectedUploadImage && !selectMode && (
+                  <div className="image-library-selected-panel" data-testid="modal-image-library-selected-panel" style={{ marginTop: 12 }}>
+                    {renderImageManagerActions(true)}
+                  </div>
+                )}
+                {selectedUploadImage && !selectMode && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="button-row compact">
+                      <button onClick={() => openImageActionPanel()}>Open actions for selected image</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="image-manager-footer" style={{ marginTop: 12 }}>
+              <button onClick={() => setImageManagerOpen(false)}>Close</button>
             </div>
           </div>
         </div>
