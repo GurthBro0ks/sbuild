@@ -887,6 +887,299 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     res.json({ ok: allDeleted, results, deletedCount: results.filter((r) => r.deleted).length });
   });
 
+  type DeleteImageResult = { path: string; deleted: boolean; error?: string; skipped?: string };
+
+  function collectProjectImageReferences(project: SBuildProject | null): { url: string; usedBy: string[] }[] {
+    const out: { url: string; usedBy: string[] }[] = [];
+    if (!project) return out;
+    const record = (url: string, usedBy: string): void => {
+      if (!url) return;
+      const existing = out.find((entry) => entry.url === url);
+      if (existing) {
+        if (!existing.usedBy.includes(usedBy)) existing.usedBy.push(usedBy);
+        return;
+      }
+      out.push({ url, usedBy: [usedBy] });
+    };
+    for (const page of project.pages) {
+      for (const block of page.blocks) {
+        if (block.styles?.backgroundImage) record(block.styles.backgroundImage, `${block.type} background on page ${page.title}`);
+        if (block.type === "image") {
+          const src = (block.data as { src?: string }).src;
+          if (src) record(src, `image block on page ${page.title}`);
+        }
+        if (block.type === "gallery") {
+          const galleryData = block.data as { images?: Array<{ src?: string }> };
+          for (const image of galleryData.images || []) {
+            if (image.src) record(image.src, `gallery image on page ${page.title}`);
+          }
+        }
+        if (block.type === "cards") {
+          const cardsData = block.data as { cards?: Array<{ image?: string }> };
+          for (const item of cardsData.cards || []) {
+            if (item.image) record(item.image, `card image on page ${page.title}`);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function resolveSafeImagePath(input: string): { ok: true; absolute: string; relative: string } | { ok: false; error: string } {
+    const raw = String(input || "").trim();
+    if (!raw) return { ok: false, error: "path is required" };
+    let relative: string;
+    if (raw.startsWith("/project/images/")) relative = raw.slice("/project/images/".length);
+    else if (raw.startsWith("project/images/")) relative = raw.slice("project/images/".length);
+    else if (raw.startsWith("/")) return { ok: false, error: "absolute paths are not allowed" };
+    else return { ok: false, error: "path must start with /project/images/" };
+
+    const cleaned = relative.replace(/\\/g, "/").replace(/^\/+/, "");
+    const normalized = path.posix.normalize(cleaned);
+    if (normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || normalized === "..") {
+      return { ok: false, error: "path traversal not allowed" };
+    }
+    if (!normalized || normalized.endsWith("/")) return { ok: false, error: "path must reference a file" };
+    const absolute = path.resolve(projectImagesDir, normalized);
+    const root = path.resolve(projectImagesDir);
+    if (!absolute.startsWith(root + path.sep) && absolute !== root) {
+      return { ok: false, error: "path must resolve under project/images" };
+    }
+    return { ok: true, absolute, relative: normalized };
+  }
+
+  app.post("/api/images/delete", async (req, res) => {
+    const items = Array.isArray(req.body?.paths) ? req.body.paths : [];
+    const force = req.body?.force === true;
+    if (items.length === 0) {
+      res.status(400).json({ ok: false, error: "paths array is required" });
+      return;
+    }
+    let project: SBuildProject | null = null;
+    try {
+      project = await loadProject();
+    } catch { project = null; }
+    const usedRefs = collectProjectImageReferences(project);
+    const usedMap = new Map<string, string[]>();
+    for (const ref of usedRefs) {
+      const refPath = ref.url.startsWith("/project/images/") ? ref.url.slice("/project/images/".length) : ref.url;
+      usedMap.set(refPath, ref.usedBy);
+    }
+    const results: DeleteImageResult[] = [];
+    let deletedCount = 0;
+    let skippedCount = 0;
+    for (const item of items) {
+      const resolved = resolveSafeImagePath(String(item));
+      if (!resolved.ok) {
+        results.push({ path: String(item), deleted: false, error: resolved.error });
+        continue;
+      }
+      const baseName = path.basename(resolved.relative);
+      if (baseName === ".gitkeep" || baseName.startsWith(".")) {
+        results.push({ path: resolved.relative, deleted: false, skipped: "hidden or system file" });
+        skippedCount += 1;
+        continue;
+      }
+      const usage = usedMap.get(resolved.relative);
+      if (usage && !force) {
+        results.push({ path: resolved.relative, deleted: false, skipped: `in use: ${usage.join(", ")}` });
+        skippedCount += 1;
+        continue;
+      }
+      try {
+        await fs.unlink(resolved.absolute);
+        results.push({ path: resolved.relative, deleted: true });
+        deletedCount += 1;
+      } catch (error) {
+        results.push({ path: resolved.relative, deleted: false, error: String(error) });
+      }
+    }
+    const ok = results.every((r) => r.deleted || r.skipped);
+    res.json({ ok, deletedCount, skippedCount, results });
+  });
+
+  app.post("/api/images/folder/create", async (req, res) => {
+    const parent = String(req.body?.parent || "").trim();
+    const name = String(req.body?.name || "").trim();
+    if (!name) {
+      res.status(400).json({ ok: false, error: "name is required" });
+      return;
+    }
+    if (!/^[a-zA-Z0-9._-]+$/.test(name) || name.startsWith(".") || name.includes("..")) {
+      res.status(400).json({ ok: false, error: "folder name may only contain letters, digits, dot, underscore, and dash" });
+      return;
+    }
+    const validated = validateImageFolderPath(parent || "project/images");
+    if (!validated.ok) {
+      res.status(400).json({ ok: false, error: validated.error });
+      return;
+    }
+    const target = path.posix.join(validated.normalized, name);
+    const abs = path.resolve(projectImagesDir, target.replace(/^project\/images\/?/, ""));
+    const root = path.resolve(projectImagesDir);
+    if (!abs.startsWith(root + path.sep) && abs !== root) {
+      res.status(400).json({ ok: false, error: "folder path escapes project/images" });
+      return;
+    }
+    try {
+      await fs.mkdir(abs, { recursive: false });
+      res.json({ ok: true, folder: target, message: `Created folder ${target}.` });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") {
+        res.status(409).json({ ok: false, error: "A folder with that name already exists." });
+        return;
+      }
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/images/folder/rename", async (req, res) => {
+    const from = String(req.body?.from || "").trim();
+    const to = String(req.body?.to || "").trim();
+    if (!from || !to) {
+      res.status(400).json({ ok: false, error: "from and to are required" });
+      return;
+    }
+    const fromValidated = validateImageFolderPath(from);
+    if (!fromValidated.ok) {
+      res.status(400).json({ ok: false, error: fromValidated.error });
+      return;
+    }
+    const toParent = path.posix.dirname(to);
+    const toName = path.posix.basename(to);
+    if (!/^[a-zA-Z0-9._-]+$/.test(toName) || toName.startsWith(".") || toName.includes("..")) {
+      res.status(400).json({ ok: false, error: "new folder name may only contain letters, digits, dot, underscore, and dash" });
+      return;
+    }
+    const parentValidated = toParent === "." || toParent === "" ? { ok: true as const, normalized: "project/images" } : validateImageFolderPath(toParent);
+    if (!parentValidated.ok) {
+      res.status(400).json({ ok: false, error: parentValidated.error });
+      return;
+    }
+    const fromAbs = path.resolve(projectImagesDir, fromValidated.normalized.replace(/^project\/images\/?/, ""));
+    const toAbs = path.resolve(projectImagesDir, toName);
+    const root = path.resolve(projectImagesDir);
+    if (!fromAbs.startsWith(root + path.sep) || !toAbs.startsWith(root + path.sep)) {
+      res.status(400).json({ ok: false, error: "folder path escapes project/images" });
+      return;
+    }
+    try {
+      await fs.rename(fromAbs, toAbs);
+      res.json({ ok: true, folder: `project/images/${toName}`, message: "Folder renamed." });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        res.status(404).json({ ok: false, error: "Source folder not found." });
+        return;
+      }
+      if (code === "ENOTEMPTY" || code === "EEXIST") {
+        res.status(409).json({ ok: false, error: "Destination already exists or source is not empty." });
+        return;
+      }
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/images/folder/delete", async (req, res) => {
+    const folder = String(req.body?.folder || "").trim();
+    const validated = validateImageFolderPath(folder);
+    if (!validated.ok) {
+      res.status(400).json({ ok: false, error: validated.error });
+      return;
+    }
+    if (validated.normalized === "project/images") {
+      res.status(400).json({ ok: false, error: "Cannot delete the root project/images folder." });
+      return;
+    }
+    const abs = path.resolve(projectImagesDir, validated.normalized.replace(/^project\/images\/?/, ""));
+    try {
+      const entries = await fs.readdir(abs, { withFileTypes: true });
+      if (entries.length > 0) {
+        res.status(409).json({ ok: false, error: "Folder is not empty. Remove its images first." });
+        return;
+      }
+      await fs.rmdir(abs);
+      res.json({ ok: true, folder: validated.normalized, message: "Folder removed." });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        res.status(404).json({ ok: false, error: "Folder not found." });
+        return;
+      }
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.get("/api/images/folder/list", async (_req, res) => {
+    try {
+      await fs.mkdir(projectImagesDir, { recursive: true });
+      const out: string[] = ["project/images"];
+      async function walk(current: string): Promise<void> {
+        const entries = await fs.readdir(current, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          if (entry.name.startsWith(".")) continue;
+          const abs = path.join(current, entry.name);
+          const rel = path.relative(projectImagesDir, abs).replace(/\\/g, "/");
+          out.push(`project/images/${rel}`);
+          await walk(abs);
+        }
+      }
+      await walk(projectImagesDir);
+      res.json({ ok: true, folders: out });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/images/move", async (req, res) => {
+    const items = Array.isArray(req.body?.paths) ? req.body.paths : [];
+    const targetFolder = String(req.body?.targetFolder || "").trim();
+    const folderValidated = validateImageFolderPath(targetFolder || "project/images");
+    if (!folderValidated.ok) {
+      res.status(400).json({ ok: false, error: folderValidated.error });
+      return;
+    }
+    const targetAbs = path.resolve(projectImagesDir, folderValidated.normalized.replace(/^project\/images\/?/, ""));
+    const root = path.resolve(projectImagesDir);
+    if (!targetAbs.startsWith(root + path.sep) && targetAbs !== root) {
+      res.status(400).json({ ok: false, error: "target folder escapes project/images" });
+      return;
+    }
+    try { await fs.mkdir(targetAbs, { recursive: true }); } catch { /* ignore */ }
+    const results: { path: string; moved: boolean; newPath?: string; error?: string }[] = [];
+    let movedCount = 0;
+    for (const item of items) {
+      const resolved = resolveSafeImagePath(String(item));
+      if (!resolved.ok) {
+        results.push({ path: String(item), moved: false, error: resolved.error });
+        continue;
+      }
+      const baseName = path.basename(resolved.relative);
+      if (baseName === ".gitkeep" || baseName.startsWith(".")) {
+        results.push({ path: resolved.relative, moved: false, error: "hidden or system file" });
+        continue;
+      }
+      const destPath = path.join(targetAbs, baseName);
+      try {
+        await fs.rename(resolved.absolute, destPath);
+        const newRel = path.posix.join(folderValidated.normalized, baseName);
+        results.push({ path: resolved.relative, moved: true, newPath: newRel });
+        movedCount += 1;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
+          results.push({ path: resolved.relative, moved: false, error: "source not found" });
+        } else {
+          results.push({ path: resolved.relative, moved: false, error: String(error) });
+        }
+      }
+    }
+    const ok = results.every((r) => r.moved);
+    res.json({ ok, movedCount, results });
+  });
+
   app.get("/api/images", async (_req, res) => {
     try {
       await fs.mkdir(projectImagesDir, { recursive: true });

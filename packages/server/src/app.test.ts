@@ -3115,3 +3115,203 @@ test("/api/images response never includes .gitkeep or zero-byte placeholder file
     assert.match(img.name, /\.(png|jpg|jpeg|webp|gif|svg|avif)$/i, `image must have a renderable extension; got ${img.name}`);
   }
 });
+
+test("/api/images/delete blocks path traversal and refuses .gitkeep / hidden files", async () => {
+  const payload = {
+    paths: [
+      "../../../etc/passwd",
+      "/etc/passwd",
+      "project/images/../secrets.txt",
+      "..\\..\\windows",
+      "project/images/.gitkeep",
+      ".hidden"
+    ]
+  };
+  const res = await fetch(`${baseUrl}/api/images/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    ok: boolean;
+    deletedCount: number;
+    skippedCount: number;
+    results: Array<{ path: string; deleted: boolean; skipped?: string; error?: string }>;
+  };
+  for (const r of body.results) {
+    assert.equal(r.deleted, false, `path ${r.path} must not be deleted: ${r.error || r.skipped || ""}`);
+  }
+  assert.equal(body.deletedCount, 0, "no files should have been deleted in this traversal test");
+});
+
+test("/api/images/delete blocks used images unless force is set", async () => {
+  const used = `/project/images/itest-used-${Date.now()}.png`;
+  const usedRes = await fetch(`${baseUrl}/api/images`, { method: "POST" });
+  const tempBuffer = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c636000000000050001a5f645400000000049454e44ae426082", "hex");
+  await fs.writeFile(path.join(path.dirname(projectFile), "images", path.basename(used)), tempBuffer);
+  try {
+    const projectRaw = await fs.readFile(projectFile, "utf8");
+    const project = JSON.parse(projectRaw) as { pages: Array<{ id: string; blocks: Array<Record<string, unknown>> }> };
+    const firstPage = project.pages?.[0];
+    if (firstPage && Array.isArray(firstPage.blocks) && firstPage.blocks[0]) {
+      (firstPage.blocks[0] as { styles: { backgroundImage: string } }).styles = { backgroundImage: used };
+    }
+    await fs.writeFile(projectFile, JSON.stringify(project, null, 2), "utf8");
+    try {
+      const blocked = await fetch(`${baseUrl}/api/images/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paths: [used] })
+      });
+      assert.equal(blocked.status, 200);
+      const blockedBody = await blocked.json() as { deletedCount: number; results: Array<{ deleted: boolean; skipped?: string }> };
+      assert.equal(blockedBody.results[0].deleted, false, "in-use image must be blocked without force");
+      assert.match(blockedBody.results[0].skipped || "", /in use/i);
+
+      const forced = await fetch(`${baseUrl}/api/images/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ paths: [used], force: true })
+      });
+      assert.equal(forced.status, 200);
+      const forcedBody = await forced.json() as { deletedCount: number; results: Array<{ deleted: boolean }> };
+      assert.equal(forcedBody.results[0].deleted, true, "in-use image should be force-deleted when force=true");
+    } finally {
+      const originalRaw = await fs.readFile(projectFile, "utf8");
+      const originalProject = JSON.parse(originalRaw) as { pages: Array<{ id: string; blocks: Array<Record<string, unknown>> }> };
+      const firstPage = originalProject.pages?.[0];
+      if (firstPage && Array.isArray(firstPage.blocks) && firstPage.blocks[0]) {
+        delete (firstPage.blocks[0] as { styles?: unknown }).styles;
+      }
+      await fs.writeFile(projectFile, JSON.stringify(originalProject, null, 2), "utf8");
+    }
+  } finally {
+    try { await fs.unlink(path.join(path.dirname(projectFile), "images", path.basename(used))); } catch { /* ignore */ }
+  }
+});
+
+test("/api/images/folder/list returns at least the project/images root", async () => {
+  const res = await fetch(`${baseUrl}/api/images/folder/list`);
+  assert.equal(res.status, 200);
+  const body = await res.json() as { ok: boolean; folders: string[] };
+  assert.ok(body.ok);
+  assert.ok(Array.isArray(body.folders));
+  assert.ok(body.folders.includes("project/images"), "root must be present in folder list");
+});
+
+test("/api/images/folder/create creates a subfolder under project/images and rejects unsafe names", async () => {
+  const folderName = `itest-${Date.now()}`;
+  const created = await fetch(`${baseUrl}/api/images/folder/create`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parent: "project/images", name: folderName })
+  });
+  assert.equal(created.status, 200);
+  const createdBody = await created.json() as { ok: boolean; folder: string };
+  assert.equal(createdBody.ok, true);
+  assert.equal(createdBody.folder, `project/images/${folderName}`);
+
+  try {
+    const unsafe = await fetch(`${baseUrl}/api/images/folder/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parent: "project/images", name: "..bad" })
+    });
+    assert.equal(unsafe.status, 400);
+
+    const traversal = await fetch(`${baseUrl}/api/images/folder/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parent: "project/../escape", name: "x" })
+    });
+    assert.equal(traversal.status, 400);
+  } finally {
+    await fetch(`${baseUrl}/api/images/folder/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: `project/images/${folderName}` })
+    });
+  }
+});
+
+test("/api/images/folder/delete refuses non-empty folders and the root folder", async () => {
+  const rootRes = await fetch(`${baseUrl}/api/images/folder/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ folder: "project/images" })
+  });
+  assert.equal(rootRes.status, 400);
+
+  const nonEmptyName = `itest-nonempty-${Date.now()}`;
+  const created = await fetch(`${baseUrl}/api/images/folder/create`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parent: "project/images", name: nonEmptyName })
+  });
+  assert.equal(created.status, 200);
+  try {
+    const tempFile = path.join(path.dirname(projectFile), "images", nonEmptyName, "placeholder.png");
+    await fs.mkdir(path.dirname(tempFile), { recursive: true });
+    await fs.writeFile(tempFile, Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c636000000000050001a5f645400000000049454e44ae426082", "hex"));
+    const rejected = await fetch(`${baseUrl}/api/images/folder/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: `project/images/${nonEmptyName}` })
+    });
+    assert.equal(rejected.status, 409);
+  } finally {
+    try {
+      await fs.unlink(path.join(path.dirname(projectFile), "images", nonEmptyName, "placeholder.png"));
+    } catch { /* ignore */ }
+    await fetch(`${baseUrl}/api/images/folder/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: `project/images/${nonEmptyName}` })
+    });
+  }
+});
+
+test("/api/images/move moves an image to a subfolder and rejects hidden files", async () => {
+  const folderName = `itest-mv-${Date.now()}`;
+  const created = await fetch(`${baseUrl}/api/images/folder/create`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parent: "project/images", name: folderName })
+  });
+  assert.equal(created.status, 200);
+  const filename = `itest-mv-${Date.now()}.png`;
+  const tempFile = path.join(path.dirname(projectFile), "images", filename);
+  await fs.writeFile(tempFile, Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c636000000000050001a5f645400000000049454e44ae426082", "hex"));
+  try {
+    const ok = await fetch(`${baseUrl}/api/images/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ paths: [`project/images/${filename}`], targetFolder: `project/images/${folderName}` })
+    });
+    assert.equal(ok.status, 200);
+    const okBody = await ok.json() as { ok: boolean; movedCount: number };
+    assert.equal(okBody.ok, true);
+    assert.equal(okBody.movedCount, 1);
+    const moved = path.join(path.dirname(projectFile), "images", folderName, filename);
+    const stat = await fs.stat(moved);
+    assert.ok(stat.isFile(), "moved file must exist in destination");
+
+    const traversal = await fetch(`${baseUrl}/api/images/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ paths: ["../../../etc/passwd"], targetFolder: `project/images/${folderName}` })
+    });
+    assert.equal(traversal.status, 200);
+    const traversalBody = await traversal.json() as { results: Array<{ moved: boolean; error?: string }> };
+    assert.equal(traversalBody.results[0].moved, false);
+    assert.ok((traversalBody.results[0].error || "").length > 0, "expected an error message for traversal path");
+  } finally {
+    try { await fs.unlink(path.join(path.dirname(projectFile), "images", folderName, filename)); } catch { /* ignore */ }
+    await fetch(`${baseUrl}/api/images/folder/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: `project/images/${folderName}` })
+    });
+  }
+});

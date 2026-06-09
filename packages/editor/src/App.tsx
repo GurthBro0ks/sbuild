@@ -1311,7 +1311,7 @@ export function App() {
   const [aiHasProposal, setAiHasProposal] = useState(false);
   const [aiUndoSnapshot, setAiUndoSnapshot] = useState<{ pageId: string; blocks: Block[] } | null>(null);
   const [aiImgGenPrompt, setAiImgGenPrompt] = useState("");
-  const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("block");
+  const [aiImgGenTarget, setAiImgGenTarget] = useState<"block" | "library">("library");
   const [aiImgGenStatus, setAiImgGenStatus] = useState("");
   const [aiImgGenResult, setAiImgGenResult] = useState("");
   const [aiImgGenPreviewId, setAiImgGenPreviewId] = useState<string>("");
@@ -1332,7 +1332,7 @@ export function App() {
   const [localModels, setLocalModels] = useState<Array<{ name: string }>>([]);
   const [imageGenStyle, setImageGenStyle] = useState<string>("custom");
   const [imageGenSize, setImageGenSize] = useState<string>("fit-block");
-  const [imageGenPlacement, setImageGenPlacement] = useState<string>("block-background");
+  const [imageGenPlacement, setImageGenPlacement] = useState<string>("preview-only");
   const [imageLibraryFilter, setImageLibraryFilter] = useState<ImageLibraryFilter>("all");
   const [imageTileFit, setImageTileFit] = useState<ImageTileFit>("cover");
   const [imageDiagnostics, setImageDiagnostics] = useState<Record<string, ImageDiagnostics>>({});
@@ -1356,6 +1356,15 @@ export function App() {
   const [imageManagerTarget, setImageManagerTarget] = useState<"block-bg" | "part-bg" | "hero" | "image-block">("part-bg");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [photoFolder, setPhotoFolder] = useState("project/images");
+  const [folderList, setFolderList] = useState<string[]>(["project/images"]);
+  const [folderManagerStatus, setFolderManagerStatus] = useState("");
+  const [folderManagerStatusOk, setFolderManagerStatusOk] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderParent, setNewFolderParent] = useState("project/images");
+  const [renameTarget, setRenameTarget] = useState("");
+  const [renameValue, setRenameValue] = useState("");
+  const [moveTargetFolder, setMoveTargetFolder] = useState("project/images");
+  const [selectMode, setSelectMode] = useState(false);
   const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
   const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Provider") || null;
   const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
@@ -1672,6 +1681,7 @@ export function App() {
     void loadImages();
     void loadBuildInfo();
     void loadPhotoFolder();
+    void refreshFolderList();
     void (async () => {
       const secrets = await loadSecretsStatus();
       await loadProviders(secrets);
@@ -1996,6 +2006,16 @@ export function App() {
     return data;
   }
 
+  async function bulkDeleteImages(paths: string[]): Promise<{ ok: boolean; deletedCount: number; skippedCount: number; results: Array<{ path: string; deleted: boolean; error?: string; skipped?: string }> }> {
+    if (paths.length === 0) return { ok: true, deletedCount: 0, skippedCount: 0, results: [] };
+    const data = await fetchJson<{ ok: boolean; deletedCount: number; skippedCount: number; results: Array<{ path: string; deleted: boolean; error?: string; skipped?: string }> }>("/api/images/delete", {
+      method: "POST",
+      body: JSON.stringify({ paths })
+    });
+    await loadImages();
+    return data;
+  }
+
   function toggleImageSelected(url: string): void {
     setSelectedImageUrls((prev) => {
       const next = new Set(prev);
@@ -2075,6 +2095,136 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus(`Failed to save folder: ${message}`);
+    }
+  }
+
+  async function refreshFolderList(): Promise<void> {
+    try {
+      const data = await fetchJson<{ ok: boolean; folders?: string[]; error?: string }>("/api/images/folder/list");
+      if (data.ok && Array.isArray(data.folders)) {
+        setFolderList(data.folders);
+        if (!data.folders.includes(photoFolder)) setPhotoFolder(data.folders[0] || "project/images");
+      } else {
+        setFolderManagerStatus(data.error || "Failed to list folders.");
+        setFolderManagerStatusOk(false);
+      }
+    } catch (error) {
+      setFolderManagerStatus(`Failed to list folders: ${error instanceof Error ? error.message : String(error)}`);
+      setFolderManagerStatusOk(false);
+    }
+  }
+
+  async function createImageFolder(): Promise<void> {
+    const name = newFolderName.trim();
+    if (!name) {
+      setFolderManagerStatus("Enter a folder name first.");
+      setFolderManagerStatusOk(false);
+      return;
+    }
+    try {
+      const data = await fetchJson<{ ok: boolean; folder?: string; error?: string }>("/api/images/folder/create", {
+        method: "POST",
+        body: JSON.stringify({ parent: newFolderParent, name })
+      });
+      if (data.ok) {
+        setFolderManagerStatus(`Created folder ${data.folder}.`);
+        setFolderManagerStatusOk(true);
+        setNewFolderName("");
+        await refreshFolderList();
+      } else {
+        setFolderManagerStatus(data.error || "Failed to create folder.");
+        setFolderManagerStatusOk(false);
+      }
+    } catch (error) {
+      setFolderManagerStatus(`Failed to create folder: ${error instanceof Error ? error.message : String(error)}`);
+      setFolderManagerStatusOk(false);
+    }
+  }
+
+  async function renameImageFolder(): Promise<void> {
+    if (!renameTarget || !renameValue.trim()) {
+      setFolderManagerStatus("Select a folder and enter a new name first.");
+      setFolderManagerStatusOk(false);
+      return;
+    }
+    const parent = renameTarget.includes("/") ? renameTarget.slice(0, renameTarget.lastIndexOf("/")) : "project/images";
+    const to = `${parent}/${renameValue.trim()}`.replace(/^project\/images\//, "project/images/");
+    try {
+      const data = await fetchJson<{ ok: boolean; error?: string; message?: string }>("/api/images/folder/rename", {
+        method: "POST",
+        body: JSON.stringify({ from: renameTarget, to })
+      });
+      if (data.ok) {
+        setFolderManagerStatus(data.message || "Folder renamed.");
+        setFolderManagerStatusOk(true);
+        setRenameValue("");
+        setRenameTarget("");
+        await refreshFolderList();
+      } else {
+        setFolderManagerStatus(data.error || "Failed to rename folder.");
+        setFolderManagerStatusOk(false);
+      }
+    } catch (error) {
+      setFolderManagerStatus(`Failed to rename folder: ${error instanceof Error ? error.message : String(error)}`);
+      setFolderManagerStatusOk(false);
+    }
+  }
+
+  async function deleteImageFolder(folder: string): Promise<void> {
+    if (!folder || folder === "project/images") {
+      setFolderManagerStatus("Cannot delete the root folder.");
+      setFolderManagerStatusOk(false);
+      return;
+    }
+    if (!window.confirm(`Delete empty folder ${folder}? This cannot be undone.`)) return;
+    try {
+      const data = await fetchJson<{ ok: boolean; error?: string; message?: string }>("/api/images/folder/delete", {
+        method: "POST",
+        body: JSON.stringify({ folder })
+      });
+      if (data.ok) {
+        setFolderManagerStatus(data.message || "Folder deleted.");
+        setFolderManagerStatusOk(true);
+        await refreshFolderList();
+      } else {
+        setFolderManagerStatus(data.error || "Failed to delete folder.");
+        setFolderManagerStatusOk(false);
+      }
+    } catch (error) {
+      setFolderManagerStatus(`Failed to delete folder: ${error instanceof Error ? error.message : String(error)}`);
+      setFolderManagerStatusOk(false);
+    }
+  }
+
+  async function moveSelectedImagesTo(targetFolder: string): Promise<void> {
+    if (selectedImageUrls.size === 0) {
+      setFolderManagerStatus("Select one or more images to move first.");
+      setFolderManagerStatusOk(false);
+      return;
+    }
+    const paths = Array.from(selectedImageUrls).map((url) => {
+      const trimmed = url.replace(/^\/+/, "");
+      if (trimmed.startsWith("project/images/")) return trimmed.slice("project/images/".length);
+      return trimmed;
+    });
+    try {
+      const data = await fetchJson<{ ok: boolean; movedCount?: number; error?: string; results?: Array<{ path: string; moved: boolean; error?: string }> }>("/api/images/move", {
+        method: "POST",
+        body: JSON.stringify({ paths, targetFolder })
+      });
+      if (data.ok) {
+        setFolderManagerStatus(`Moved ${data.movedCount || 0} image(s) into ${targetFolder}.`);
+        setFolderManagerStatusOk(true);
+        clearImageSelection();
+        await loadImages();
+      } else {
+        const firstError = (data.results || []).find((r) => !r.moved && r.error);
+        setFolderManagerStatus(firstError?.error || data.error || "Move failed.");
+        setFolderManagerStatusOk(false);
+      }
+    } catch (error) {
+      setFolderManagerStatus(`Failed to move images: ${error instanceof Error ? error.message : String(error)}`);
+      setFolderManagerStatusOk(false);
     }
   }
 
@@ -2960,12 +3110,16 @@ export function App() {
 
   function aiUseImageInBlock() {
     if (!aiImgGenResult) return;
+    const placement = imageGenPlacement;
+    if (placement === "preview-only" || placement === "save-library") {
+      setAiImgGenStatus("Preview only — nothing applied. Use Save to Library or Apply to Selected Block to make changes.");
+      return;
+    }
     const block = selectedBlock;
     if (!block || (block.type !== "image" && block.type !== "hero" && block.type !== "gallery" && block.type !== "cards")) {
       setAiImgGenStatus("Select an image, hero, or gallery block first.");
       return;
     }
-    const placement = imageGenPlacement;
     if (placement === "fit-block") {
       if (block.type === "hero" || block.type === "cards") {
         patchSelectedBlock((b) => ({ ...b, styles: { ...(b.styles || {}), backgroundImage: aiImgGenResult, backgroundSize: "contain", backgroundPosition: "center center" } }));
@@ -4929,7 +5083,11 @@ export function App() {
               <div className="image-library-tabs" data-testid="image-library-tabs" style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
                 <button data-testid="image-library-tab-browse" className={imageLibraryTab === "browse" ? "selected" : ""} onClick={() => setImageLibraryTab("browse")}>Browse</button>
                 <button data-testid="image-library-tab-upload" className={imageLibraryTab === "upload" ? "selected" : ""} onClick={() => setImageLibraryTab("upload")}>Upload</button>
-                <button data-testid="image-library-tab-settings" className={imageLibraryTab === "settings" ? "selected" : ""} onClick={() => setImageLibraryTab("settings")}>Settings</button>
+                <button
+                  data-testid="image-library-tab-settings"
+                  className={imageLibraryTab === "settings" ? "selected" : ""}
+                  onClick={() => { setImageLibraryTab("settings"); void refreshFolderList(); }}
+                >Settings</button>
               </div>
 
               {imageLibraryTab === "upload" && (
@@ -4946,15 +5104,132 @@ export function App() {
 
               {imageLibraryTab === "settings" && (
                 <div className="image-manager-folder" data-testid="image-library-settings-section">
-                  <h4>Project Photo Folder</h4>
-                  <label>Folder path
-                    <input value={photoFolder} onChange={(e) => setPhotoFolder(e.target.value)} placeholder="project/images" />
-                  </label>
-                  <p className="hint">Photos uploaded here. Default: project/images</p>
-                  <div className="button-row compact">
-                    <button onClick={() => void savePhotoFolder()}>Save folder</button>
-                    <button onClick={() => setPhotoFolder("project/images")}>Reset to project/images</button>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <h4 style={{ margin: 0 }}>Project Photo Folder</h4>
+                    <button
+                      data-testid="image-library-folder-refresh"
+                      onClick={() => void refreshFolderList()}
+                      style={{ padding: "4px 8px" }}
+                    >Refresh / Rescan</button>
                   </div>
+                  <p className="hint" style={{ marginTop: 6 }}>
+                    Manage your project image folders without terminal access. All operations stay inside <code>project/images</code>.
+                  </p>
+
+                  <div className="image-folder-current" data-testid="image-library-folder-current" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                    <strong>Active folder:</strong>
+                    <code data-testid="image-library-folder-active">{photoFolder}</code>
+                    <button onClick={() => void savePhotoFolder()} data-testid="image-library-folder-save-active">Save as active</button>
+                    <button onClick={() => setPhotoFolder("project/images")} data-testid="image-library-folder-reset">Reset to project/images</button>
+                  </div>
+
+                  <div className="image-folder-list" data-testid="image-library-folder-list-section" style={{ marginBottom: 10 }}>
+                    <h5 style={{ margin: "8px 0 4px" }}>Folders</h5>
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 180, overflowY: "auto", border: "1px solid var(--editor-border)", borderRadius: 6 }}>
+                      {folderList.map((folder) => {
+                        const isActive = folder === photoFolder;
+                        const isRoot = folder === "project/images";
+                        return (
+                          <li
+                            key={folder}
+                            data-testid="image-library-folder-item"
+                            data-folder={folder}
+                            style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderBottom: "1px solid var(--editor-border)", background: isActive ? "var(--editor-status-bg)" : "transparent" }}
+                          >
+                            <code style={{ flex: 1, fontSize: 12 }}>{folder}</code>
+                            {!isActive && (
+                              <button
+                                data-testid="image-library-folder-switch"
+                                onClick={() => setPhotoFolder(folder)}
+                                style={{ fontSize: 11, padding: "2px 6px" }}
+                              >Set active</button>
+                            )}
+                            {!isRoot && (
+                              <button
+                                data-testid="image-library-folder-delete"
+                                onClick={() => void deleteImageFolder(folder)}
+                                style={{ fontSize: 11, padding: "2px 6px" }}
+                                title="Delete folder (must be empty)"
+                              >Delete</button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  <div className="image-folder-create" data-testid="image-library-folder-create-section" style={{ marginBottom: 10 }}>
+                    <h5 style={{ margin: "8px 0 4px" }}>Create subfolder</h5>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        Parent
+                        <select data-testid="image-library-folder-create-parent" value={newFolderParent} onChange={(e) => setNewFolderParent(e.target.value)}>
+                          {folderList.map((f) => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </label>
+                      <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        Name
+                        <input
+                          data-testid="image-library-folder-create-name"
+                          value={newFolderName}
+                          onChange={(e) => setNewFolderName(e.target.value)}
+                          placeholder="e.g. products"
+                          style={{ minWidth: 120 }}
+                        />
+                      </label>
+                      <button data-testid="image-library-folder-create" onClick={() => void createImageFolder()}>Create</button>
+                    </div>
+                  </div>
+
+                  <div className="image-folder-rename" data-testid="image-library-folder-rename-section" style={{ marginBottom: 10 }}>
+                    <h5 style={{ margin: "8px 0 4px" }}>Rename subfolder</h5>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        Folder
+                        <select data-testid="image-library-folder-rename-target" value={renameTarget} onChange={(e) => setRenameTarget(e.target.value)}>
+                          <option value="">— select —</option>
+                          {folderList.filter((f) => f !== "project/images").map((f) => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </label>
+                      <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        New name
+                        <input
+                          data-testid="image-library-folder-rename-name"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          placeholder="e.g. hero-shots"
+                          style={{ minWidth: 120 }}
+                        />
+                      </label>
+                      <button data-testid="image-library-folder-rename" onClick={() => void renameImageFolder()}>Rename</button>
+                    </div>
+                  </div>
+
+                  <div className="image-folder-move" data-testid="image-library-folder-move-section" style={{ marginBottom: 10 }}>
+                    <h5 style={{ margin: "8px 0 4px" }}>Move selected images</h5>
+                    <p className="hint">Select images in the Browse tab, then pick a destination here.</p>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        Move to
+                        <select data-testid="image-library-move-target" value={moveTargetFolder} onChange={(e) => setMoveTargetFolder(e.target.value)}>
+                          {folderList.map((f) => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </label>
+                      <button
+                        data-testid="image-library-move-selected"
+                        onClick={() => void moveSelectedImagesTo(moveTargetFolder)}
+                        disabled={selectedImageUrls.size === 0}
+                      >Move {selectedImageUrls.size || 0} selected</button>
+                    </div>
+                  </div>
+
+                  {folderManagerStatus && (
+                    <p
+                      data-testid="image-library-folder-status"
+                      className="panel-status"
+                      style={{ color: folderManagerStatusOk ? "var(--editor-accent)" : "var(--editor-warning, #c0392b)" }}
+                    >{folderManagerStatus}</p>
+                  )}
                 </div>
               )}
 
@@ -4980,48 +5255,86 @@ export function App() {
                         </select>
                       </label>
                     </div>
-                    <div className="image-library-bulk" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-                      <button data-testid="image-library-select-all" onClick={() => selectAllFilteredImages()}>Select all filtered</button>
-                      <button onClick={() => clearImageSelection()}>Clear selection</button>
-                      <span className="hint">{selectedImageUrls.size} selected</span>
+                    <div className="image-library-bulk" data-testid="image-library-bulk-bar" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
                       <button
-                        data-testid="image-library-delete-selected"
-                        disabled={selectedImageUrls.size === 0 || bulkDeletePending}
+                        data-testid="image-library-select-mode-toggle"
+                        className={selectMode ? "selected" : ""}
+                        aria-pressed={selectMode}
                         onClick={() => {
-                          if (selectedImageUrls.size === 0) return;
-                          setBulkDeletePending(true);
-                          setBulkDeleteMessage("");
+                          setSelectMode((prev) => !prev);
+                          if (selectMode) clearImageSelection();
                         }}
-                        style={{ marginLeft: "auto" }}
-                      >
-                        {bulkDeletePending ? "Confirm delete?" : "Delete selected"}
-                      </button>
+                        style={{ fontWeight: 600 }}
+                      >{selectMode ? "✓ Select mode (on)" : "Select images"}</button>
+                      {selectMode && (
+                        <>
+                          <button data-testid="image-library-select-all" onClick={() => selectAllFilteredImages()}>Select all filtered</button>
+                          <button data-testid="image-library-clear-selection" onClick={() => clearImageSelection()}>Clear selection</button>
+                          <span
+                            className="image-library-selected-count"
+                            data-testid="image-library-selected-count"
+                            style={{ background: "var(--editor-accent)", color: "var(--editor-button-text)", padding: "2px 8px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}
+                          >{selectedImageUrls.size} selected</span>
+                          <button
+                            data-testid="image-library-delete-selected"
+                            disabled={selectedImageUrls.size === 0 || bulkDeletePending}
+                            onClick={() => {
+                              if (selectedImageUrls.size === 0) return;
+                              setBulkDeletePending(true);
+                              setBulkDeleteMessage("");
+                            }}
+                            style={{ marginLeft: "auto", background: "var(--editor-warning, #c0392b)", color: "#fff", borderColor: "var(--editor-warning, #c0392b)" }}
+                          >
+                            {bulkDeletePending ? "Confirm delete?" : `Delete ${selectedImageUrls.size} selected`}
+                          </button>
+                        </>
+                      )}
                     </div>
                     {bulkDeletePending && (
-                      <div className="image-library-confirm" data-testid="image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-border)", borderRadius: 6, padding: 8, marginBottom: 8 }}>
+                      <div className="image-library-confirm" data-testid="image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-warning, #c0392b)", borderRadius: 8, padding: 10, marginBottom: 8 }}>
                         {(() => {
                           const selectedMetas = uploadedImages.filter((img) => selectedImageUrls.has(img.url));
                           const inUse = selectedMetas.filter((m) => usedImageUrls.has(m.url));
+                          const gitkeepSlipped = selectedMetas.some((m) => m.name === ".gitkeep" || m.name.startsWith("."));
                           return (
                             <>
-                              <p>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}? This cannot be undone.</p>
+                              <p style={{ marginTop: 0 }}><strong>Delete {selectedImageUrls.size} image{selectedImageUrls.size === 1 ? "" : "s"}?</strong> This cannot be undone.</p>
                               {inUse.length > 0 && (
-                                <p className="image-library-confirm-warn" data-testid="image-library-delete-inuse-warning" style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}>
-                                  Warning: {inUse.length} selected image{inUse.length === 1 ? " is" : "s are"} currently used by the project (backgrounds, image blocks, or gallery items). Deleting {inUse.length === 1 ? "it" : "them"} will leave those references broken until you replace the images.
+                                <p
+                                  className="image-library-confirm-warn"
+                                  data-testid="image-library-delete-inuse-warning"
+                                  style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}
+                                >
+                                  {inUse.length} of the selected image{inUse.length === 1 ? " is" : "s are"} currently used by the project (backgrounds, image blocks, gallery items, or card images). They will be blocked from deletion. If you must remove them, replace their usage in the page first.
+                                </p>
+                              )}
+                              {gitkeepSlipped && (
+                                <p style={{ color: "var(--editor-warning, #c0392b)", margin: "4px 0 8px 0" }}>
+                                  Note: hidden / system files (.gitkeep) will be skipped automatically.
                                 </p>
                               )}
                               <div className="button-row compact">
                                 <button
                                   data-testid="image-library-delete-confirm-yes"
                                   onClick={async () => {
-                                    const filenames = Array.from(selectedImageUrls)
-                                      .map((url) => url.split("/").pop() || "")
-                                      .filter((name) => name && name !== ".gitkeep");
-                                    const result = await deleteImages(filenames);
+                                    const paths = Array.from(selectedImageUrls)
+                                      .map((url) => url.replace(/^\/+/, ""))
+                                      .filter((url) => {
+                                        if (!url) return false;
+                                        if (url.startsWith("project/images/")) return true;
+                                        return false;
+                                      });
+                                    const result = await bulkDeleteImages(paths);
+                                    const blocked = result.results.filter((r) => !r.deleted && r.skipped).length;
+                                    const errCount = result.results.filter((r) => !r.deleted && r.error && !r.skipped).length;
+                                    let msg = `Deleted ${result.deletedCount} image(s).`;
+                                    if (blocked > 0) msg += ` ${blocked} blocked (in use).`;
+                                    if (errCount > 0) msg += ` ${errCount} error(s).`;
                                     setBulkDeletePending(false);
-                                    setBulkDeleteMessage(`Deleted ${result.deletedCount} image(s).`);
+                                    setBulkDeleteMessage(msg);
                                     clearImageSelection();
                                   }}
+                                  style={{ background: "var(--editor-warning, #c0392b)", color: "#fff", borderColor: "var(--editor-warning, #c0392b)" }}
                                 >Yes, delete</button>
                                 <button onClick={() => { setBulkDeletePending(false); setBulkDeleteMessage(""); }}>Cancel</button>
                               </div>
@@ -5032,7 +5345,7 @@ export function App() {
                     )}
                     {bulkDeleteMessage && <p className="panel-status" data-testid="image-library-delete-message">{bulkDeleteMessage}</p>}
                     {filteredUploadedImages.length === 0 && <p className="hint">No images match this filter yet. Try Show all or upload/generate images.</p>}
-                    <div className="image-grid" data-testid="image-library-grid">
+                    <div className="image-grid" data-testid="image-library-grid" data-select-mode={selectMode ? "on" : "off"}>
                       {filteredUploadedImages.map((img) => {
                         const isSelected = selectedImageUrls.has(img.url);
                         const isPrimary = selectedUploadImage === img.url;
@@ -5040,12 +5353,21 @@ export function App() {
                         return (
                           <div
                             key={img.url}
-                            className={`image-card ${isPrimary ? "selected" : ""} ${isSelected ? "multi-selected" : ""}`}
-                            onClick={() => setSelectedUploadImage(img.url)}
+                            className={`image-card ${isPrimary ? "selected" : ""} ${isSelected ? "multi-selected" : ""} ${selectMode ? "select-mode" : ""}`}
+                            onClick={() => { if (!selectMode) setSelectedUploadImage(img.url); else toggleImageSelected(img.url); }}
+                            onContextMenu={(e) => { e.preventDefault(); toggleImageSelected(img.url); }}
                             data-testid="image-library-card"
                             data-image-url={img.url}
+                            data-selected={isSelected ? "true" : "false"}
+                            role="button"
+                            aria-pressed={isSelected}
+                            tabIndex={0}
+                            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleImageSelected(img.url); } }}
                           >
-                            <label className="image-card-checkbox" onClick={(e) => e.stopPropagation()}>
+                            <label
+                              className={`image-card-checkbox ${selectMode ? "image-card-checkbox-prominent" : ""}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <input
                                 type="checkbox"
                                 checked={isSelected}
@@ -5759,6 +6081,7 @@ export function App() {
                     <div className="ai-preset-group">
                       <label>Placement</label>
                       <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
+                        <option value="preview-only">Preview only — do not apply (recommended)</option>
                         <option value="block-background">Use as block background (cover)</option>
                         <option value="selected-image">Use as selected image</option>
                         <option value="fit-block">Fit to selected block (contain)</option>
@@ -5838,74 +6161,66 @@ export function App() {
             )}
             {aiTopMenuTab === "image-enhance" && (
               <div className="ai-panel-tab-content">
-                {aiEnhanceSourceOverride && (
-                  <div className="ai-card ai-card-source" style={{ borderColor: "var(--editor-accent)" }}>
-                    <div className="ai-card-label">Source image locked — will not change with block selection</div>
-                    <div className="ai-card-body">
-                      <div className="ai-source-detail">
-                        <span className="ai-source-name">{aiEnhanceResult ? "Source: Generated image (enhanced)" : "Source: Generated image"}</span>
-                        <img src={aiEnhanceSourceOverride} alt="Source" className="ai-source-thumb" />
-                        <button onClick={() => setAiEnhanceSourceOverride(null)} style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}>Unlock source (use selected block)</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!aiEnhanceSourceOverride && (
-                <div className="ai-card ai-card-source">
-                  <div className="ai-card-label">Source Image (selected block)</div>
+                <div className="ai-card ai-card-source" data-testid="ai-image-enhance-source-card">
+                  <div className="ai-card-label">Source</div>
                   <div className="ai-card-body">
                     {(() => {
-                      const es = getSelectedEnhanceSource();
-                      if (es.kind !== "none") {
-                        const sourceLabel = es.kind === "background" ? "Source: Selected block background" : (es.kind === "gallery-image" || es.kind === "image-block") ? "Source: Image Library" : `Source: ${es.label}`;
-                        return (
-                          <div className="ai-source-detail">
-                            <span className="ai-source-name">{sourceLabel}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
-                            {es.src && <img src={es.src} alt="Source" className="ai-source-thumb" />}
-                            {es.reason && <p className="ai-status-msg">{es.reason}</p>}
-                          </div>
-                        );
+                      const es = aiEnhanceSourceOverride
+                        ? { kind: "override" as const, src: aiEnhanceSourceOverride, label: aiEnhanceSourceLabel || "Generated image", reason: undefined }
+                        : getSelectedEnhanceSource();
+                      if (es.kind === "none" || !es.src) {
+                        return <p className="ai-status-msg ai-no-target">{es.reason || "Select an image block, gallery image, or background first."}</p>;
                       }
-                      return <p className="ai-status-msg ai-no-target">{es.reason || "Select an image block, gallery image, or background first."}</p>;
+                      const sourceLabel = es.kind === "override"
+                        ? `Source: ${es.label} (locked)`
+                        : es.kind === "background"
+                          ? "Source: Selected block background"
+                          : (es.kind === "gallery-image" || es.kind === "image-block")
+                            ? "Source: Image Library"
+                            : `Source: ${es.label}`;
+                      return (
+                        <div className="ai-source-detail">
+                          <span className="ai-source-name" data-testid="ai-image-enhance-source-label">{sourceLabel}{es.src ? ` — ${es.src.split("/").pop()}` : ""}</span>
+                          {es.src && <img src={es.src} alt="Source" className="ai-source-thumb" data-testid="ai-image-enhance-source-thumb" />}
+                          {aiEnhanceSourceOverride && (
+                            <button
+                              data-testid="ai-image-enhance-unlock-source"
+                              onClick={() => { setAiEnhanceSourceOverride(null); setAiEnhanceSourceLabel(""); }}
+                              style={{ fontSize: "11px", padding: "2px 8px", marginTop: 4 }}
+                            >Unlock source (use selected block)</button>
+                          )}
+                        </div>
+                      );
                     })()}
                   </div>
                 </div>
-                )}
-                <div className="ai-card ai-card-options">
-                  <div className="ai-card-label">Enhancement</div>
-                  <div className="ai-card-body">
-                    <div className="ai-preset-group">
-                      <label>Type</label>
-                      <select value={aiEnhanceType} onChange={(e) => setAiEnhanceType(e.target.value)}>
-                        <option value="enhance">Enhance</option>
-                        <option value="black-white">Black &amp; White</option>
-                        <option value="brighten">Brighten</option>
-                        <option value="sharpen">Sharpen</option>
-                        <option value="color-pop">Color Pop</option>
-                        <option value="soften-bg">Soften Background</option>
-                        <option value="crop-fit">Crop/Fit</option>
-                        <option value="square-crop">Square Crop</option>
-                        <option value="wide-hero-crop">Wide Hero Crop</option>
-                      </select>
-                    </div>
-                    <textarea value={aiEnhancePrompt} onChange={(e) => setAiEnhancePrompt(e.target.value)} rows={2} placeholder="Optional: describe what to enhance or change..." />
-                  </div>
-                </div>
-                <div className="ai-card-actions">
-                  <button className="ai-action-primary" onClick={() => void aiEnhanceImage()} disabled={!(aiEnhanceSourceOverride || getSelectedEnhanceSource().src)}>Analyze/Enhance</button>
-                  <button onClick={applyAiEnhancedImage} disabled={!aiEnhanceResult}>Apply Enhanced Image</button>
+                <div className="ai-card ai-card-actions" data-testid="ai-image-enhance-actions">
+                  <button
+                    className="ai-action-primary"
+                    data-testid="ai-image-enhance-open-modal"
+                    disabled={!(aiEnhanceSourceOverride || getSelectedEnhanceSource().src)}
+                    onClick={() => {
+                      const es = aiEnhanceSourceOverride
+                        ? { src: aiEnhanceSourceOverride, label: aiEnhanceSourceLabel || "Generated image" }
+                        : (() => {
+                            const sel = getSelectedEnhanceSource();
+                            return { src: sel.src || "", label: sel.label || "Image Library" };
+                          })();
+                      if (!es.src) {
+                        setAiEnhanceStatus("Select an image block, gallery image, or background first.");
+                        return;
+                      }
+                      openImageEditModal(es.src, es.label);
+                    }}
+                    title="Open the unified image edit modal with the same flow as Image Library Edit image"
+                  >Open Edit Modal</button>
                   <button onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }}>Open Image Library</button>
                   <button onClick={clearAiEnhance}>Clear</button>
                 </div>
+                <p className="ai-hint" data-testid="ai-image-enhance-flow-hint" style={{ fontSize: "11px", color: "var(--editor-muted)", margin: "4px 0 0" }}>
+                  The edit modal is the same one used by Image Library &rarr; Edit image. It supports source lock, all 10 edit types, preview before apply, and separate Save / Apply / Add to Gallery actions.
+                </p>
                 {aiEnhanceStatus && <div className="ai-card ai-card-status"><p>{aiEnhanceStatus}</p></div>}
-                {aiEnhanceResult && (
-                  <div className="ai-card ai-card-preview">
-                    <div className="ai-card-label">Enhanced Preview</div>
-                    <div className="ai-card-body">
-                      <img src={aiEnhanceResult} alt="Enhanced" className="ai-result-image" />
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>

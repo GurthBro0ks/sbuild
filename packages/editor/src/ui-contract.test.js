@@ -37,12 +37,13 @@ test("image library provides multi-select delete with confirmation", () => {
   assert.match(appSource, /data-testid="image-library-select-all"/);
   assert.match(appSource, /data-testid="image-library-delete-selected"/);
   assert.match(appSource, /data-testid="image-library-delete-confirm"/);
+  assert.match(appSource, /data-testid="image-library-select-mode-toggle"/);
+  assert.match(appSource, /data-testid="image-library-selected-count"/);
+  assert.match(appSource, /api\/images\/delete/);
   assert.match(appSource, /data-testid="image-library-delete-confirm-yes"/);
   assert.match(appSource, /selectAllFilteredImages/);
   assert.match(appSource, /toggleImageSelected/);
-  assert.match(appSource, /deleteImages/);
-  assert.match(appSource, /method:\s*"DELETE"/);
-  assert.match(appSource, /\/api\/images/);
+  assert.match(appSource, /bulkDeleteImages/);
 });
 
 test("image library multi-select delete warns when an image is currently used by the project", () => {
@@ -70,6 +71,35 @@ test("image library selected image action modal exposes Actions/Details/History"
   assert.match(appSource, /imageActionTab === "history"/);
   assert.match(appSource, /data-testid="image-action-details"/);
   assert.match(appSource, /data-testid="image-action-history"/);
+});
+
+test("image library has a discoverable multi-select toggle and selected count badge", () => {
+  assert.match(appSource, /data-testid="image-library-select-mode-toggle"/);
+  assert.match(appSource, /data-testid="image-library-selected-count"/);
+  assert.match(appSource, /className=\{selectMode \? "selected" : ""\}/);
+  assert.match(appSource, /Select images/);
+  assert.match(cssSource, /\.image-card-checkbox-prominent/);
+  assert.match(cssSource, /\.image-card\.multi-selected/);
+});
+
+test("image library folder manager exposes refresh, create, rename, delete, and move", () => {
+  assert.match(appSource, /data-testid="image-library-folder-refresh"/);
+  assert.match(appSource, /data-testid="image-library-folder-create"/);
+  assert.match(appSource, /data-testid="image-library-folder-rename"/);
+  assert.match(appSource, /data-testid="image-library-folder-delete"/);
+  assert.match(appSource, /data-testid="image-library-folder-switch"/);
+  assert.match(appSource, /data-testid="image-library-move-selected"/);
+  assert.match(appSource, /data-testid="image-library-folder-list-section"/);
+  assert.match(appSource, /refreshFolderList/);
+  assert.match(appSource, /createImageFolder/);
+  assert.match(appSource, /renameImageFolder/);
+  assert.match(appSource, /deleteImageFolder/);
+  assert.match(appSource, /moveSelectedImagesTo/);
+  assert.match(appSource, /\/api\/images\/folder\/list/);
+  assert.match(appSource, /\/api\/images\/folder\/create/);
+  assert.match(appSource, /\/api\/images\/folder\/rename/);
+  assert.match(appSource, /\/api\/images\/folder\/delete/);
+  assert.match(appSource, /\/api\/images\/move/);
 });
 
 test("dedicated image edit modal opens with locked source and full options", () => {
@@ -127,6 +157,14 @@ test("AI image gen is preview-only by default and has separate Save / Apply / Sa
   assert.match(appSource, /aiImgGenIsPreview/);
   assert.match(appSource, /\/api\/ai\/preview-image\//);
   assert.match(appSource, /\/api\/ai\/preview-image\/\$\{encodeURIComponent\(aiImgGenPreviewId\)\}\/promote/);
+});
+
+test("AI image gen defaults to library target and preview-only placement", () => {
+  assert.match(appSource, /useState<"block" \| "library">\("library"\)/);
+  assert.match(appSource, /useState<string>\("preview-only"\)/);
+  assert.match(appSource, /Preview only — do not apply/);
+  assert.match(appSource, /placement === "preview-only"/);
+  assert.match(appSource, /placement === "save-library"/);
 });
 
 test("AI image gen preview discarded via DELETE /api/ai/preview-image/:id", () => {
@@ -424,10 +462,8 @@ test("saving chat provider keeps image key labels unchanged", () => {
 test("image enhance source lock keeps generated image source across actions", () => {
   assert.match(appSource, /openImageEditModal\(aiImgGenResult,\s*"Generated image"\)/);
   assert.match(appSource, /setAiEnhanceSourceOverride\(data\.editedImageUrl\)/);
-  assert.match(appSource, /Source: Generated image/);
   assert.match(appSource, /Source: Image Library/);
   assert.match(appSource, /Source: Selected block background/);
-  assert.match(appSource, /Enhanced image applied\. Save to persist\./);
   assert.match(appSource, /imageEditSnapshot/);
 });
 
@@ -536,11 +572,12 @@ test("AI Image Gen uses modern card layout instead of raw form controls", () => 
   assert.match(cssSource, /\.ai-preset-group/);
 });
 
-test("AI Image Enhance uses modern card layout with source detection", () => {
-  assert.match(appSource, /ai-card\s+ai-card-source/);
-  assert.match(appSource, /ai-card\s+ai-card-options/);
-  assert.match(appSource, /ai-source-detail/);
-  assert.match(appSource, /ai-source-thumb/);
+test("AI Image Enhance opens same dedicated image edit modal as Image Library Edit image", () => {
+  assert.match(appSource, /ai-image-enhance-source-card/);
+  assert.match(appSource, /ai-image-enhance-open-modal/);
+  assert.match(appSource, /ai-image-enhance-flow-hint/);
+  assert.match(appSource, /Open Edit Modal/);
+  assert.match(appSource, /openImageEditModal\(es\.src,\s*es\.label\)/);
   assert.match(cssSource, /\.ai-source-detail/);
   assert.match(cssSource, /\.ai-source-thumb/);
 });
