@@ -3070,6 +3070,7 @@ export function App() {
       setAiImgGenStatus("No preview to apply. Generate an image first.");
       return;
     }
+    let urlToApply = aiImgGenResult;
     if (aiImgGenIsPreview && aiImgGenPreviewId) {
       try {
         const data = await fetchJson<{ ok: boolean; imageUrl?: string; error?: string }>(`/api/ai/preview-image/${encodeURIComponent(aiImgGenPreviewId)}/promote`, {
@@ -3078,21 +3079,32 @@ export function App() {
         });
         if (data.ok && data.imageUrl) {
           setAiImgGenResult(data.imageUrl);
+          urlToApply = data.imageUrl;
           setAiImgGenIsPreview(false);
           setAiImgGenPreviewId("");
           await loadImages();
         }
       } catch { /* fall through and try to apply the preview URL directly */ }
     }
-    aiUseImageInBlock();
-    setAiImgGenStatus("Applied preview to selected block. Save project to persist.");
+    if (!selectedBlock) {
+      setAiImgGenStatus("Select a block first, then apply.");
+      return;
+    }
+    applyImageToSelectedBlock(urlToApply, "AI generated image");
+    setDirty(true);
+    setLastAction("ai-apply-image");
+    setAiImgGenStatus("Applied to selected block. Save project to persist.");
   }
 
   async function aiSaveAndApplyPreview(): Promise<void> {
     await aiSavePreviewToLibrary();
-    if (aiImgGenResult) {
-      aiUseImageInBlock();
+    if (aiImgGenResult && selectedBlock) {
+      applyImageToSelectedBlock(aiImgGenResult, "AI generated image");
+      setDirty(true);
+      setLastAction("ai-save-apply-image");
       setAiImgGenStatus("Saved to Image Library AND applied to selected block. Save project to persist.");
+    } else if (aiImgGenResult) {
+      setAiImgGenStatus("Saved to Image Library. Select a block to apply.");
     }
   }
 
@@ -6109,52 +6121,47 @@ export function App() {
                     data-testid="ai-img-gen-open-library"
                   >Open Image Library</button>
                 </div>
-                <div className="ai-card ai-card-target">
-                  <div className="ai-card-label">Target</div>
-                  <div className="ai-card-body">
-                    <span>{hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
-                    <div className="ai-chat-target-buttons">
-                      <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
-                      <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
+                <details className="ai-card ai-card-advanced" data-testid="ai-img-gen-advanced-section" style={{ margin: "0 8px" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 12, padding: "4px 0", color: "var(--editor-text)" }}>Target &amp; Presets</summary>
+                  <div className="ai-card-body" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12 }}>{hasSelectedImageTarget() ? `${blockTypeLabels[selectedBlock!.type] || selectedBlock!.type} block` : "project image library"}</span>
+                      <div className="ai-chat-target-buttons">
+                        <button onClick={() => setAiImgGenTarget("block")} className={aiImgGenTarget === "block" ? "selected" : ""} disabled={!hasSelectedImageTarget()}>Selected Block</button>
+                        <button onClick={() => setAiImgGenTarget("library")} className={aiImgGenTarget === "library" ? "selected" : ""}>Image Library</button>
+                      </div>
                     </div>
-                    <p className="ai-hint" style={{ fontSize: "11px", color: "var(--editor-muted)", margin: "4px 0 0" }}>
-                      Image Library stores uploaded and generated project assets.
-                      Website Gallery controls images displayed inside gallery blocks on the website.
-                    </p>
-                  </div>
-                </div>
-                <div className="ai-card ai-card-presets">
-                  <div className="ai-card-label">Presets</div>
-                  <div className="ai-card-body">
-                    <div className="ai-preset-group">
-                      <label>Style</label>
-                      <select value={imageGenStyle} onChange={(e) => setImageGenStyle(e.target.value)}>
-                        {IMAGE_GEN_STYLE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                      </select>
-                    </div>
-                    <div className="ai-preset-group">
-                      <label>Size</label>
-                      <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}>
-                        {IMAGE_GEN_SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                      </select>
-                    </div>
-                    <div className="ai-preset-group">
-                      <label>Placement</label>
-                      <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)}>
-                        <option value="preview-only">Preview only — do not apply (recommended)</option>
-                        <option value="block-background">Use as block background (cover)</option>
-                        <option value="selected-image">Use as selected image</option>
-                        <option value="fit-block">Fit to selected block (contain)</option>
-                        <option value="fill-block">Fill selected block (stretch)</option>
-                        <option value="add-to-gallery">Add to gallery</option>
-                        <option value="save-library">Save to library only</option>
-                        <option value="center-focal">Center focal point</option>
-                        <option value="top-center">Top center crop</option>
-                        <option value="bottom-center">Bottom center crop</option>
-                      </select>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                      <div className="ai-preset-group">
+                        <label>Style</label>
+                        <select value={imageGenStyle} onChange={(e) => setImageGenStyle(e.target.value)}>
+                          {IMAGE_GEN_STYLE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="ai-preset-group">
+                        <label>Size</label>
+                        <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}>
+                          {IMAGE_GEN_SIZE_PRESETS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="ai-preset-group">
+                        <label>Placement</label>
+                        <select value={imageGenPlacement} onChange={(e) => setImageGenPlacement(e.target.value)} data-testid="ai-img-gen-placement-select">
+                          <option value="preview-only">Preview only (recommended)</option>
+                          <option value="block-background">Block background (cover)</option>
+                          <option value="selected-image">Selected image</option>
+                          <option value="fit-block">Fit to block (contain)</option>
+                          <option value="fill-block">Fill block (stretch)</option>
+                          <option value="add-to-gallery">Add to gallery</option>
+                          <option value="save-library">Save to library only</option>
+                          <option value="center-focal">Center focal point</option>
+                          <option value="top-center">Top center crop</option>
+                          <option value="bottom-center">Bottom center crop</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </details>
                 <div className="ai-card ai-card-prompt">
                   <div className="ai-card-label">Image Prompt</div>
                   <div className="ai-card-body">
@@ -6198,13 +6205,13 @@ export function App() {
                       <button
                         data-testid="ai-img-gen-apply-to-block"
                         onClick={() => void aiApplyPreviewToBlock()}
-                        disabled={!hasSelectedImageTarget()}
+                        disabled={!selectedBlock}
                         title="Apply this image to the selected block"
                       >Apply to Selected Block</button>
                       <button
                         data-testid="ai-img-gen-save-and-apply"
                         onClick={() => void aiSaveAndApplyPreview()}
-                        disabled={!hasSelectedImageTarget() || !aiImgGenIsPreview}
+                        disabled={!selectedBlock || !aiImgGenIsPreview}
                         title="Save to Library AND apply to selected block"
                       >Save and Apply</button>
                       <button

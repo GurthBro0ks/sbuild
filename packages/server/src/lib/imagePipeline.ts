@@ -152,7 +152,7 @@ export async function applyLocalEditWithSharp(options: {
       pipeline = pipeline.resize(options.outputWidth, options.outputWidth, { fit: "cover" });
       return pipeline.png().toBuffer();
     case "wide-hero-crop":
-      pipeline = pipeline.resize(Math.max(options.outputWidth, 1536), 1024, { fit: "cover" });
+      pipeline = pipeline.resize(1536, 864, { fit: "cover" });
       return pipeline.png().toBuffer();
     case "crop-fit":
       break;

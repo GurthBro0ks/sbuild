@@ -163,7 +163,7 @@ test("AI image gen is preview-only by default and has separate Save / Apply / Sa
 test("AI image gen defaults to library target and preview-only placement", () => {
   assert.match(appSource, /useState<"block" \| "library">\("library"\)/);
   assert.match(appSource, /useState<string>\("preview-only"\)/);
-  assert.match(appSource, /Preview only — do not apply/);
+  assert.match(appSource, /Preview only \(recommended\)/);
   assert.match(appSource, /placement === "preview-only"/);
   assert.match(appSource, /placement === "save-library"/);
 });
@@ -562,14 +562,10 @@ test("AI chat error messages are provider-aware with timeout details", () => {
 });
 
 test("AI Image Gen uses modern card layout instead of raw form controls", () => {
-  assert.match(appSource, /ai-card\s+ai-card-target/);
-  assert.match(appSource, /ai-card\s+ai-card-presets/);
+  assert.match(appSource, /ai-card-advanced/);
   assert.match(appSource, /ai-card\s+ai-card-prompt/);
-  assert.match(appSource, /ai-card-actions/);
   assert.match(appSource, /ai-action-primary/);
-  assert.match(cssSource, /\.ai-card\b/);
-  assert.match(cssSource, /\.ai-card-label/);
-  assert.match(cssSource, /\.ai-card-body/);
+  assert.match(cssSource, /\.ai-card-advanced/);
   assert.match(cssSource, /\.ai-preset-group/);
 });
 
@@ -2864,5 +2860,55 @@ test("AI Image Gen: Generate Image button exists directly below the prompt texta
 
 test("AI Image Gen: default placement is preview-only and default target is library", () => {
   assert.match(appSource, /useState<string>\("preview-only"\)/);
-  assert.match(appSource, /Preview only — do not apply/);
+  assert.match(appSource, /Preview only \(recommended\)/);
+});
+
+test("AI Image Gen: Target and Presets are collapsed behind an advanced section", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-advanced-section"/);
+  assert.match(appSource, /Target &amp; Presets/);
+  assert.match(appSource, /data-testid="ai-img-gen-placement-select"/);
+  assert.match(cssSource, /\.ai-card-advanced/);
+});
+
+test("AI Image Gen: Apply to Selected Block calls applyImageToSelectedBlock directly, not aiUseImageInBlock", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-apply-to-block"/);
+  const applyFnIdx = appSource.indexOf("async function aiApplyPreviewToBlock");
+  assert.ok(applyFnIdx > 0, "aiApplyPreviewToBlock function exists");
+  const fnBody = appSource.substring(applyFnIdx, applyFnIdx + 1200);
+  assert.match(fnBody, /applyImageToSelectedBlock/);
+  assert.ok(!fnBody.includes("aiUseImageInBlock"), "aiApplyPreviewToBlock does NOT call aiUseImageInBlock");
+});
+
+test("AI Image Gen: Save and Apply calls applyImageToSelectedBlock directly", () => {
+  const saveApplyIdx = appSource.indexOf("async function aiSaveAndApplyPreview");
+  assert.ok(saveApplyIdx > 0, "aiSaveAndApplyPreview function exists");
+  const fnBody = appSource.substring(saveApplyIdx, saveApplyIdx + 600);
+  assert.match(fnBody, /applyImageToSelectedBlock/);
+  assert.ok(!fnBody.includes("aiUseImageInBlock"), "aiSaveAndApplyPreview does NOT call aiUseImageInBlock");
+});
+
+test("AI Image Gen: footer with action buttons is sticky at bottom of the tab", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-footer"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-to-library"/);
+  assert.match(appSource, /data-testid="ai-img-gen-apply-to-block"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-and-apply"/);
+  assert.match(appSource, /data-testid="ai-img-gen-cancel"/);
+  const standaloneIdx = cssSource.indexOf("\n.ai-image-gen-footer {\n");
+  assert.ok(standaloneIdx > 0, "standalone .ai-image-gen-footer { rule exists");
+  const cssSection = cssSource.substring(standaloneIdx, standaloneIdx + 400);
+  assert.match(cssSection, /position:\s*sticky/);
+  assert.match(cssSection, /bottom:\s*0/);
+});
+
+test("Image edit Wide/Hero Crop uses deterministic 1536x864 16:9 banner dimensions", () => {
+  const pipelineSrc = readFileSync(new URL("../../server/src/lib/imagePipeline.ts", import.meta.url), "utf8");
+  assert.match(pipelineSrc, /wide-hero-crop/);
+  assert.match(pipelineSrc, /1536,\s*864/);
+  assert.match(pipelineSrc, /fit:\s*"cover"/);
+});
+
+test("Image edit Square Crop uses deterministic square output", () => {
+  const pipelineSrc = readFileSync(new URL("../../server/src/lib/imagePipeline.ts", import.meta.url), "utf8");
+  assert.match(pipelineSrc, /square-crop/);
+  assert.match(pipelineSrc, /fit:\s*"cover"/);
 });

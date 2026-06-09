@@ -3159,6 +3159,24 @@ button:disabled {
   flex-direction: column;
   gap: 2px;
 }
+.ai-card-advanced {
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--editor-panel-bg-2) 50%, transparent);
+}
+.ai-card-advanced > summary {
+  font-size: 12px;
+  user-select: none;
+  outline: none;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--editor-text);
+  padding: 4px 0;
+}
+.ai-card-advanced > summary:hover {
+  color: var(--editor-accent);
+}
 .ai-preset-group label {
   font-size: 10px;
   font-weight: 600;
