@@ -25,3 +25,4 @@ data/preview-cache.json
 project/project.json
 project/user-preferences.json
 project/image-folder.json
+packages/shared/src/build-meta.ts

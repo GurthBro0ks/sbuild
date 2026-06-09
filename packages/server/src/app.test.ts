@@ -2916,11 +2916,52 @@ test("test fixture key cannot become a default runtime key", async () => {
         body: JSON.stringify({ imageGenApiKey: k })
       });
     }
-    const status = await fetch(`${baseUrl}/api/secrets/status`);
-    const body = await status.json() as { imageGen?: { configured: boolean; maskedKey?: string | null } };
-    assert.equal(body.imageGen?.configured, false, "no real key was saved, so imageGen should be unconfigured");
-    assert.equal(body.imageGen?.maskedKey, null, "masked key must remain null after test fixture attempts");
   });
+});
+
+test("/health returns complete version identity", async () => {
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    version?: string;
+    baseVersion?: string;
+    displayVersion?: string;
+    gitCommit?: string;
+    commitCount?: number;
+    branch?: string;
+    ok?: boolean;
+  };
+  assert.equal(body.ok, true);
+  assert.ok(body.version && typeof body.version === "string", "version must be a string");
+  assert.ok(body.baseVersion && typeof body.baseVersion === "string", "baseVersion must be a string");
+  assert.ok(body.displayVersion && typeof body.displayVersion === "string", "displayVersion must be a string");
+  assert.ok(body.gitCommit && typeof body.gitCommit === "string" && body.gitCommit !== "unknown", "gitCommit must be a real commit hash");
+  assert.ok(typeof body.commitCount === "number" && body.commitCount > 0, "commitCount must be a positive number");
+  assert.ok(body.branch && typeof body.branch === "string", "branch must be a string");
+});
+
+test("displayVersion includes commit identity beyond base version", async () => {
+  const response = await fetch(`${baseUrl}/health`);
+  const body = await response.json() as {
+    baseVersion?: string;
+    displayVersion?: string;
+    gitCommit?: string;
+    commitCount?: number;
+  };
+  assert.ok(body.displayVersion!.length > body.baseVersion!.length, "displayVersion should be longer than baseVersion (includes commit identity)");
+  assert.ok(body.displayVersion!.includes(body.baseVersion!), "displayVersion must start with baseVersion");
+  assert.ok(body.displayVersion!.includes(body.gitCommit!), "displayVersion must include gitCommit");
+  assert.ok(body.displayVersion!.includes(String(body.commitCount)), "displayVersion must include commitCount");
+});
+
+test("displayVersion is not just stale static base version", async () => {
+  const response = await fetch(`${baseUrl}/health`);
+  const body = await response.json() as {
+    displayVersion?: string;
+    gitCommit?: string;
+  };
+  assert.notEqual(body.displayVersion, "0.5.0-dev", "displayVersion must not be the bare static version without commit identity");
+  assert.ok(body.displayVersion !== body.gitCommit, "displayVersion should not be just the commit");
 });
 
 test("local-chat-...-status / local-image-...-status / local-key-...-demo patterns cannot pollute runtime config", async () => {

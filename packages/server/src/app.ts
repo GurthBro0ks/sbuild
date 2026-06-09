@@ -15,7 +15,9 @@ import {
   SBUILD_VERSION,
   SBUILD_APP_NAME,
   SBuildBuildInfo,
+  computeDisplayVersion,
 } from "@sbuild/shared";
+import { BUILD_META } from "@sbuild/shared";
 import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 
@@ -86,16 +88,23 @@ function resolveBranch(cwd: string, commit: string): string {
 }
 
 function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
-  const commit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || "unknown";
+  const commit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || BUILD_META.gitCommitShort;
+  const commitFull = safeGitCommand("git rev-parse HEAD", repoRoot) || BUILD_META.gitCommitFull;
   const branch = resolveBranch(repoRoot, commit);
   const dirty = computeDirtySummary(repoRoot);
-  const buildDate = new Date().toISOString();
+  const buildDate = BUILD_META.buildTimeUtc;
+  const commitCount = BUILD_META.commitCount;
+  const displayVersion = computeDisplayVersion(SBUILD_VERSION, commit, commitCount);
   return {
     version: SBUILD_VERSION,
     appName: SBUILD_APP_NAME,
+    baseVersion: SBUILD_VERSION,
+    displayVersion,
     gitCommit: commit,
+    gitCommitFull: commitFull,
     branch,
     buildDate,
+    commitCount,
     dirty: dirty.modifiedTracked > 0 || dirty.untracked > 0,
     dirtySummary: dirty,
     publishAllowed: process.env.SBUILD_ALLOW_PUBLISH === "1",
@@ -568,8 +577,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ok: true,
       appName: info.appName,
       version: info.version,
+      baseVersion: info.baseVersion,
+      displayVersion: info.displayVersion,
       gitCommit: info.gitCommit,
+      gitCommitFull: info.gitCommitFull,
       buildDate: info.buildDate,
+      commitCount: info.commitCount,
       dirty: info.dirty,
       dirtySummary: info.dirtySummary,
       branch: info.branch,

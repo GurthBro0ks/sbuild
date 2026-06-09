@@ -15,14 +15,19 @@ show() {
   v=$(current_version)
   local commit="unknown"
   local branch="unknown"
+  local count=0
   if command -v git &>/dev/null && git rev-parse --short HEAD &>/dev/null; then
     commit=$(git rev-parse --short HEAD)
     branch=$(git rev-parse --abbrev-ref HEAD)
+    count=$(git rev-list --count HEAD 2>/dev/null || echo 0)
   fi
+  local display="${v}.${count}+${commit}"
   echo "sBuild $v"
-  echo "  commit: $commit"
-  echo "  branch: $branch"
-  echo "  file:   $VERSION_FILE"
+  echo "  display:  $display"
+  echo "  commit:   $commit"
+  echo "  count:    $count"
+  echo "  branch:   $branch"
+  echo "  file:     $VERSION_FILE"
 }
 
 bump() {
@@ -61,6 +66,8 @@ bump() {
   else
     sed -i "s/SBUILD_VERSION = \"[^\"]\+\"/SBUILD_VERSION = \"$new\"/" "$VERSION_FILE"
     echo "Bumped $v → $new"
+    echo "Rebuild with: npm run build"
+    echo "Then restart: systemctl --user restart sbuild.service"
   fi
 }
 
@@ -73,6 +80,12 @@ case "${1:-show}" in
     ;;
   *)
     echo "Usage: $0 show | bump [major|minor|patch]"
+    echo ""
+    echo "  show           Show current base version and display version"
+    echo "  bump [kind]    Bump base version (major|minor|patch), keeps -dev suffix"
+    echo ""
+    echo "Build identity (commit, count) updates automatically on every build."
+    echo "Only bump base version for accepted milestones."
     exit 1
     ;;
 esac

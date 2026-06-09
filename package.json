@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.18.3",
   "scripts": {
     "dev": "pnpm --parallel --filter @sbuild/server --filter @sbuild/editor dev",
+    "prebuild": "bash scripts/generate-build-meta.sh",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

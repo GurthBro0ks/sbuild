@@ -5625,7 +5625,7 @@ export function App() {
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
               <p><strong>mobile-toolbar-gap-repair active</strong></p>
               <p><strong>action-controls-offset active</strong></p>
-              <p><strong>commit:</strong> {SBUILD_VERSION}</p>
+              <p><strong>version:</strong> {buildInfo?.displayVersion || SBUILD_VERSION}</p>
               <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
               <p><strong>spacerHeight:</strong> {debugSpacerH || "n/a"}{debugSpacerH ? "px" : ""}</p>
               <p><strong>topbarBottom:</strong> {debugToolbarBottom || "n/a"}{debugToolbarBottom ? "px" : ""}</p>
@@ -5930,7 +5930,7 @@ export function App() {
       <header ref={topbarRef} className="topbar">
         <div className="topbar-mobile-row topbar-mobile-row-main">
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-          <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {SBUILD_VERSION}</div>
+          <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {buildInfo?.displayVersion || SBUILD_VERSION}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
           <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
@@ -7005,17 +7005,20 @@ export function App() {
               {resetPwMsg && <p className={resetPwMsgOk ? "panel-status" : "error-text"}>{resetPwMsg}</p>}
             </div>}
             {settingsTab === "debug" && <div>
-              <p><strong>Version:</strong> {SBUILD_APP_NAME} {SBUILD_VERSION}</p>
+              <p><strong>Version:</strong> {SBUILD_APP_NAME} {buildInfo?.displayVersion || SBUILD_VERSION}</p>
               <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
               <p><strong>Selected block:</strong> {selectedBlock?.id || "none"} ({selectedBlock?.type || "none"})</p>
               <p><strong>Theme:</strong> {themeApplied || "custom"}</p>
               <p><strong>Last API status:</strong> {status}</p>
             </div>}
             {settingsTab === "about" && <div>
-              <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{SBUILD_VERSION}</span></p>
+              <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{buildInfo?.displayVersion || SBUILD_VERSION}</span></p>
+              <p><strong>Base version:</strong> {SBUILD_VERSION}</p>
+              <p><strong>Display version:</strong> {buildInfo?.displayVersion || SBUILD_VERSION}</p>
               <p><strong>Health:</strong> {buildInfo ? "✅ Server reachable" : "❌ Server unreachable"}</p>
               <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
               <p><strong>Branch:</strong> {buildInfo?.branch || "unknown"}</p>
+              <p><strong>Commit count:</strong> {buildInfo?.commitCount ?? "unknown"}</p>
               <p><strong>Build date:</strong> {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</p>
               <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
               <p><strong>Loaded project source:</strong> {loadedProjectSource}</p>
@@ -7048,7 +7051,7 @@ export function App() {
               </div>
               <hr />
               <p><strong>Changelog</strong></p>
-              <p>Latest: 0.4.0-dev — Versioning, Transparent Styles, Visual Effects</p>
+              <p>Latest: {SBUILD_VERSION}</p>
               <p style={{ fontSize: 12, opacity: 0.7 }}>See CHANGELOG.md in project root for full history.</p>
             </div>}
             <div className="button-row"><button onClick={() => setSettingsOpen(false)}>Close</button></div>

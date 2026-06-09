@@ -117,7 +117,7 @@ else
   printf "PASS\n" > "$PROOF_DIR/authenticated-smoke.status"
 fi
 
-node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.version||typeof p.version!=='string'){throw new Error('version missing from /health')}if(!p.gitCommit||typeof p.gitCommit!=='string'){throw new Error('gitCommit missing from /health')}console.log('health version check ok')" "$PROOF_DIR/curl-health.json" | tee -a "$PROOF_DIR/smoke.log"
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.version||typeof p.version!=='string'){throw new Error('version missing from /health')}if(!p.gitCommit||typeof p.gitCommit!=='string'){throw new Error('gitCommit missing from /health')}if(!p.displayVersion||typeof p.displayVersion!=='string'){throw new Error('displayVersion missing from /health')}if(!p.baseVersion||typeof p.baseVersion!=='string'){throw new Error('baseVersion missing from /health')}if(typeof p.commitCount!=='number'){throw new Error('commitCount missing from /health')}if(p.displayVersion===p.baseVersion){throw new Error('displayVersion should include commit identity beyond baseVersion')}console.log('health version check ok')" "$PROOF_DIR/curl-health.json" | tee -a "$PROOF_DIR/smoke.log"
 if [[ ! -f CHANGELOG.md ]]; then log "FAIL CHANGELOG.md missing"; exit 1; fi
 log "PASS CHANGELOG.md exists"
 

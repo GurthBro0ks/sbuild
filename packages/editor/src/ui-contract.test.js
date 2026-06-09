@@ -2912,3 +2912,44 @@ test("Image edit Square Crop uses deterministic square output", () => {
   assert.match(pipelineSrc, /square-crop/);
   assert.match(pipelineSrc, /fit:\s*"cover"/);
 });
+
+test("topbar uses displayVersion from buildInfo, not static SBUILD_VERSION alone", () => {
+  assert.match(appSource, /buildInfo\?\.displayVersion/);
+  const logoMatch = appSource.match(/className="logo"[^}]*\{SBUILD_APP_NAME\}[^}]*\}/);
+  assert.ok(logoMatch, "topbar logo must exist");
+  assert.match(logoMatch[0], /buildInfo\?\.displayVersion/, "topbar logo must use buildInfo.displayVersion");
+});
+
+test("About tab shows baseVersion and displayVersion fields", () => {
+  assert.match(appSource, /Base version:/);
+  assert.match(appSource, /Display version:/);
+  assert.match(appSource, /buildInfo\?\.displayVersion/);
+  assert.match(appSource, /Commit count:/);
+  assert.match(appSource, /buildInfo\?\.commitCount/);
+});
+
+test("About tab changelog uses dynamic version not hardcoded stale version", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.ok(!aboutSection.includes("Latest: 0.4.0-dev"), "About tab must not contain stale hardcoded 0.4.0-dev changelog line");
+  assert.match(aboutSection, /Latest:.*SBUILD_VERSION/);
+});
+
+test("server health includes displayVersion, baseVersion, and commitCount", () => {
+  const serverSrc = readFileSync(new URL("../../server/src/app.ts", import.meta.url), "utf8");
+  assert.match(serverSrc, /displayVersion/);
+  assert.match(serverSrc, /baseVersion/);
+  assert.match(serverSrc, /commitCount/);
+  assert.match(serverSrc, /computeDisplayVersion/);
+  assert.match(serverSrc, /BUILD_META/);
+});
+
+test("build generates build-meta.ts automatically via prebuild hook", () => {
+  const rootPkg = readFileSync(new URL("../../../package.json", import.meta.url), "utf8");
+  assert.match(rootPkg, /prebuild/);
+  assert.match(rootPkg, /generate-build-meta\.sh/);
+});
+
+test("build-meta.ts is gitignored", () => {
+  const gitignore = readFileSync(new URL("../../../.gitignore", import.meta.url), "utf8");
+  assert.match(gitignore, /build-meta\.ts/);
+});
