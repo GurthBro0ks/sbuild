@@ -77,7 +77,8 @@ test("image library has a discoverable multi-select toggle and selected count ba
   assert.match(appSource, /data-testid="image-library-select-mode-toggle"/);
   assert.match(appSource, /data-testid="image-library-selected-count"/);
   assert.match(appSource, /className=\{selectMode \? "selected" : ""\}/);
-  assert.match(appSource, /Select images/);
+  assert.match(appSource, /Selection: on/);
+  assert.match(appSource, /Selection: off/);
   assert.match(cssSource, /\.image-card-checkbox-prominent/);
   assert.match(cssSource, /\.image-card\.multi-selected/);
 });
@@ -2710,4 +2711,100 @@ test("AI Top Menu: mobile safe-area bottom padding", () => {
   assert.ok(mobileIdx > 0, "mobile media query exists");
   const mobileSection = cssSource.substring(mobileIdx);
   assert.match(mobileSection, /safe-area-inset-bottom/);
+});
+
+test("AI Image Gen: sticky top action bar contains Generate / Regenerate / Open Image Library", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-topbar"/);
+  assert.match(appSource, /data-testid="ai-img-gen-generate"/);
+  assert.match(appSource, /data-testid="ai-img-gen-regenerate"/);
+  assert.match(appSource, /data-testid="ai-img-gen-open-library"/);
+  // Find the actual block-style definition (not the combined selector near the top)
+  const cssIdx = cssSource.indexOf("\n.ai-image-gen-topbar {");
+  assert.ok(cssIdx > 0, ".ai-image-gen-topbar { ... } definition exists");
+  const cssSection = cssSource.substring(cssIdx, cssIdx + 400);
+  assert.match(cssSection, /position:\s*sticky/);
+  assert.match(cssSection, /top:\s*0/);
+});
+
+test("AI Image Gen: sticky bottom footer keeps Save / Apply / Save and Apply / Add to Gallery / Cancel / Edit image reachable without resizing", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-footer"/);
+  assert.match(appSource, /data-testid="ai-img-gen-apply-actions"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-to-library"/);
+  assert.match(appSource, /data-testid="ai-img-gen-apply-to-block"/);
+  assert.match(appSource, /data-testid="ai-img-gen-save-and-apply"/);
+  assert.match(appSource, /data-testid="ai-img-gen-add-to-gallery"/);
+  assert.match(appSource, /data-testid="ai-img-gen-cancel"/);
+  assert.match(appSource, /data-testid="ai-img-gen-edit-image"/);
+  // Find the actual block-style definition (not the combined selector near the top)
+  const cssIdx = cssSource.indexOf("\n.ai-image-gen-footer {");
+  assert.ok(cssIdx > 0, ".ai-image-gen-footer { ... } definition exists");
+  const cssSection = cssSource.substring(cssIdx, cssIdx + 600);
+  assert.match(cssSection, /position:\s*sticky/);
+  assert.match(cssSection, /bottom:\s*0/);
+});
+
+test("AI Image Gen: preview image area is bounded so the modal does not push action buttons off-screen", () => {
+  assert.match(appSource, /data-testid="ai-img-gen-preview-image-wrap"/);
+  const cssIdx = cssSource.indexOf(".ai-card-preview-image-wrap");
+  assert.ok(cssIdx > 0, ".ai-card-preview-image-wrap class exists");
+  const cssSection = cssSource.substring(cssIdx, cssIdx + 500);
+  assert.match(cssSection, /max-height/);
+  assert.match(cssSection, /overflow:\s*hidden/);
+});
+
+test("Image Library: header bar has Refresh and Open folder buttons next to the title", () => {
+  assert.match(appSource, /data-testid="image-library-refresh"/);
+  assert.match(appSource, /data-testid="image-library-open-folder"/);
+  assert.match(appSource, /data-testid="image-library-library-section"/);
+  assert.match(appSource, /className="image-library-header"/);
+  assert.match(appSource, /className="image-library-header-actions"/);
+});
+
+test("Image Library: bulk bar shows Selected: N and exposes Select all visible / Clear selection / Delete selected (N)", () => {
+  assert.match(appSource, /data-testid="image-library-bulk-bar"/);
+  assert.match(appSource, /data-testid="image-library-bulk-row-top"/);
+  assert.match(appSource, /data-testid="image-library-selected-count"/);
+  assert.match(appSource, /data-testid="image-library-select-all"/);
+  assert.match(appSource, /data-testid="image-library-clear-selection"/);
+  assert.match(appSource, /data-testid="image-library-delete-selected"/);
+  assert.match(appSource, /Selected: \$\{selectedImageUrls\.size\}/);
+  assert.match(appSource, /Select all visible/);
+  assert.match(appSource, /Clear selection/);
+  assert.match(appSource, /Delete selected \(\$\{selectedImageUrls\.size\}\)/);
+});
+
+test("Image Library: bulk bar is sticky so the action buttons stay visible while scrolling the grid", () => {
+  const cssIdx = cssSource.indexOf(".image-library-bulk");
+  assert.ok(cssIdx > 0, ".image-library-bulk class exists");
+  const cssSection = cssSource.substring(cssIdx, cssIdx + 400);
+  assert.match(cssSection, /position:\s*sticky/);
+  assert.match(cssSection, /top:\s*0/);
+  assert.match(cssSection, /z-index/);
+});
+
+test("Image Library: select mode defaults to ON so multi-select checkboxes are immediately visible to new users", () => {
+  assert.match(appSource, /const \[selectMode, setSelectMode\] = useState\(true\)/);
+});
+
+test("Image Library: Tab structure exposes Browse / Upload / Settings", () => {
+  assert.match(appSource, /data-testid="image-library-tab-browse"/);
+  assert.match(appSource, /data-testid="image-library-tab-upload"/);
+  assert.match(appSource, /data-testid="image-library-tab-settings"/);
+});
+
+test("Image Library: Settings tab uses collapsible details/summary sections to keep the default view compact", () => {
+  assert.match(appSource, /data-testid="image-library-folder-list-details"/);
+  assert.match(appSource, /data-testid="image-library-folder-create-details"/);
+  assert.match(appSource, /data-testid="image-library-folder-rename-details"/);
+  assert.match(appSource, /data-testid="image-library-folder-move-details"/);
+  assert.match(appSource, /<details[\s\S]*?className="image-folder-section"/);
+  assert.match(cssSource, /\.image-folder-section/);
+  assert.match(cssSource, /\.image-folder-section\[open\]/);
+});
+
+test("Image Library: image grid has a generous max-height so the grid uses the available modal space", () => {
+  const cssIdx = cssSource.indexOf("\n.image-grid {");
+  assert.ok(cssIdx > 0, ".image-grid { ... } definition exists");
+  const cssSection = cssSource.substring(cssIdx, cssIdx + 400);
+  assert.match(cssSection, /max-height:\s*60vh/);
 });

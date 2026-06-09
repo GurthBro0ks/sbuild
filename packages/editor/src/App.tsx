@@ -1364,7 +1364,7 @@ export function App() {
   const [renameTarget, setRenameTarget] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [moveTargetFolder, setMoveTargetFolder] = useState("project/images");
-  const [selectMode, setSelectMode] = useState(false);
+  const [selectMode, setSelectMode] = useState(true);
   const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
   const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Provider") || null;
   const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
@@ -5123,8 +5123,13 @@ export function App() {
                     <button onClick={() => setPhotoFolder("project/images")} data-testid="image-library-folder-reset">Reset to project/images</button>
                   </div>
 
-                  <div className="image-folder-list" data-testid="image-library-folder-list-section" style={{ marginBottom: 10 }}>
-                    <h5 style={{ margin: "8px 0 4px" }}>Folders</h5>
+                  <details
+                    className="image-folder-section"
+                    data-testid="image-library-folder-list-details"
+                    open
+                  >
+                    <summary style={{ cursor: "pointer", fontWeight: 600, padding: "4px 0" }}>Folders</summary>
+                    <div className="image-folder-list" data-testid="image-library-folder-list-section" style={{ marginBottom: 10 }}>
                     <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 180, overflowY: "auto", border: "1px solid var(--editor-border)", borderRadius: 6 }}>
                       {folderList.map((folder) => {
                         const isActive = folder === photoFolder;
@@ -5156,10 +5161,16 @@ export function App() {
                         );
                       })}
                     </ul>
-                  </div>
+                    </div>
+                  </details>
+
+                  <details
+                    className="image-folder-section"
+                    data-testid="image-library-folder-create-details"
+                  >
+                    <summary style={{ cursor: "pointer", fontWeight: 600, padding: "4px 0" }}>Create subfolder</summary>
 
                   <div className="image-folder-create" data-testid="image-library-folder-create-section" style={{ marginBottom: 10 }}>
-                    <h5 style={{ margin: "8px 0 4px" }}>Create subfolder</h5>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         Parent
@@ -5180,9 +5191,14 @@ export function App() {
                       <button data-testid="image-library-folder-create" onClick={() => void createImageFolder()}>Create</button>
                     </div>
                   </div>
+                  </details>
 
+                  <details
+                    className="image-folder-section"
+                    data-testid="image-library-folder-rename-details"
+                  >
+                    <summary style={{ cursor: "pointer", fontWeight: 600, padding: "4px 0" }}>Rename subfolder</summary>
                   <div className="image-folder-rename" data-testid="image-library-folder-rename-section" style={{ marginBottom: 10 }}>
-                    <h5 style={{ margin: "8px 0 4px" }}>Rename subfolder</h5>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         Folder
@@ -5204,9 +5220,14 @@ export function App() {
                       <button data-testid="image-library-folder-rename" onClick={() => void renameImageFolder()}>Rename</button>
                     </div>
                   </div>
+                  </details>
 
+                  <details
+                    className="image-folder-section"
+                    data-testid="image-library-folder-move-details"
+                  >
+                    <summary style={{ cursor: "pointer", fontWeight: 600, padding: "4px 0" }}>Move selected images</summary>
                   <div className="image-folder-move" data-testid="image-library-folder-move-section" style={{ marginBottom: 10 }}>
-                    <h5 style={{ margin: "8px 0 4px" }}>Move selected images</h5>
                     <p className="hint">Select images in the Browse tab, then pick a destination here.</p>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -5222,6 +5243,7 @@ export function App() {
                       >Move {selectedImageUrls.size || 0} selected</button>
                     </div>
                   </div>
+                  </details>
 
                   {folderManagerStatus && (
                     <p
@@ -5236,7 +5258,26 @@ export function App() {
               {imageLibraryTab === "browse" && (
                 <>
                   <div className="image-manager-gallery" data-testid="image-library-library-section">
-                    <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+                    <div className="image-library-header">
+                      <h4>Project Images ({filteredUploadedImages.length}/{uploadedImages.length})</h4>
+                      <div className="image-library-header-actions">
+                        <button
+                          data-testid="image-library-refresh"
+                          onClick={() => void loadImages()}
+                          title="Reload the image list from disk"
+                        >Refresh</button>
+                        <button
+                          data-testid="image-library-open-folder"
+                          onClick={() => {
+                            const folder = photoFolder || "project/images";
+                            setStatus(`Project image folder: ${folder} (browser-safe view). No native OS file picker is available in the embedded builder.`);
+                            setImageLibraryTab("settings");
+                            void refreshFolderList();
+                          }}
+                          title="Open the in-app folder manager (browser-safe; no native OS picker is launched)"
+                        >Open folder</button>
+                      </div>
+                    </div>
                     <div className="image-library-controls">
                       <label>Filter
                         <select data-testid="image-library-filter" value={imageLibraryFilter} onChange={(e) => setImageLibraryFilter(e.target.value as ImageLibraryFilter)}>
@@ -5255,40 +5296,40 @@ export function App() {
                         </select>
                       </label>
                     </div>
-                    <div className="image-library-bulk" data-testid="image-library-bulk-bar" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-                      <button
-                        data-testid="image-library-select-mode-toggle"
-                        className={selectMode ? "selected" : ""}
-                        aria-pressed={selectMode}
-                        onClick={() => {
-                          setSelectMode((prev) => !prev);
-                          if (selectMode) clearImageSelection();
-                        }}
-                        style={{ fontWeight: 600 }}
-                      >{selectMode ? "✓ Select mode (on)" : "Select images"}</button>
-                      {selectMode && (
-                        <>
-                          <button data-testid="image-library-select-all" onClick={() => selectAllFilteredImages()}>Select all filtered</button>
-                          <button data-testid="image-library-clear-selection" onClick={() => clearImageSelection()}>Clear selection</button>
-                          <span
-                            className="image-library-selected-count"
-                            data-testid="image-library-selected-count"
-                            style={{ background: "var(--editor-accent)", color: "var(--editor-button-text)", padding: "2px 8px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}
-                          >{selectedImageUrls.size} selected</span>
-                          <button
-                            data-testid="image-library-delete-selected"
-                            disabled={selectedImageUrls.size === 0 || bulkDeletePending}
-                            onClick={() => {
-                              if (selectedImageUrls.size === 0) return;
-                              setBulkDeletePending(true);
-                              setBulkDeleteMessage("");
-                            }}
-                            style={{ marginLeft: "auto", background: "var(--editor-warning, #c0392b)", color: "#fff", borderColor: "var(--editor-warning, #c0392b)" }}
-                          >
-                            {bulkDeletePending ? "Confirm delete?" : `Delete ${selectedImageUrls.size} selected`}
-                          </button>
-                        </>
-                      )}
+                    <div className="image-library-bulk" data-testid="image-library-bulk-bar">
+                      <div className="image-library-bulk-row" data-testid="image-library-bulk-row-top">
+                        <span
+                          className="image-library-selected-count"
+                          data-testid="image-library-selected-count"
+                          aria-live="polite"
+                        >
+                          {selectMode ? `Selected: ${selectedImageUrls.size}` : "Selection off"}
+                        </span>
+                        <button data-testid="image-library-select-all" onClick={() => selectAllFilteredImages()} disabled={!selectMode}>Select all visible</button>
+                        <button data-testid="image-library-clear-selection" onClick={() => clearImageSelection()} disabled={!selectMode || selectedImageUrls.size === 0}>Clear selection</button>
+                        <button
+                          data-testid="image-library-select-mode-toggle"
+                          className={selectMode ? "selected" : ""}
+                          aria-pressed={selectMode}
+                          onClick={() => {
+                            setSelectMode((prev) => !prev);
+                            if (selectMode) clearImageSelection();
+                          }}
+                          title={selectMode ? "Turn selection off" : "Turn selection on"}
+                        >{selectMode ? "Selection: on" : "Selection: off"}</button>
+                        <button
+                          data-testid="image-library-delete-selected"
+                          disabled={!selectMode || selectedImageUrls.size === 0 || bulkDeletePending}
+                          onClick={() => {
+                            if (selectedImageUrls.size === 0) return;
+                            setBulkDeletePending(true);
+                            setBulkDeleteMessage("");
+                          }}
+                          className="image-library-delete-button"
+                        >
+                          {bulkDeletePending ? "Confirm delete" : `Delete selected (${selectedImageUrls.size})`}
+                        </button>
+                      </div>
                     </div>
                     {bulkDeletePending && (
                       <div className="image-library-confirm" data-testid="image-library-delete-confirm" style={{ background: "var(--editor-panel-bg-2)", border: "1px solid var(--editor-warning, #c0392b)", borderRadius: 8, padding: 10, marginBottom: 8 }}>
@@ -6049,6 +6090,25 @@ export function App() {
             )}
             {aiTopMenuTab === "image-gen" && (
               <div className="ai-panel-tab-content">
+                <div className="ai-image-gen-topbar" data-testid="ai-img-gen-topbar">
+                  <button
+                    className="ai-action-primary"
+                    onClick={() => void aiGenerateImage()}
+                    disabled={!aiImgGenPrompt.trim()}
+                    data-testid="ai-img-gen-generate"
+                  >Generate Image</button>
+                  <button
+                    onClick={() => void aiGenerateImage()}
+                    disabled={!aiImgGenPrompt.trim() || !aiImgGenResult}
+                    title="Generate a fresh image with the same prompt"
+                    data-testid="ai-img-gen-regenerate"
+                  >Regenerate</button>
+                  <button
+                    onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }}
+                    title="Open the shared project image library"
+                    data-testid="ai-img-gen-open-library"
+                  >Open Image Library</button>
+                </div>
                 <div className="ai-card ai-card-target">
                   <div className="ai-card-label">Target</div>
                   <div className="ai-card-body">
@@ -6101,59 +6161,60 @@ export function App() {
                     <textarea value={aiImgGenPrompt} onChange={(e) => setAiImgGenPrompt(e.target.value)} rows={3} placeholder="Describe the image to generate..." />
                   </div>
                 </div>
-                <div className="ai-card-actions">
-                  <button className="ai-action-primary" onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim()}>Generate Image</button>
-                  <button onClick={() => void aiGenerateImage()} disabled={!aiImgGenPrompt.trim() || !aiImgGenResult} title="Generate a fresh image with the same prompt">Regenerate</button>
-                  <button onClick={() => { setImageManagerTarget("block-bg"); setImageManagerOpen(true); }} title="Open the shared project image library">Open Image Library</button>
-                </div>
                 {aiImgGenStatus && <div className="ai-card ai-card-status"><p>{aiImgGenStatus}</p></div>}
                 {aiImgGenResult && (
                   <div className="ai-card ai-card-preview" data-testid="ai-img-gen-preview">
                     <div className="ai-card-label">
                       Preview {aiImgGenIsPreview ? <span className="ai-preview-badge" data-testid="ai-img-gen-preview-badge">Preview only</span> : <span className="ai-preview-badge ai-preview-badge-saved" data-testid="ai-img-gen-preview-badge-saved">Saved to Library</span>}
                     </div>
-                    <div className="ai-card-body">
-                      <img src={aiImgGenResult} alt="Generated preview" className="ai-result-image" data-testid="ai-img-gen-preview-image" />
+                    <div className="ai-card-body ai-card-preview-body">
+                      <div className="ai-card-preview-image-wrap" data-testid="ai-img-gen-preview-image-wrap">
+                        <img src={aiImgGenResult} alt="Generated preview" className="ai-result-image" data-testid="ai-img-gen-preview-image" />
+                      </div>
                       <p className="ai-hint" data-testid="ai-img-gen-preview-hint">
                         {aiImgGenIsPreview
                           ? "This preview is stored in a temp cache (gitignored) until you choose to save it. It is NOT in the Image Library and NOT applied to any block."
                           : "This image is now in the Image Library. Use Apply to Selected Block to push it to the page."}
                       </p>
-                      <div className="ai-preview-actions" data-testid="ai-img-gen-apply-actions">
-                        <button
-                          data-testid="ai-img-gen-save-to-library"
-                          onClick={() => void aiSavePreviewToLibrary()}
-                          disabled={!aiImgGenIsPreview}
-                          title="Save this preview into the Image Library (does not apply to any block)"
-                        >Save to Library</button>
-                        <button
-                          data-testid="ai-img-gen-apply-to-block"
-                          onClick={() => void aiApplyPreviewToBlock()}
-                          disabled={!hasSelectedImageTarget()}
-                          title="Apply this image to the selected block"
-                        >Apply to Selected Block</button>
-                        <button
-                          data-testid="ai-img-gen-save-and-apply"
-                          onClick={() => void aiSaveAndApplyPreview()}
-                          disabled={!hasSelectedImageTarget() || !aiImgGenIsPreview}
-                          title="Save to Library AND apply to selected block"
-                        >Save and Apply</button>
-                        <button
-                          data-testid="ai-img-gen-add-to-gallery"
-                          onClick={() => { void aiAddImageToGallery(); }}
-                          disabled={!hasSelectedImageTarget() || (selectedBlock?.type !== "gallery")}
-                          title="Add to selected gallery block"
-                        >Add to Website Gallery</button>
-                        <button
-                          data-testid="ai-img-gen-cancel"
-                          onClick={() => void aiDiscardPreview()}
-                        >Cancel</button>
-                        <button
-                          data-testid="ai-img-gen-edit-image"
-                          onClick={() => { openImageEditModal(aiImgGenResult, "Generated image"); }}
-                          title="Open dedicated image edit modal with full options"
-                        >Edit image</button>
-                      </div>
+                    </div>
+                  </div>
+                )}
+                {aiImgGenResult && (
+                  <div className="ai-image-gen-footer" data-testid="ai-img-gen-footer">
+                    <div className="ai-preview-actions" data-testid="ai-img-gen-apply-actions">
+                      <button
+                        data-testid="ai-img-gen-save-to-library"
+                        onClick={() => void aiSavePreviewToLibrary()}
+                        disabled={!aiImgGenIsPreview}
+                        title="Save this preview into the Image Library (does not apply to any block)"
+                      >Save to Library</button>
+                      <button
+                        data-testid="ai-img-gen-apply-to-block"
+                        onClick={() => void aiApplyPreviewToBlock()}
+                        disabled={!hasSelectedImageTarget()}
+                        title="Apply this image to the selected block"
+                      >Apply to Selected Block</button>
+                      <button
+                        data-testid="ai-img-gen-save-and-apply"
+                        onClick={() => void aiSaveAndApplyPreview()}
+                        disabled={!hasSelectedImageTarget() || !aiImgGenIsPreview}
+                        title="Save to Library AND apply to selected block"
+                      >Save and Apply</button>
+                      <button
+                        data-testid="ai-img-gen-add-to-gallery"
+                        onClick={() => { void aiAddImageToGallery(); }}
+                        disabled={!hasSelectedImageTarget() || (selectedBlock?.type !== "gallery")}
+                        title="Add to selected gallery block"
+                      >Add to Website Gallery</button>
+                      <button
+                        data-testid="ai-img-gen-cancel"
+                        onClick={() => void aiDiscardPreview()}
+                      >Cancel</button>
+                      <button
+                        data-testid="ai-img-gen-edit-image"
+                        onClick={() => { openImageEditModal(aiImgGenResult, "Generated image"); }}
+                        title="Open dedicated image edit modal with full options"
+                      >Edit image</button>
                     </div>
                   </div>
                 )}
