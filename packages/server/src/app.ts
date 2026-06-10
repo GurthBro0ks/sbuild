@@ -1369,16 +1369,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return;
     }
     const contextPrefix = targetKind === "site"
-      ? "You are editing the whole website project. "
+      ? "You are editing the whole website. Only answer from the site content provided. "
       : targetKind === "page"
-        ? "You are editing the current page. "
+        ? "You are editing the current page. Only answer from the page content provided. "
         : blockType
-          ? `You are editing a ${blockType} block. `
-          : "You are editing a block. ";
-    const contentContext = pageContent
-      ? `\n\nCurrent page/site content:\n${pageContent.slice(0, 4000)}\n\n`
-      : blockContent
-        ? `\n\nSelected block content:\n${blockContent.slice(0, 2000)}\n\n`
+          ? `You are editing a ${blockType} block. Only answer from the selected block content. If the answer is not in the selected block, say it is not available in the selected block. `
+          : "You are editing a block. Only answer from the selected block content. If the answer is not in the selected block, say it is not available in the selected block. ";
+    const contentContext = targetKind === "block" && blockContent
+      ? `\n\nSelected block content:\n${blockContent.slice(0, 2000)}\n\n`
+      : pageContent
+        ? `\n\nCurrent ${targetKind === "site" ? "site" : "page"} content:\n${pageContent.slice(0, 4000)}\n\n`
         : "";
     const isQuestion = isQuestionPrompt(prompt);
     const fieldInstruction = !isQuestion && targetKind === "block" && blockType
@@ -2309,14 +2309,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   function answerPageContentQuestion(prompt: string, targetKind: string, blockContent: string, pageContent: string): string | null {
     const lower = prompt.trim().toLowerCase();
-    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours|titles?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|descriptions?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|name\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column))/i.test(lower);
+    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours|titles?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|titles?\s+and\s+details?|details?\s+of\s+(the|each|those|these|my)?\s*(cards?|item|column)|descriptions?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|name\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column))/i.test(lower);
     if (!hasContentQuestionCue) return null;
 
-    const source = targetKind === "block"
-      ? [blockContent, pageContent].filter(Boolean).join("\n")
-      : pageContent;
+    // For block scope use only blockContent; for page/site use pageContent.
+    const source = targetKind === "block" ? blockContent : pageContent;
     const lines = normalizeContentLines(source);
-    if (lines.length === 0) return null;
 
     if (/what\s+we\s+grow/i.test(lower)) {
       const start = lines.findIndex((line) => /what\s+we\s+grow/i.test(line));
@@ -2339,20 +2337,32 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const blockHasCards = blockContentLines.length > 0 && blockHasCardsBlockContext(blockContentLines);
 
     if (targetKind === "block" && blockHasCards) {
-      const childTitles = collectChildCardTitles(blockContentLines);
-      const childDescriptions = collectChildCardDescriptions(blockContentLines);
+      const asksAboutCardContent = /\b(cards?|items?|titles?\b|names?\b|details?|descriptions?|bodies?)\b/i.test(lower);
+      if (asksAboutCardContent) {
+        const childTitles = collectChildCardTitles(blockContentLines);
+        const childDescriptions = collectChildCardDescriptions(blockContentLines);
 
-      const asksForTitles = /\btitles?\b|name\b|what\s+(are|is)\s+(the|each)|list\b/i.test(lower) && !/descriptions?\b/i.test(lower);
-      const asksForDescriptions = /\bdescriptions?\b|\bdetails?\b|\bbodies?\b|\babout\b/i.test(lower);
+        const asksForDescriptions = /\bdescriptions?\b|\bdetails?\b|\bbodies?\b|\babout\b/i.test(lower);
+        const asksForTitlesOnly = /\btitles?\b/i.test(lower) && !asksForDescriptions;
+        const asksForBoth = /\btitles?\b.*\bdetails?\b|\bdetails?\b.*\btitles?\b|\btitles?\s+and\s+details?\b/i.test(lower)
+          || (/\btitles?\b/i.test(lower) && asksForDescriptions);
 
-      if (asksForTitles && childTitles.length > 0) {
-        return `Card titles in this block: ${childTitles.join("; ")}`;
-      }
-      if (asksForDescriptions && childDescriptions.length > 0) {
-        return `Card descriptions in this block: ${childDescriptions.join("; ")}`;
-      }
-      if (childTitles.length > 0) {
-        return `This block contains ${childTitles.length} cards: ${childTitles.join("; ")}`;
+        if (asksForBoth && childTitles.length > 0) {
+          const combined = childTitles.map((t, i) => {
+            const d = childDescriptions[i] || "";
+            return d ? `${t} — ${d}` : t;
+          });
+          return `Cards in this block:\n${combined.join("\n")}`;
+        }
+        if (asksForTitlesOnly && childTitles.length > 0) {
+          return `Card titles in this block: ${childTitles.join("; ")}`;
+        }
+        if (asksForDescriptions && childDescriptions.length > 0) {
+          return `Card descriptions in this block: ${childDescriptions.join("; ")}`;
+        }
+        if (childTitles.length > 0) {
+          return `This block contains ${childTitles.length} cards: ${childTitles.join("; ")}`;
+        }
       }
     }
 
@@ -2370,6 +2380,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         .filter(Boolean);
       if (hourLines.length > 0) {
         return `Pickup hours: ${hourLines.slice(0, 10).join("; ")}`;
+      }
+      if (targetKind === "block") {
+        return "Pickup hours are not in the selected block. Switch to Current Page scope to see hours from the Hours block.";
       }
     }
 
@@ -2581,26 +2594,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
               isLocal: true
             };
           }
-          const safeDiagnostics = [`status=${response.status}`, `hasMessage=${Boolean(payload.message)}`, `hasError=${Boolean(payload.error)}`].join(" ");
+          const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
           return {
             provider: "ollama",
             source: "local",
             available: false,
-            response: `AI chat unavailable: Local Ollama model ${modelToUse} timed out or returned no content; provider is still configured.`,
+            response: `Local model timed out (${elapsed}s). Ollama is still configured — click Retry to try again, or use a shorter prompt.`,
             model: modelToUse,
-            message: `Local model ${modelToUse} returned no content (${safeDiagnostics}); provider is still configured.`,
+            message: `Local model ${modelToUse} returned no content after ${elapsed}s; provider is still configured.`,
             latencyMs: Date.now() - startedAt,
             isLocal: true
           };
         } catch (error) {
+          const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
           const message = error instanceof Error && error.name === "AbortError"
-            ? `Local Ollama model ${modelToUse} timed out after 30 seconds; provider is still configured.`
+            ? `Local model timed out (${elapsed}s). Ollama is still configured — click Retry to try again, or use a shorter prompt.`
             : `Local model request failed: ${error instanceof Error ? error.message : String(error)}; provider is still configured.`;
           return {
             provider: "ollama",
             source: "local",
             available: false,
-            response: `AI chat unavailable: ${message}`,
+            response: message,
             model: modelToUse,
             message,
             latencyMs: Date.now() - startedAt,

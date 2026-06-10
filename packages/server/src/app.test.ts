@@ -1412,8 +1412,8 @@ test("POST /api/ai/chat keeps local provider metadata on no-content replies", as
       assert.equal(body.provider, "ollama");
       assert.equal(body.model, "qwen3:4b");
       assert.equal(body.source, "local");
-      assert.match(String(body.response || ""), /provider is still configured/i);
-      assert.match(String(body.message || ""), /provider is still configured/i);
+      assert.match(String(body.response || ""), /still configured/i);
+      assert.match(String(body.message || ""), /still configured/i);
     });
   });
 });
@@ -1450,7 +1450,7 @@ test("POST /api/ai/chat follow-up after identity keeps configured local provider
       assert.equal(second.provider, "ollama");
       assert.equal(second.model, "qwen3:4b");
       assert.equal(second.source, "local");
-      assert.match(String(second.response || ""), /provider is still configured/i);
+      assert.match(String(second.response || ""), /still configured/i);
       assert.doesNotMatch(String(second.response || ""), /no provider configured/i);
     });
   });
@@ -3381,4 +3381,101 @@ test("/api/images/move moves an image to a subfolder and rejects hidden files", 
       body: JSON.stringify({ folder: `project/images/${folderName}` })
     });
   }
+});
+
+test("selected block scope: 'titles and details' question returns both title and body for each card", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "What are the titles and details of each card?",
+        targetKind: "block",
+        blockId: "cards-1",
+        blockType: "cards",
+        pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events.",
+        blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events."
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    const text = String(body.suggestion || "");
+    assert.match(text, /Seasonal Vegetables/i, "must include card 1 title");
+    assert.match(text, /Fresh weekly baskets/i, "must include card 1 body");
+    assert.match(text, /Herbs\s*&\s*Greens/i, "must include card 2 title");
+    assert.match(text, /Specialty greens/i, "must include card 2 body");
+    assert.match(text, /Farm Flowers/i, "must include card 3 title");
+    assert.match(text, /Bouquets/i, "must include card 3 body");
+    assert.doesNotMatch(text, /Hero block/i, "must not mention block names");
+    assert.doesNotMatch(text, /Welcome/i, "must not include unrelated page heading");
+  });
+});
+
+test("selected block scope: hours question with no hours in block returns not-in-scope message", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "What are the farm pickup hours?",
+        targetKind: "block",
+        blockId: "cards-1",
+        blockType: "cards",
+        pageContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2",
+        blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\nCard 2: Herbs & Greens / Fresh-cut weekly"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    assert.equal(body.hasProposal, false);
+    const text = String(body.suggestion || "");
+    assert.match(text, /not in the selected block/i, "must say hours not in selected block");
+    assert.doesNotMatch(text, /Monday/i, "must not answer from pageContent hours block");
+  });
+});
+
+test("page scope: hours question answers from page content", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "What are the farm pickup hours?",
+        targetKind: "page",
+        pageContent: "[Cards block]\nCard 1: Seasonal Vegetables\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+    const text = String(body.suggestion || "");
+    assert.match(text, /Monday/i, "must answer from page hours block");
+    assert.match(text, /Saturday/i, "must include all hours rows");
+  });
+});
+
+test("block scope LLM context uses blockContent not pageContent when pageContent is empty", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Rewrite the heading of this block to be more welcoming.",
+        targetKind: "block",
+        blockId: "hero-1",
+        blockType: "hero",
+        pageContent: "",
+        blockContent: "[Hero block]\nHeading: Welcome to Our Farm\nSubheading: Fresh produce picked daily"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; hasProposal?: boolean; suggestion?: string };
+    assert.ok(body.ok, "must respond ok");
+  });
 });

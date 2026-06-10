@@ -3021,3 +3021,51 @@ test("editor imports BUILD_META for browser-side commit comparison", () => {
   assert.match(appSource, /BUILD_META/);
   assert.match(appSource, /BUILD_META\.gitCommitShort/);
 });
+
+test("extractBlockContent serializes d.cards array into Card N: lines", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("function extractBlockContent"),
+    appSource.indexOf("function extractPageContent")
+  );
+  assert.match(fn, /d\.cards && Array\.isArray\(d\.cards\)/, "must check d.cards array");
+  assert.match(fn, /Card \$\{i \+ 1\}:/, "must emit Card N: lines for cards");
+});
+
+test("AI Chat block scope sends empty pageContent to isolate selected block context", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /aiChatTarget !== "block"/, "must guard pageContent behind block scope check");
+  assert.match(fn, /extractPageContent/, "must still call extractPageContent for page/site scope");
+});
+
+test("AI Chat timeout message sets retryPrompt on the pushed assistant message", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /retryPrompt:.*prompt/, "error path must set retryPrompt to original prompt");
+});
+
+test("renderChatMessage renders Retry button when msg.retryPrompt is set", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("function renderChatMessage"),
+    appSource.indexOf("async function aiGenerateImage")
+  );
+  assert.match(fn, /msg\.retryPrompt/, "must check retryPrompt");
+  assert.match(fn, /ai-chat-retry-btn/, "must render retry button CSS class");
+  assert.match(fn, /Retry/, "must show Retry label");
+});
+
+test("ai-chat-retry-btn CSS class is defined in styles.css", () => {
+  assert.match(cssSource, /\.ai-chat-retry-btn/);
+});
+
+test("ChatItem type includes retryPrompt optional field", () => {
+  const typeBlock = appSource.substring(
+    appSource.indexOf("type ChatItem = {"),
+    appSource.indexOf("type StructuredSuggestionProposal")
+  );
+  assert.match(typeBlock, /retryPrompt\?:\s*string/, "ChatItem must have retryPrompt field");
+});

@@ -2730,6 +2730,20 @@ button:disabled {
   opacity: 0.6;
   font-style: italic;
 }
+.ai-chat-retry-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  border: 1px solid var(--editor-border);
+  border-radius: 4px;
+  background: var(--editor-panel-bg-2);
+  color: var(--editor-text);
+  cursor: pointer;
+}
+.ai-chat-retry-btn:hover {
+  background: var(--editor-border);
+}
 .ai-chat-action-bar {
   padding: 4px 12px;
   border-top: 1px solid var(--editor-border);

@@ -64,6 +64,7 @@ type ChatItem = {
   model?: string;
   source?: string;
   latencyMs?: number;
+  retryPrompt?: string;
 };
 type StructuredSuggestionProposal = {
   kind: "replace-copy";
@@ -2657,13 +2658,22 @@ export function App() {
     if (d.body) parts.push(`Body: ${String(d.body).slice(0, 500)}`);
     if (d.text) parts.push(`Text: ${String(d.text).slice(0, 500)}`);
     if (d.title) parts.push(`Title: ${d.title}`);
+    if (d.cards && Array.isArray(d.cards)) {
+      (d.cards as Array<Record<string, unknown>>).forEach((item, i) => {
+        const itemParts: string[] = [];
+        if (item.heading || item.title) itemParts.push(String(item.heading || item.title));
+        if (item.subheading || item.description) itemParts.push(String(item.subheading || item.description));
+        if (item.body || item.text) itemParts.push(String(item.body || item.text).slice(0, 200));
+        if (itemParts.length) parts.push(`  Card ${i + 1}: ${itemParts.join(" / ")}`);
+      });
+    }
     if (d.items && Array.isArray(d.items)) {
       (d.items as Array<Record<string, unknown>>).forEach((item, i) => {
         const itemParts: string[] = [];
         if (item.heading || item.title) itemParts.push(String(item.heading || item.title));
         if (item.subheading || item.description) itemParts.push(String(item.subheading || item.description));
         if (item.body || item.text) itemParts.push(String(item.body || item.text).slice(0, 200));
-        if (itemParts.length) parts.push(`  Card ${i + 1}: ${itemParts.join(" / ")}`);
+        if (itemParts.length) parts.push(`  Item ${i + 1}: ${itemParts.join(" / ")}`);
       });
     }
     if (d.rows && Array.isArray(d.rows)) {
@@ -2717,7 +2727,7 @@ export function App() {
           blockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "",
           blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "",
           chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })),
-          pageContent: extractPageContent(aiChatTarget === "site" ? "site" : "page"),
+          pageContent: aiChatTarget !== "block" ? extractPageContent(aiChatTarget === "site" ? "site" : "page") : "",
           blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined
         })
       });
@@ -2728,13 +2738,15 @@ export function App() {
         setAiHasProposal(hasValidProposal);
         setAiProposalBlockId(aiChatTarget === "block" ? (target.blockId || selectedBlockId) : "");
         setAiProposalBlockType(aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "");
+        const isTimeoutMsg = data.suggestion.includes("timed out") || data.suggestion.startsWith("Local model timed out");
         pushChatMessage({
           role: "assistant",
           text: data.suggestion!,
           provider: data.provider,
           model: data.model,
           source: data.source,
-          latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+          latencyMs: data.latencyMs ?? (Date.now() - startedAt),
+          retryPrompt: isTimeoutMsg ? prompt : undefined
         });
         if (data.provider === "ollama" && data.model) {
           setProviderCheckMessage(`Local chat connected: ${data.model}`);
@@ -2742,15 +2754,10 @@ export function App() {
           setProviderCheckMessage(data.message);
         }
       } else {
-        const providerLabel = data.provider === "ollama" && data.model
-          ? `Local ${data.model}`
-          : data.provider || "the AI provider";
         const rawMsg = data.error || "Provider not configured.";
         const msg = data.source === "missing"
           ? `${rawMsg} Check Settings to configure a provider.`
-          : data.provider === "ollama" && !data.suggestion
-            ? `${providerLabel} returned no content (${data.latencyMs ? `${(data.latencyMs / 1000).toFixed(1)}s` : "timeout"}). Provider is still configured.`
-            : rawMsg;
+          : rawMsg;
         setAiProposal("");
         setAiStructuredProposal(null);
         setAiHasProposal(false);
@@ -2760,7 +2767,8 @@ export function App() {
           provider: data.provider,
           model: data.model,
           source: data.source,
-          latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+          latencyMs: data.latencyMs ?? (Date.now() - startedAt),
+          retryPrompt: prompt
         });
         if (data.message) setProviderCheckMessage(data.message);
       }
@@ -2770,12 +2778,12 @@ export function App() {
       const isTimeout = detail.includes("abort") || detail.includes("timeout") || elapsed > 25000;
       const lastModel = chatProviderStatus?.message || providerCheckMessage || "the local model";
       const msg = isTimeout
-        ? `${lastModel} is configured but timed out after ${(elapsed / 1000).toFixed(1)} seconds. The provider is still configured — try a shorter prompt or check Ollama status.`
+        ? `${lastModel} timed out after ${(elapsed / 1000).toFixed(1)}s. Ollama is still configured — click Retry to try again, or use a shorter prompt.`
         : `Request failed (${lastModel} is configured): ${detail}`;
       setProviderCheckMessage(msg);
       setAiHasProposal(false);
       setAiStructuredProposal(null);
-      pushChatMessage({ role: "assistant", text: msg, latencyMs: elapsed });
+      pushChatMessage({ role: "assistant", text: msg, latencyMs: elapsed, retryPrompt: prompt });
     } finally {
       setAiProposalPending(false);
       scrollChatToBottom();
@@ -3000,6 +3008,13 @@ export function App() {
       <div key={msg.id} className={`ai-chat-msg ai-chat-msg-${msg.role}`}>
         <div className="ai-chat-msg-role">{msg.role === "user" ? "You" : "AI"}</div>
         <div className="ai-chat-msg-text">{displayText}</div>
+        {msg.retryPrompt && (
+          <button
+            className="ai-chat-retry-btn"
+            onClick={() => setChatInput(msg.retryPrompt!)}
+            title="Put this prompt back in the input to retry"
+          >Retry</button>
+        )}
         <div className="ai-chat-msg-footer">{chatFooterText(msg)}</div>
       </div>
     );
