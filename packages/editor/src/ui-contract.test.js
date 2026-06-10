@@ -2915,16 +2915,17 @@ test("Image edit Square Crop uses deterministic square output", () => {
 
 test("topbar uses displayVersion from buildInfo, not static SBUILD_VERSION alone", () => {
   assert.match(appSource, /buildInfo\?\.displayVersion/);
-  const logoMatch = appSource.match(/className="logo"[^}]*\{SBUILD_APP_NAME\}[^}]*\}/);
+  const logoMatch = appSource.match(/className="logo".*\{SBUILD_APP_NAME\}/s);
   assert.ok(logoMatch, "topbar logo must exist");
   assert.match(logoMatch[0], /buildInfo\?\.displayVersion/, "topbar logo must use buildInfo.displayVersion");
+  assert.match(logoMatch[0], /\.toUpperCase\(\)/, "topbar logo must display version in uppercase");
 });
 
 test("About tab shows baseVersion and displayVersion fields", () => {
-  assert.match(appSource, /Base version:/);
-  assert.match(appSource, /Display version:/);
+  assert.match(appSource, /Base version/);
+  assert.match(appSource, /Display version/);
   assert.match(appSource, /buildInfo\?\.displayVersion/);
-  assert.match(appSource, /Commit count:/);
+  assert.match(appSource, /Commit count/);
   assert.match(appSource, /buildInfo\?\.commitCount/);
 });
 
@@ -2952,4 +2953,71 @@ test("build generates build-meta.ts automatically via prebuild hook", () => {
 test("build-meta.ts is gitignored", () => {
   const gitignore = readFileSync(new URL("../../../.gitignore", import.meta.url), "utf8");
   assert.match(gitignore, /build-meta\.ts/);
+});
+
+test("topbar tooltip explains version format with base, count, and commit", () => {
+  const logoLine = appSource.match(/className="logo"[^\n]*/);
+  assert.ok(logoLine, "logo line must exist");
+  const tooltip = logoLine[0].match(/title=\{`[^`]*`\}/);
+  assert.ok(tooltip, "topbar logo must have a template literal title/tooltip");
+  assert.match(tooltip[0], /base/);
+  assert.match(tooltip[0], /commit count/);
+  assert.match(tooltip[0], /commit/);
+});
+
+test("About tab has Build Status section header", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Build Status/);
+  assert.match(aboutSection, /about-table/);
+});
+
+test("About tab shows browser/server build match hint", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Browser and server build match/);
+  assert.match(aboutSection, /Browser\/server build mismatch/);
+  assert.match(aboutSection, /Hard refresh may be needed/);
+  assert.match(aboutSection, /BUILD_META\.gitCommitShort/);
+});
+
+test("About tab shows loaded project source and app dirty status in table", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Loaded project source/);
+  assert.match(aboutSection, /loadedProjectSource/);
+  assert.match(aboutSection, /App dirty \(unsaved edits\)/);
+});
+
+test("About tab shows server unreachable fallback when buildInfo is null", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Server unreachable.*cannot verify build match/);
+});
+
+test("Copy diagnostics includes browser/server match status without secrets", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Copy diagnostics/);
+  assert.match(aboutSection, /displayVersion/);
+  assert.match(aboutSection, /baseVersion/);
+  assert.match(aboutSection, /gitCommit/);
+  assert.match(aboutSection, /branch/);
+  assert.match(aboutSection, /commitCount/);
+  assert.match(aboutSection, /buildDate/);
+  assert.match(aboutSection, /publishAllowed/);
+  assert.match(aboutSection, /serviceHealth/);
+  assert.match(aboutSection, /browserServerMatch/);
+  assert.match(aboutSection, /gitDirtySummary/);
+  assert.ok(!aboutSection.includes("userAgent"), "Copy diagnostics must not include userAgent");
+  const clipboardMatch = aboutSection.match(/clipboard\.writeText\(JSON\.stringify\(diag/);
+  assert.ok(clipboardMatch, "must call clipboard.writeText with diag object");
+  const diagBlock = aboutSection.substring(aboutSection.indexOf("const diag = {"), aboutSection.indexOf("navigator.clipboard.writeText"));
+  assert.ok(!diagBlock.includes("buildInfo: buildInfo"), "diag must not include raw buildInfo object reference");
+});
+
+test("About tab mentions automatic build identity and version bump command", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Build identity updates automatically/);
+  assert.match(aboutSection, /version-sbuild\.sh bump/);
+});
+
+test("editor imports BUILD_META for browser-side commit comparison", () => {
+  assert.match(appSource, /BUILD_META/);
+  assert.match(appSource, /BUILD_META\.gitCommitShort/);
 });

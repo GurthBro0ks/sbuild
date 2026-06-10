@@ -2964,6 +2964,32 @@ test("displayVersion is not just stale static base version", async () => {
   assert.ok(body.displayVersion !== body.gitCommit, "displayVersion should not be just the commit");
 });
 
+test("/health returns buildDate and dirtySummary for diagnostics", async () => {
+  const response = await fetch(`${baseUrl}/health`);
+  const body = await response.json() as {
+    buildDate?: string;
+    dirty?: boolean;
+    dirtySummary?: { modifiedTracked: number; untracked: number };
+    publishAllowed?: boolean;
+    editorDistExists?: boolean;
+    paths?: { editorDistPath: string; editorIndexPath: string; projectPath: string };
+  };
+  assert.ok(body.buildDate && typeof body.buildDate === "string", "buildDate must be a string");
+  assert.ok(typeof body.dirty === "boolean", "dirty must be boolean");
+  assert.ok(body.dirtySummary && typeof body.dirtySummary.modifiedTracked === "number", "dirtySummary.modifiedTracked must be number");
+  assert.ok(typeof body.dirtySummary.untracked === "number", "dirtySummary.untracked must be number");
+  assert.equal(body.publishAllowed, false, "publishAllowed must be false in test/dev");
+  assert.ok(body.paths && body.paths.projectPath, "paths.projectPath must exist");
+});
+
+test("computeDisplayVersion produces correct format", async () => {
+  const { computeDisplayVersion } = await import("@sbuild/shared");
+  assert.equal(computeDisplayVersion("0.5.0-dev", "abc1234", 42), "0.5.0-dev.42+abc1234");
+  assert.equal(computeDisplayVersion("0.5.0-dev", "unknown", 0), "0.5.0-dev");
+  assert.equal(computeDisplayVersion("0.5.0-dev", "", 0), "0.5.0-dev");
+  assert.equal(computeDisplayVersion("1.0.0", "deadbeef", 999), "1.0.0.999+deadbeef");
+});
+
 test("local-chat-...-status / local-image-...-status / local-key-...-demo patterns cannot pollute runtime config", async () => {
   await withNoOpenAIKey(async () => {
     const stamp = Date.now();

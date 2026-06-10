@@ -3887,3 +3887,18 @@ button:disabled {
   background: color-mix(in srgb, #2ecc71 20%, var(--editor-panel-bg));
   border-color: #2ecc71;
 }
+.about-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.about-table td {
+  padding: 3px 8px 3px 0;
+  vertical-align: top;
+  border-bottom: 1px solid color-mix(in srgb, var(--editor-border) 40%, transparent);
+}
+.about-table td:first-child {
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 160px;
+}

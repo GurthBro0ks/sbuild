@@ -28,6 +28,7 @@ import {
   SBuildBuildInfo,
   SBUILD_VERSION,
   SBUILD_APP_NAME,
+  BUILD_META,
   clampMinHeight,
   clampWidthPercent,
   groupBlocksIntoRows,
@@ -5930,7 +5931,7 @@ export function App() {
       <header ref={topbarRef} className="topbar">
         <div className="topbar-mobile-row topbar-mobile-row-main">
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-          <div className="logo" title="Topbar uses Builder UI Theme. Website Theme changes the page preview only.">{SBUILD_APP_NAME} {buildInfo?.displayVersion || SBUILD_VERSION}</div>
+          <div className="logo" title={`sBuild ${buildInfo?.displayVersion || SBUILD_VERSION} — base ${SBUILD_VERSION}, commit count ${buildInfo?.commitCount ?? "?"}, commit ${buildInfo?.gitCommit || BUILD_META.gitCommitShort || "?"}`}>{SBUILD_APP_NAME} {(buildInfo?.displayVersion || SBUILD_VERSION).toUpperCase()}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
           <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
@@ -7012,39 +7013,63 @@ export function App() {
               <p><strong>Last API status:</strong> {status}</p>
             </div>}
             {settingsTab === "about" && <div>
+              <h4 style={{ marginBottom: 8 }}>Build Status</h4>
               <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{buildInfo?.displayVersion || SBUILD_VERSION}</span></p>
-              <p><strong>Base version:</strong> {SBUILD_VERSION}</p>
-              <p><strong>Display version:</strong> {buildInfo?.displayVersion || SBUILD_VERSION}</p>
-              <p><strong>Health:</strong> {buildInfo ? "✅ Server reachable" : "❌ Server unreachable"}</p>
-              <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
-              <p><strong>Branch:</strong> {buildInfo?.branch || "unknown"}</p>
-              <p><strong>Commit count:</strong> {buildInfo?.commitCount ?? "unknown"}</p>
-              <p><strong>Build date:</strong> {buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</p>
-              <p><strong>Publish allowed:</strong> {buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</p>
-              <p><strong>Loaded project source:</strong> {loadedProjectSource}</p>
-              {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
-              <p><strong>App dirty (unsaved edits):</strong> {dirty ? "Yes — has unsaved changes" : "No — all saved"}</p>
-              <p><strong>Git working tree:</strong> {buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)"}</p>
-              {buildInfo?.dirtySummary && (
-                <p><strong>Git summary:</strong> {`${buildInfo.dirtySummary.modifiedTracked} tracked modified, ${buildInfo.dirtySummary.untracked} untracked`}</p>
-              )}
-              <p className="hint">Dirty means local source files differ from the last commit. Ignored uploads/cache not counted.</p>
+              <table className="about-table"><tbody>
+                <tr><td>Base version</td><td>{SBUILD_VERSION}</td></tr>
+                <tr><td>Display version</td><td>{buildInfo?.displayVersion || SBUILD_VERSION}</td></tr>
+                <tr><td>Git commit</td><td>{buildInfo?.gitCommit || "unknown"}</td></tr>
+                <tr><td>Commit count</td><td>{buildInfo?.commitCount ?? "unknown"}</td></tr>
+                <tr><td>Branch</td><td>{buildInfo?.branch || "unknown"}</td></tr>
+                <tr><td>Build date/time</td><td>{buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</td></tr>
+                <tr><td>Publish allowed</td><td>{buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</td></tr>
+                <tr><td>Loaded project source</td><td>{loadedProjectSource}</td></tr>
+                {projectPath && <tr><td>Project path</td><td>{projectPath}</td></tr>}
+                <tr><td>App dirty (unsaved edits)</td><td>{dirty ? "Yes — has unsaved changes" : "No — all saved"}</td></tr>
+                <tr><td>Git working tree</td><td>{buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)"}</td></tr>
+                {buildInfo?.dirtySummary && (
+                  <tr><td>Git summary</td><td>{buildInfo.dirtySummary.modifiedTracked} tracked modified, {buildInfo.dirtySummary.untracked} untracked</td></tr>
+                )}
+              </tbody></table>
+              <div style={{ marginTop: 10, marginBottom: 10 }}>
+                {buildInfo ? (() => {
+                  const browserCommit = BUILD_META.gitCommitShort;
+                  const serverCommit = buildInfo.gitCommit;
+                  const match = browserCommit === serverCommit;
+                  return <>
+                    <p className="hint" style={{ color: match ? "#2d8a4e" : "#b85c00", fontWeight: 600 }}>
+                      {match ? "Browser and server build match." : "Browser/server build mismatch. Hard refresh may be needed."}
+                    </p>
+                    {!match && <p className="hint">Browser built from {browserCommit}, server running {serverCommit}.</p>}
+                  </>;
+                })() : <p className="hint" style={{ color: "#b85c00" }}>Server unreachable — cannot verify build match.</p>}
+              </div>
+              <hr />
+              <h4 style={{ marginBottom: 8 }}>Diagnostics</h4>
               <div className="button-row compact">
                 <button onClick={() => {
-                  const dirtySummary = buildInfo?.dirtySummary;
+                  const browserCommit = BUILD_META.gitCommitShort;
+                  const serverCommit = buildInfo?.gitCommit || "unreachable";
+                  const match = browserCommit === serverCommit;
                   const diag = {
                     app: SBUILD_APP_NAME,
-                    version: SBUILD_VERSION,
-                    buildInfo,
-                    theme: themeApplied || "custom",
-                    dirty,
-                    dirtyNote: dirty ? "App has unsaved project edits" : "All app edits saved",
-                    gitDirty: buildInfo?.dirty,
-                    gitDirtyNote: buildInfo?.dirty ? "Source files differ from last commit" : "Clean working tree",
-                    gitDirtySummary: dirtySummary,
+                    displayVersion: buildInfo?.displayVersion || SBUILD_VERSION,
+                    baseVersion: SBUILD_VERSION,
+                    gitCommit: serverCommit,
+                    gitCommitBrowser: browserCommit,
+                    branch: buildInfo?.branch || "unknown",
+                    commitCount: buildInfo?.commitCount ?? "unknown",
+                    buildDate: buildInfo?.buildDate || "unknown",
+                    publishAllowed: buildInfo?.publishAllowed ?? false,
+                    serviceHealth: buildInfo ? "ok" : "unreachable",
+                    browserServerMatch: match,
+                    browserServerMatchNote: match ? "Browser and server on same commit" : `Browser ${browserCommit} vs server ${serverCommit}`,
+                    dirty: dirty ? "App has unsaved project edits" : "All app edits saved",
+                    gitDirty: buildInfo?.dirty ? "Source files differ from last commit" : "Clean working tree",
+                    gitDirtySummary: buildInfo?.dirtySummary || null,
                     blocks: project?.pages.reduce((sum, p) => sum + p.blocks.length, 0) || 0,
                     pages: project?.pages.length || 0,
-                    userAgent: navigator.userAgent
+                    theme: themeApplied || "custom",
                   };
                   navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).then(() => setStatus("Diagnostics copied to clipboard")).catch(() => setStatus("Copy failed"));
                 }}>Copy diagnostics</button>
@@ -7053,6 +7078,7 @@ export function App() {
               <p><strong>Changelog</strong></p>
               <p>Latest: {SBUILD_VERSION}</p>
               <p style={{ fontSize: 12, opacity: 0.7 }}>See CHANGELOG.md in project root for full history.</p>
+              <p className="hint" style={{ marginTop: 8 }}>Build identity updates automatically on every build/prebuild. Base version bumps: <code>bash scripts/version-sbuild.sh bump [patch|minor|major]</code></p>
             </div>}
             <div className="button-row"><button onClick={() => setSettingsOpen(false)}>Close</button></div>
           </div>
