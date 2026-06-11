@@ -24,6 +24,9 @@ import crypto from "node:crypto";
 const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
 const DEFAULT_LOCAL_CHAT_MODEL = "qwen2.5:1.5b";
 const OLD_DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
+const DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_LOCAL_FALLBACK_TIMEOUT_SEC = 12;
 
 function isLikelyMaskedOrTestKey(value: string): boolean {
   const v = String(value || "").trim();
@@ -1323,9 +1326,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
     }
     // Surface engine decision proof for the chat lane.
-    const chatEngine = result.provider === "ollama"
+    const chatEngine = result.provider === "local"
       ? "local-ollama"
-      : result.provider === "openai" || result.provider === "openai-compatible" || result.provider === "openrouter"
+      : result.provider === "openai" || result.provider === "openrouter"
         ? "openai-api"
         : "unavailable";
     const chatMode = !result.available
@@ -1334,8 +1337,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const chatEngineReason = !result.available
       ? (typeof result.response === "string" && /timed out/i.test(result.response) ? "llm-timeout" : "llm-error")
       : "llm-ok";
-    const chatEngineTimeoutMs = result.provider === "ollama"
-      ? (isSmallLocalModel(result.model) ? 22000 : 30000)
+    const chatEngineTimeoutMs = result.provider === "local"
+      ? ((await getChatProviderConfig()).fallbackTimeoutSec * 1000)
       : null;
     res.json({
       ok: true,
@@ -1346,7 +1349,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       engineLatencyMs: result.latencyMs ?? 0,
       engineTimeoutMs: chatEngineTimeoutMs,
       engineReason: chatEngineReason,
-      deterministicAnswer: false
+      deterministicAnswer: false,
+      fallbackUsed: result.fallbackUsed || false,
+      fallbackFrom: result.fallbackFrom || null,
+      fallbackReason: result.fallbackReason || null
     });
   });
 
@@ -1477,10 +1483,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       contextUsed.push("whole-site");
       if (brain.selectedBlock) contextUsed.push("selected-block");
     }
-    if (result.provider === "ollama") {
+    if (result.provider === "local") {
       engine = "local-ollama";
-      engineTimeoutMs = isSmallLocalModel(result.model) ? 22000 : 30000;
-    } else if (result.provider === "openai" || result.provider === "openai-compatible" || result.provider === "openrouter") {
+      engineTimeoutMs = (await getChatProviderConfig()).fallbackTimeoutSec * 1000;
+    } else if (result.provider === "openai" || result.provider === "openrouter") {
       engine = "openai-api";
     } else if (result.provider === "none" || result.provider === "disabled") {
       engine = "unavailable";
@@ -1544,7 +1550,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       engineTimeoutMs,
       engineContextUsed: contextUsed,
       engineReason,
-      deterministicAnswer: false
+      deterministicAnswer: false,
+      fallbackUsed: result.fallbackUsed || false,
+      fallbackFrom: result.fallbackFrom || null,
+      fallbackReason: result.fallbackReason || null
     });
   });
 
@@ -2273,77 +2282,143 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return { genKey, genSource, analyzeKey, analyzeSource };
   }
 
-  async function getChatApiKeyStatus(): Promise<{ chatKey: string; chatSource: "env" | "local" | "missing" }> {
-    const envChat = process.env.SBUILD_OPENAI_CHAT_API_KEY || process.env.OPENAI_API_KEY || "";
-    const secrets = await loadSecrets();
-    const localChat = String((secrets as Record<string, unknown>).chatApiKey || "").trim();
-    const chatKey = envChat || localChat;
-    const chatSource: "env" | "local" | "missing" = envChat ? "env" : localChat ? "local" : "missing";
-    return { chatKey, chatSource };
-  }
+  type KeySource = "env" | "local" | "missing";
+  type ChatProviderMode = "auto" | "local" | "openai" | "openrouter";
+  type ChatProviderId = "local" | "openai" | "openrouter";
+  type ProviderReachability = "reachable" | "unreachable" | "untested";
+  type ProviderErrorCategory = "timeout" | "missing-key" | "request-failed" | "no-content" | "ollama-unreachable" | "not-tested" | "unknown";
+
+  type ProviderCredentialStatus = {
+    key: string;
+    source: KeySource;
+  };
 
   type ChatProviderConfig = {
-    provider: string;
-    model: string;
-    baseUrl: string;
-    apiKey: string;
+    mode: ChatProviderMode;
+    localModel: string;
+    openaiModel: string;
+    openrouterModel: string;
+    fallbackEnabled: boolean;
+    fallbackTimeoutSec: number;
   };
+
+  function normalizeProviderMode(value: unknown): ChatProviderMode {
+    const raw = String(value || "").trim().toLowerCase();
+    if (raw === "local" || raw === "ollama") return "local";
+    if (raw === "openai" || raw === "openai-compatible") return "openai";
+    if (raw === "openrouter") return "openrouter";
+    return "auto";
+  }
+
+  function sanitizeFallbackTimeoutSec(value: unknown): number {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return DEFAULT_LOCAL_FALLBACK_TIMEOUT_SEC;
+    return Math.max(3, Math.min(60, Math.round(num)));
+  }
+
+  async function getOpenAIChatKeyStatus(): Promise<ProviderCredentialStatus> {
+    const envKey = process.env.SBUILD_OPENAI_CHAT_API_KEY || process.env.OPENAI_API_KEY || "";
+    const secrets = await loadSecrets();
+    const localKey = String((secrets as Record<string, unknown>).openaiChatApiKey || (secrets as Record<string, unknown>).chatApiKey || "").trim();
+    return {
+      key: envKey || localKey,
+      source: envKey ? "env" : localKey ? "local" : "missing"
+    };
+  }
+
+  async function getOpenRouterKeyStatus(): Promise<ProviderCredentialStatus> {
+    const envKey = process.env.SBUILD_OPENROUTER_API_KEY || "";
+    const secrets = await loadSecrets();
+    const localKey = String((secrets as Record<string, unknown>).openrouterChatApiKey || "").trim();
+    return {
+      key: envKey || localKey,
+      source: envKey ? "env" : localKey ? "local" : "missing"
+    };
+  }
+
+  async function getChatApiKeyStatus(): Promise<{ chatKey: string; chatSource: KeySource }> {
+    const openai = await getOpenAIChatKeyStatus();
+    return { chatKey: openai.key, chatSource: openai.source };
+  }
 
   async function getChatProviderConfig(): Promise<ChatProviderConfig> {
     const secrets = await loadSecrets();
     const s = secrets as Record<string, unknown>;
-    const chatKeyStatus = await getChatApiKeyStatus();
-    const provider = String(s.chatProvider || "auto");
+    const mode = normalizeProviderMode(s.chatProviderMode || s.chatProvider || "auto");
     const ollama = await getOllamaStatus();
-    let savedModel = String(s.chatModel || "").trim();
-    if (savedModel === OLD_DEFAULT_LOCAL_CHAT_MODEL && !s._chatModelMigrated && (provider === "ollama" || provider === "auto")) {
+    let localModel = String(s.chatLocalModel || "").trim();
+    const legacyModel = String(s.chatModel || "").trim();
+    if (!localModel && (mode === "local" || mode === "auto")) {
+      localModel = legacyModel;
+    }
+    if (localModel === OLD_DEFAULT_LOCAL_CHAT_MODEL && !s._chatModelMigrated) {
       if (ollama.models.some((m) => m.name === DEFAULT_LOCAL_CHAT_MODEL)) {
-        savedModel = DEFAULT_LOCAL_CHAT_MODEL;
-        secrets.chatModel = DEFAULT_LOCAL_CHAT_MODEL;
+        localModel = DEFAULT_LOCAL_CHAT_MODEL;
+        secrets.chatLocalModel = DEFAULT_LOCAL_CHAT_MODEL;
         secrets._chatModelMigrated = true;
         await saveSecrets(secrets);
       }
     }
-    const model = savedModel || ((provider === "ollama" || provider === "auto") ? (preferredLocalModelName(ollama.models, DEFAULT_LOCAL_CHAT_MODEL) || "") : "");
-    const defaultBaseUrl = provider === "ollama" || provider === "auto"
-      ? ollama.endpoint
-      : (process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1");
+    if (!localModel) {
+      localModel = preferredLocalModelName(ollama.models, DEFAULT_LOCAL_CHAT_MODEL) || DEFAULT_LOCAL_CHAT_MODEL;
+    }
     return {
-      provider,
-      model,
-      baseUrl: String(s.chatBaseUrl || defaultBaseUrl),
-      apiKey: chatKeyStatus.chatKey
+      mode,
+      localModel,
+      openaiModel: String(s.chatOpenAIModel || (mode === "openai" ? legacyModel : "") || process.env.SBUILD_CHAT_MODEL || DEFAULT_OPENAI_CHAT_MODEL).trim() || DEFAULT_OPENAI_CHAT_MODEL,
+      openrouterModel: String(s.chatOpenRouterModel || (mode === "openrouter" ? legacyModel : "") || process.env.SBUILD_OPENROUTER_CHAT_MODEL || DEFAULT_OPENROUTER_CHAT_MODEL).trim() || DEFAULT_OPENROUTER_CHAT_MODEL,
+      fallbackEnabled: s.chatFallbackEnabled === undefined ? true : Boolean(s.chatFallbackEnabled),
+      fallbackTimeoutSec: sanitizeFallbackTimeoutSec(s.chatFallbackTimeoutSec)
     };
   }
 
-  async function saveChatProviderConfig(cfg: { provider?: string; model?: string; baseUrl?: string; apiKey?: string }): Promise<void> {
+  async function saveChatProviderConfig(cfg: {
+    providerMode?: string;
+    localModel?: string;
+    openaiModel?: string;
+    openrouterModel?: string;
+    fallbackEnabled?: boolean;
+    fallbackTimeoutSec?: number;
+    openaiApiKey?: string;
+    openrouterApiKey?: string;
+  }): Promise<void> {
     const secrets = await loadSecrets();
-    const provider = String(cfg.provider ?? secrets.chatProvider ?? "auto").trim();
-    const model = String(cfg.model || "").trim();
-    const baseUrl = String(cfg.baseUrl || "").trim();
-    if (cfg.provider !== undefined) secrets.chatProvider = provider;
-    if (cfg.model !== undefined) secrets.chatModel = model;
-    if (cfg.baseUrl !== undefined) {
-      secrets.chatBaseUrl = provider === "openai" || provider === "openrouter" || provider === "openai-compatible"
-        ? baseUrl
-        : "";
+    if (cfg.providerMode !== undefined) secrets.chatProviderMode = normalizeProviderMode(cfg.providerMode);
+    if (cfg.localModel !== undefined) secrets.chatLocalModel = String(cfg.localModel || "").trim();
+    if (cfg.openaiModel !== undefined) secrets.chatOpenAIModel = String(cfg.openaiModel || "").trim();
+    if (cfg.openrouterModel !== undefined) secrets.chatOpenRouterModel = String(cfg.openrouterModel || "").trim();
+    if (cfg.fallbackEnabled !== undefined) secrets.chatFallbackEnabled = Boolean(cfg.fallbackEnabled);
+    if (cfg.fallbackTimeoutSec !== undefined) secrets.chatFallbackTimeoutSec = sanitizeFallbackTimeoutSec(cfg.fallbackTimeoutSec);
+    if (cfg.openaiApiKey !== undefined) {
+      const cleaned = sanitizeApiKeyInput(cfg.openaiApiKey);
+      if (cleaned) {
+        secrets.openaiChatApiKey = cleaned;
+        secrets.chatApiKey = cleaned;
+      }
     }
-    if (cfg.apiKey !== undefined && cfg.apiKey) {
-      const cleanedKey = sanitizeApiKeyInput(cfg.apiKey);
-      if (cleanedKey) secrets.chatApiKey = cleanedKey;
+    if (cfg.openrouterApiKey !== undefined) {
+      const cleaned = sanitizeApiKeyInput(cfg.openrouterApiKey);
+      if (cleaned) secrets.openrouterChatApiKey = cleaned;
     }
+    delete secrets.chatProvider;
+    delete secrets.chatModel;
+    delete secrets.chatBaseUrl;
     await saveSecrets(secrets);
   }
 
   type ChatProviderResult = {
-    provider: string;
-    source: "local" | "env" | "missing";
+    provider: ChatProviderId | "none";
+    source: "local" | KeySource;
     available: boolean;
     response: string;
     model?: string;
     message?: string;
     latencyMs?: number;
     isLocal?: boolean;
+    errorCategory?: ProviderErrorCategory | null;
+    fallbackUsed?: boolean;
+    fallbackFrom?: ChatProviderId | null;
+    fallbackReason?: string | null;
   };
 
   type StructuredSuggestionProposal = {
@@ -2351,6 +2426,12 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     replaceText: string;
     targetField?: string;
   };
+
+  function preferredApiProvider(openai: ProviderCredentialStatus, openrouter: ProviderCredentialStatus): "openai" | "openrouter" | null {
+    if (openai.source !== "missing") return "openai";
+    if (openrouter.source !== "missing") return "openrouter";
+    return null;
+  }
 
   function runtimeIdentityPrompt(input: { provider: string; model?: string; source: "local" | "env" | "missing" }): string {
     const model = input.model || "unknown";
@@ -2460,9 +2541,207 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         return { reachable: true, endpoint, model: null, models, message: "Ollama reachable but no local models installed." };
       }
       const model = preferredLocalModelName(models) || null;
-      return { reachable: true, endpoint, model, models, message: model ? `Local chat connected: ${model}` : "Ollama reachable but no local models installed." };
+      return { reachable: true, endpoint, model, models, message: model ? `Ollama reachable. Preferred local model: ${model}.` : "Ollama reachable but no local models installed." };
     } catch {
       return { reachable: false, endpoint, model: null, models: [], message: "Ollama not reachable on localhost." };
+    }
+  }
+
+  async function runLocalChat(prompt: string, chatHistory: Array<{ role: string; text: string }> | undefined, config: ChatProviderConfig): Promise<ChatProviderResult> {
+    const cleanPrompt = prompt.trim();
+    const startedAt = Date.now();
+    const ollama = await getOllamaStatus();
+    if (!ollama.reachable || !ollama.model) {
+      return {
+        provider: "local",
+        source: "local",
+        available: false,
+        response: "AI chat unavailable: local Ollama is not reachable.",
+        model: config.localModel,
+        message: "Local Ollama is not reachable.",
+        latencyMs: Date.now() - startedAt,
+        isLocal: true,
+        errorCategory: "ollama-unreachable"
+      };
+    }
+    const modelToUse = preferredLocalModelName(ollama.models, config.localModel) || ollama.model;
+    if (isRuntimeIdentityQuestion(cleanPrompt)) {
+      return {
+        provider: "local",
+        source: "local",
+        available: true,
+        response: `Local Ollama model: ${modelToUse}.`,
+        model: modelToUse,
+        message: `Local Ollama model: ${modelToUse}.`,
+        latencyMs: Date.now() - startedAt,
+        isLocal: true,
+        errorCategory: null
+      };
+    }
+    try {
+      const systemPrompt = [
+        "You are a helpful assistant for sBuild, a website editor.",
+        "Give short, direct, plain-text answers.",
+        "Do NOT wrap your answer in JSON unless the user explicitly asks for JSON.",
+        "Do NOT include your reasoning process or thinking steps.",
+        "CRITICAL: When asked to write website copy (headline, description, subheading, body, tagline, intro, blurb, about text, or any on-page text), output ONLY the actual words a website visitor would read. No labels, no explanations, no meta-commentary.",
+        "BAD examples (never do this): 'The hero block showcases our latest product launch...', 'This section features a call to action...', 'Here is a suggested description: ...', 'A great headline would be: ...'",
+        "GOOD examples: 'Fresh eggs, seasonal produce, and small-batch farm goods grown close to home.', 'Hand-picked daily from our fields to your table.'",
+        "When suggesting replacement copy, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
+        "Otherwise answer normally with plain text."
+      ].join(" ");
+      const messages: Array<{ role: string; content: string }> = [{ role: "system", content: systemPrompt }];
+      for (const msg of (chatHistory || []).slice(-5)) {
+        if (msg.role === "user" || msg.role === "assistant") messages.push({ role: msg.role, content: msg.text });
+      }
+      messages.push({ role: "user", content: `${cleanPrompt}\n\nPlease respond concisely and directly. Do not include your reasoning process.` });
+      const timeoutMs = config.fallbackTimeoutSec * 1000;
+      const requestBody: Record<string, unknown> = {
+        model: modelToUse,
+        stream: false,
+        options: {
+          temperature: 0.2,
+          num_predict: isSmallLocalModel(modelToUse) ? 200 : 512
+        },
+        messages
+      };
+      if (modelToUse.startsWith("qwen3")) requestBody.think = false;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(`${ollama.endpoint}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(requestBody)
+      });
+      clearTimeout(timer);
+      const payload = (await response.json().catch(() => ({}))) as { message?: { content?: string; thinking?: string } };
+      let text = String(payload.message?.content || "").trim();
+      if (!text && payload.message?.thinking) text = String(payload.message.thinking).trim();
+      if (response.ok && text) {
+        return {
+          provider: "local",
+          source: "local",
+          available: true,
+          response: text,
+          model: modelToUse,
+          message: `Local Ollama answered with ${modelToUse}.`,
+          latencyMs: Date.now() - startedAt,
+          isLocal: true,
+          errorCategory: null
+        };
+      }
+      return {
+        provider: "local",
+        source: "local",
+        available: false,
+        response: "AI chat unavailable: local Ollama returned no content.",
+        model: modelToUse,
+        message: `Local Ollama returned no content for ${modelToUse}.`,
+        latencyMs: Date.now() - startedAt,
+        isLocal: true,
+        errorCategory: "no-content"
+      };
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === "AbortError";
+      return {
+        provider: "local",
+        source: "local",
+        available: false,
+        response: timedOut
+          ? `Local Ollama timed out after ${config.fallbackTimeoutSec}s.`
+          : "AI chat unavailable: local Ollama request failed.",
+        model: modelToUse,
+        message: timedOut
+          ? `Local Ollama timed out after ${config.fallbackTimeoutSec}s.`
+          : "Local Ollama request failed.",
+        latencyMs: Date.now() - startedAt,
+        isLocal: true,
+        errorCategory: timedOut ? "timeout" : "request-failed"
+      };
+    }
+  }
+
+  async function runApiChat(provider: "openai" | "openrouter", prompt: string, chatHistory: Array<{ role: string; text: string }> | undefined, config: ChatProviderConfig): Promise<ChatProviderResult> {
+    const startedAt = Date.now();
+    const keyStatus = provider === "openai" ? await getOpenAIChatKeyStatus() : await getOpenRouterKeyStatus();
+    const model = provider === "openai" ? config.openaiModel : config.openrouterModel;
+    if (!keyStatus.key) {
+      return {
+        provider,
+        source: "missing",
+        available: false,
+        response: `AI chat unavailable: ${provider === "openai" ? "OpenAI" : "OpenRouter"} key is not configured.`,
+        model,
+        message: `${provider === "openai" ? "OpenAI" : "OpenRouter"} key is not configured.`,
+        latencyMs: Date.now() - startedAt,
+        isLocal: false,
+        errorCategory: "missing-key"
+      };
+    }
+    try {
+      const baseUrl = provider === "openrouter" ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1";
+      const messages: Array<{ role: string; content: string }> = [
+        { role: "system", content: runtimeIdentityPrompt({ provider, model, source: keyStatus.source }) }
+      ];
+      for (const msg of (chatHistory || []).slice(-5)) {
+        if (msg.role === "user" || msg.role === "assistant") messages.push({ role: msg.role, content: msg.text });
+      }
+      messages.push({ role: "user", content: prompt.trim() });
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${keyStatus.key}`
+      };
+      if (provider === "openrouter") {
+        headers["HTTP-Referer"] = "https://sbuilder.blackfishfarms.com";
+        headers["X-Title"] = "sBuild";
+      }
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, messages, temperature: 0.2 })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const text = String(payload.choices?.[0]?.message?.content || "").trim();
+      if (response.ok && text) {
+        return {
+          provider,
+          source: keyStatus.source,
+          available: true,
+          response: text,
+          model,
+          message: `${provider === "openai" ? "OpenAI" : "OpenRouter"} answered with ${model}.`,
+          latencyMs: Date.now() - startedAt,
+          isLocal: false,
+          errorCategory: null
+        };
+      }
+      return {
+        provider,
+        source: keyStatus.source,
+        available: false,
+        response: "AI chat unavailable: provider returned no content.",
+        model,
+        message: payload.error?.message || `${provider === "openai" ? "OpenAI" : "OpenRouter"} returned no content.`,
+        latencyMs: Date.now() - startedAt,
+        isLocal: false,
+        errorCategory: "no-content"
+      };
+    } catch {
+      return {
+        provider,
+        source: keyStatus.source,
+        available: false,
+        response: "AI chat unavailable: provider request failed.",
+        model,
+        message: `${provider === "openai" ? "OpenAI" : "OpenRouter"} request failed.`,
+        latencyMs: Date.now() - startedAt,
+        isLocal: false,
+        errorCategory: "request-failed"
+      };
     }
   }
 
@@ -2477,466 +2756,209 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         response: "AI chat unavailable: prompt is empty.",
         message: "prompt is required",
         latencyMs: Date.now() - startedAt,
-        isLocal: false
+        isLocal: false,
+        errorCategory: "unknown"
       };
     }
-
     const config = await getChatProviderConfig();
-    const provider = config.provider || "auto";
-
-    if (provider === "disabled") {
-      return {
-        provider: "disabled",
-        source: "local",
-        available: false,
-        response: "AI chat is disabled in settings.",
-        message: "Provider set to disabled",
-        latencyMs: Date.now() - startedAt,
-        isLocal: true
-      };
-    }
-
-    if (provider === "ollama" || provider === "auto") {
-      const ollama = await getOllamaStatus();
-      if (ollama.reachable && ollama.model) {
-        const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
-        if (isRuntimeIdentityQuestion(cleanPrompt)) {
-          // The "what model are you" question is a legitimate runtime
-          // identity question. We answer it deterministically here so
-          // the LLM isn't wasted on it. The answer is plain text and
-          // names the actual model from the Ollama /api/tags response.
-          return {
-            provider: "ollama",
-            source: "local",
-            available: true,
-            response: `Local Ollama model: ${modelToUse}.`,
-            model: modelToUse,
-            message: `Local Ollama model: ${modelToUse}`,
-            latencyMs: Date.now() - startedAt,
-            isLocal: true
-          };
-        }
-        try {
-          const systemPrompt = [
-            "You are a helpful assistant for sBuild, a website editor.",
-            "Give short, direct, plain-text answers.",
-            "Do NOT wrap your answer in JSON unless the user explicitly asks for JSON.",
-            "Do NOT include your reasoning process or thinking steps.",
-            "CRITICAL: When asked to write website copy (headline, description, subheading, body, tagline, intro, blurb, about text, or any on-page text), output ONLY the actual words a website visitor would read. No labels, no explanations, no meta-commentary.",
-            "BAD examples (never do this): 'The hero block showcases our latest product launch...', 'This section features a call to action...', 'Here is a suggested description: ...', 'A great headline would be: ...'",
-            "GOOD examples: 'Fresh eggs, seasonal produce, and small-batch farm goods grown close to home.', 'Hand-picked daily from our fields to your table.'",
-            "When suggesting replacement copy, use a fenced ```json block with {\"kind\":\"replace-copy\",\"replaceText\":\"...\",\"targetField\":\"heading or subheading or body\"}.",
-            "Otherwise answer normally with plain text."
-          ].join(" ");
-          const historyMessages: Array<{ role: string; content: string }> = [
-            { role: "system", content: systemPrompt }
-          ];
-          if (chatHistory && chatHistory.length > 0) {
-            const recentHistory = chatHistory.slice(-5);
-            for (const msg of recentHistory) {
-              if (msg.role === "user" || msg.role === "assistant") {
-                historyMessages.push({ role: msg.role, content: msg.text });
-              }
-            }
-          }
-          const userMessage = `${cleanPrompt}\n\nPlease respond concisely and directly. Do not include your reasoning process.`;
-          historyMessages.push({ role: "user", content: userMessage });
-          const isQwen3 = modelToUse.startsWith("qwen3");
-          const isSmallQwen25 = /^qwen2\.5:(\d+(\.\d+)?)b/i.test(modelToUse) || /^qwen2\.5:1\.5/i.test(modelToUse);
-          const numPredict = isSmallQwen25 ? 200 : 512;
-          const timeoutMs = isSmallQwen25 ? 22000 : 30000;
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
-          const requestBody: any = {
-            model: modelToUse,
-            stream: false,
-            options: {
-              temperature: 0.2,
-              num_predict: numPredict
-            },
-            messages: historyMessages
-          };
-          if (isQwen3) {
-            requestBody.think = false;
-          }
-          const response = await fetch(`${ollama.endpoint}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify(requestBody)
-          });
-          clearTimeout(timer);
-          const payload = (await response.json().catch(() => ({}))) as {
-            error?: string;
-            message?: { content?: string; thinking?: string };
-          };
-          let text = String(payload.message?.content || "").trim();
-          const looksLikeRawJson = text.startsWith("{") && text.includes("\"kind\"") && !cleanPrompt.toLowerCase().includes("json");
-          if (looksLikeRawJson) {
-            try {
-              const parsed = JSON.parse(text) as Record<string, unknown>;
-              if (parsed.kind === "replace-copy" && typeof parsed.replaceText === "string") {
-                text = `Suggestion: replace the block text with "${parsed.replaceText}"`;
-              } else {
-                text = String((parsed as Record<string, unknown>).replaceText || (parsed as Record<string, unknown>).text || text);
-              }
-            } catch {
-              // leave as-is
-            }
-          }
-          const thinking = payload.message?.thinking || "";
-          if (!text && thinking) {
-            text = `[Note: response based on model reasoning]\n${thinking.trim()}`;
-          }
-          if (response.ok && text) {
-            return {
-              provider: "ollama",
-              source: "local",
-              available: true,
-              response: text,
-              model: modelToUse,
-              message: `Local chat connected: ${modelToUse}`,
-              latencyMs: Date.now() - startedAt,
-              isLocal: true
-            };
-          }
-          const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-          return {
-            provider: "ollama",
-            source: "local",
-            available: false,
-            response: `Local model timed out (${elapsed}s). Ollama is still configured — click Retry to try again, or use a shorter prompt.`,
-            model: modelToUse,
-            message: `Local model ${modelToUse} returned no content after ${elapsed}s; provider is still configured.`,
-            latencyMs: Date.now() - startedAt,
-            isLocal: true
-          };
-        } catch (error) {
-          const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-          const message = error instanceof Error && error.name === "AbortError"
-            ? `Local model timed out (${elapsed}s). Ollama is still configured — click Retry to try again, or use a shorter prompt.`
-            : `Local model request failed: ${error instanceof Error ? error.message : String(error)}; provider is still configured.`;
-          return {
-            provider: "ollama",
-            source: "local",
-            available: false,
-            response: message,
-            model: modelToUse,
-            message,
-            latencyMs: Date.now() - startedAt,
-            isLocal: true
-          };
-        }
-      }
-    }
-
-    if (provider === "ollama" && !config.apiKey) {
-      return {
-        provider: "ollama",
-        source: "missing",
-        available: false,
-        response: "AI chat unavailable: Ollama not reachable and no API key configured.",
-        message: "Ollama not reachable",
-        latencyMs: Date.now() - startedAt,
-        isLocal: true
-      };
-    }
-
-    if (provider === "openai" || provider === "openai-compatible" || provider === "openrouter" || provider === "auto") {
-      const chatKeyStatus = await getChatApiKeyStatus();
-      const chatKey = config.apiKey || chatKeyStatus.chatKey;
-      if (!chatKey) {
-        return {
-          provider: "none",
-          source: "missing",
-          available: false,
-          response: "AI chat unavailable: no API key configured.",
-          message: "No API key available",
-          latencyMs: Date.now() - startedAt,
-          isLocal: false
-        };
-      }
-
-      const chatBase = (config.baseUrl?.trim() || process.env.SBUILD_OPENAI_CHAT_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-      let chatModel = config.model?.trim() || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini";
-      if (provider === "openrouter") {
-        chatModel = config.model?.trim() || "openrouter/auto";
-      }
-      try {
-        const responseSource = chatKeyStatus.chatSource;
-        const remoteMessages: Array<{ role: string; content: string }> = [
-          { role: "system", content: runtimeIdentityPrompt({ provider: provider === "openrouter" ? "openrouter" : "openai-compatible", model: chatModel, source: responseSource }) }
-        ];
-        if (chatHistory && chatHistory.length > 0) {
-          const recentHistory = chatHistory.slice(-10);
-          for (const msg of recentHistory) {
-            if (msg.role === "user" || msg.role === "assistant") {
-              remoteMessages.push({ role: msg.role, content: msg.text });
-            }
-          }
-        }
-        remoteMessages.push({ role: "user", content: cleanPrompt });
-        const response = await fetch(`${chatBase}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${chatKey}`
-          },
-          body: JSON.stringify({
-            model: chatModel,
-            messages: remoteMessages
-          })
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          error?: { message?: string };
-          choices?: Array<{ message?: { content?: string } }>;
-        };
-        const text = String(payload.choices?.[0]?.message?.content || "").trim();
-        if (response.ok && text) {
-          return {
-            provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-            source: chatKeyStatus.chatSource,
-            available: true,
-            response: text,
-            model: chatModel,
-            message: `Chat ready via ${chatBase}`,
-            latencyMs: Date.now() - startedAt,
-            isLocal: false
-          };
-        }
-        return {
-          provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-          source: chatKeyStatus.chatSource,
-          available: false,
-          response: "AI chat unavailable: provider returned no content.",
-          model: chatModel,
-          message: payload.error?.message || `Chat provider returned ${response.status}`,
-          latencyMs: Date.now() - startedAt,
-          isLocal: false
-        };
-      } catch {
-        return {
-          provider: provider === "openrouter" ? "openrouter" : "openai-compatible",
-          source: chatKeyStatus.chatSource,
-          available: false,
-          response: "AI chat unavailable: provider request failed.",
-          model: chatModel,
-          message: "Chat provider request failed",
-          latencyMs: Date.now() - startedAt,
-          isLocal: false
-        };
-      }
-    }
-
-    return {
-      provider: "none",
-      source: "missing",
-      available: false,
-      response: "AI chat unavailable: no provider configured.",
-      message: "Unknown provider",
-      latencyMs: Date.now() - startedAt,
-      isLocal: false
+    const openaiKey = await getOpenAIChatKeyStatus();
+    const openrouterKey = await getOpenRouterKeyStatus();
+    const apiFallbackProvider = preferredApiProvider(openaiKey, openrouterKey);
+    const primaryProvider: ChatProviderId = config.mode === "auto"
+      ? (apiFallbackProvider || "local")
+      : config.mode;
+    const runPrimary = async (): Promise<ChatProviderResult> => {
+      if (primaryProvider === "local") return runLocalChat(cleanPrompt, chatHistory, config);
+      return runApiChat(primaryProvider, cleanPrompt, chatHistory, config);
     };
+    const primary = await runPrimary();
+    if (primary.available) return primary;
+    if (primaryProvider === "local" && config.fallbackEnabled && apiFallbackProvider) {
+      const fallback = await runApiChat(apiFallbackProvider, cleanPrompt, chatHistory, config);
+      if (fallback.available) {
+        return {
+          ...fallback,
+          fallbackUsed: true,
+          fallbackFrom: "local",
+          fallbackReason: primary.message || "Local Ollama failed."
+        };
+      }
+    }
+    if ((primaryProvider === "openai" || primaryProvider === "openrouter") && config.mode === "auto") {
+      const fallback = await runLocalChat(cleanPrompt, chatHistory, config);
+      if (fallback.available) {
+        return {
+          ...fallback,
+          fallbackUsed: true,
+          fallbackFrom: primaryProvider,
+          fallbackReason: primary.message || `${primaryProvider} failed.`
+        };
+      }
+    }
+    if (primaryProvider === "local" && primary.errorCategory === "timeout" && !config.fallbackEnabled) {
+      return {
+        ...primary,
+        response: `Local Ollama timed out after ${config.fallbackTimeoutSec}s and API fallback is disabled.`,
+        message: `Local Ollama timed out after ${config.fallbackTimeoutSec}s and API fallback is disabled.`,
+        fallbackUsed: false,
+        fallbackFrom: null,
+        fallbackReason: "API fallback disabled."
+      };
+    }
+    if (primaryProvider === "local" && primary.errorCategory === "timeout" && !apiFallbackProvider) {
+      return {
+        ...primary,
+        response: `Local Ollama timed out after ${config.fallbackTimeoutSec}s and no API fallback is configured.`,
+        message: `Local Ollama timed out after ${config.fallbackTimeoutSec}s and no API fallback is configured.`,
+        fallbackUsed: false,
+        fallbackFrom: null,
+        fallbackReason: "No API fallback configured."
+      };
+    }
+    return primary;
   }
 
-  // In-memory cache of the last chat inference test. The UI and the
-  // /api/ai/providers/status endpoint both read this so the user sees
-  // "inference-tested" / "slow" / "timeout" / "unavailable" / "configured"
-  // honestly. The cache is process-local; a service restart drops it.
-  type LastChatTest = {
-    state: "configured" | "reachable" | "inference-tested" | "slow" | "timeout" | "unavailable" | "not_tested";
-    provider: string;
+  type ProviderTestSummary = {
+    provider: ChatProviderId;
+    configured: boolean;
+    reachability: ProviderReachability;
+    ok: boolean;
+    result: "passed" | "failed" | "unconfigured" | "untested";
     model: string | null;
     latencyMs: number | null;
-    timedOut: boolean;
     testedAt: string;
+    errorCategory: ProviderErrorCategory | null;
     message: string;
-  };
-  let lastChatTest: LastChatTest = {
-    state: "not_tested",
-    provider: "unknown",
-    model: null,
-    latencyMs: null,
-    timedOut: false,
-    testedAt: new Date(0).toISOString(),
-    message: "Click 'Test chat model' to run a small inference."
   };
 
-  /**
-   * runChatInferenceTest — runs a tiny "say hi" prompt against the active
-   * chat provider and records latency, timeout, and reachability in
-   * lastChatTest. Returns a JSON-friendly summary. Times out at 6s so the
-   * UI can show a real result even on slow models.
-   */
-  async function runChatInferenceTest(): Promise<{
-    ok: boolean;
-    state: LastChatTest["state"];
-    provider: string;
-    model: string | null;
-    latencyMs: number | null;
-    timedOut: boolean;
-    message: string;
-    testedAt: string;
-  }> {
+  let lastProviderTests: Record<ChatProviderId, ProviderTestSummary> = {
+    local: { provider: "local", configured: false, reachability: "untested", ok: false, result: "untested", model: null, latencyMs: null, testedAt: new Date(0).toISOString(), errorCategory: "not-tested", message: "Not tested yet." },
+    openai: { provider: "openai", configured: false, reachability: "untested", ok: false, result: "untested", model: null, latencyMs: null, testedAt: new Date(0).toISOString(), errorCategory: "not-tested", message: "Not tested yet." },
+    openrouter: { provider: "openrouter", configured: false, reachability: "untested", ok: false, result: "untested", model: null, latencyMs: null, testedAt: new Date(0).toISOString(), errorCategory: "not-tested", message: "Not tested yet." }
+  };
+
+  async function runProviderTest(provider: ChatProviderId): Promise<ProviderTestSummary> {
     const config = await getChatProviderConfig();
-    const provider = config.provider || "auto";
-    if (provider === "disabled") {
-      lastChatTest = {
-        state: "unavailable",
-        provider: "disabled",
-        model: null,
-        latencyMs: null,
-        timedOut: false,
-        testedAt: new Date().toISOString(),
-        message: "AI chat is disabled in settings."
-      };
-      return { ok: false, ...lastChatTest };
-    }
-    // Reuse chatWithProviders for the real model lane; the tiny prompt
-    // "hi" is short enough that a healthy model returns in <1s and a
-    // slow one will exceed 6s and be marked slow/timeout.
-    const t0 = Date.now();
-    let r;
-    try {
-      r = await chatWithProviders("Reply with the single word: hi");
-    } catch (e) {
-      lastChatTest = {
-        state: "unavailable",
-        provider,
-        model: config.model || null,
-        latencyMs: Date.now() - t0,
-        timedOut: false,
-        testedAt: new Date().toISOString(),
-        message: `Provider error: ${e instanceof Error ? e.message : String(e)}`
-      };
-      return { ok: false, ...lastChatTest };
-    }
-    const latencyMs = Date.now() - t0;
-    const timedOut = latencyMs >= 6000 || /timed out/i.test(r.response || "");
-    const model = r.model || config.model || null;
-    if (!r.available) {
-      const state: LastChatTest["state"] = timedOut ? "timeout" : "unavailable";
-      lastChatTest = {
-        state,
-        provider: r.provider,
-        model,
-        latencyMs,
-        timedOut,
-        testedAt: new Date().toISOString(),
-        message: timedOut
-          ? `Model ${model || "(unknown)"} did not respond within 6s.`
-          : r.message || r.response || "Provider unavailable."
-      };
-      return { ok: false, ...lastChatTest };
-    }
-    // Successful response. Mark "slow" if >3s, otherwise "inference-tested".
-    const state: LastChatTest["state"] = latencyMs > 3000 ? "slow" : "inference-tested";
-    lastChatTest = {
-      state,
-      provider: r.provider,
-      model,
-      latencyMs,
-      timedOut: false,
+    const startedAt = Date.now();
+    const result = provider === "local"
+      ? await runLocalChat("Reply with the single word: hi", [], config)
+      : await runApiChat(provider, "Reply with the single word: hi", [], config);
+    const credentials = provider === "openai" ? await getOpenAIChatKeyStatus() : provider === "openrouter" ? await getOpenRouterKeyStatus() : { key: "", source: "local" as const };
+    const summary: ProviderTestSummary = {
+      provider,
+      configured: provider === "local" ? true : credentials.source !== "missing",
+      reachability: result.available ? "reachable" : result.errorCategory === "missing-key" ? "untested" : "unreachable",
+      ok: result.available,
+      result: result.available ? "passed" : (result.errorCategory === "missing-key" ? "unconfigured" : "failed"),
+      model: result.model || null,
+      latencyMs: Date.now() - startedAt,
       testedAt: new Date().toISOString(),
-      message: `Model ${model || "(unknown)"} answered in ${latencyMs}ms.`
+      errorCategory: result.errorCategory || null,
+      message: result.message || result.response
     };
-    return { ok: true, ...lastChatTest };
+    lastProviderTests[provider] = summary;
+    return summary;
   }
 
   async function getChatProviderStatus(): Promise<{
-    status: "connected" | "not_configured";
-    source: "local" | "env" | "missing";
-    provider: string;
-    model?: string;
+    mode: ChatProviderMode;
+    provider: ChatProviderId;
+    model: string;
     message: string;
-    configuredProvider?: string;
-    localModels?: Array<{ name: string }>;
-    lastTest?: LastChatTest;
+    source: "local" | KeySource;
+    fallbackEnabled: boolean;
+    fallbackTimeoutSec: number;
+    localModels: Array<{ name: string }>;
+    cards: Array<{
+      name: string;
+      provider: ChatProviderId;
+      model: string;
+      status: "configured" | "unconfigured" | "reachable" | "unreachable" | "untested";
+      configured: boolean;
+      reachability: ProviderReachability;
+      keySource: KeySource;
+      maskedKey: string | null;
+      message: string;
+      lastTest: ProviderTestSummary;
+    }>;
   }> {
     const config = await getChatProviderConfig();
     const ollama = await getOllamaStatus();
+    const openaiKey = await getOpenAIChatKeyStatus();
+    const openrouterKey = await getOpenRouterKeyStatus();
+    const localModel = preferredLocalModelName(ollama.models, config.localModel) || config.localModel || DEFAULT_LOCAL_CHAT_MODEL;
+    const selectedProvider: ChatProviderId = config.mode === "auto"
+      ? (preferredApiProvider(openaiKey, openrouterKey) || "local")
+      : config.mode;
     const localModels = ollama.models.map((model) => ({ name: model.name }));
-
-    if (config.provider === "disabled") {
-      return {
-        status: "not_configured",
-        source: "local",
-        provider: "disabled",
-        message: "AI chat is disabled in settings.",
-        configuredProvider: "disabled",
-        localModels,
-        lastTest: lastChatTest
-      };
-    }
-
-    if (config.provider === "ollama" || config.provider === "auto") {
-      if (ollama.reachable && ollama.model) {
-        const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
-        const lastTestLabel = lastChatTest.state === "not_tested"
-          ? "Click 'Test chat model' to confirm."
-          : `Last test: ${lastChatTest.state} · ${lastChatTest.latencyMs ?? "?"}ms.`;
-        return {
-          status: "connected",
-          source: "local",
-          provider: "ollama",
-          model: modelToUse,
-          message: `Local chat model configured: ${modelToUse}. ${lastTestLabel}`,
-          configuredProvider: config.provider,
-          localModels,
-          lastTest: lastChatTest
-        };
+    const cards: Array<{
+      name: string;
+      provider: ChatProviderId;
+      model: string;
+      status: "reachable" | "unreachable" | "untested" | "unconfigured" | "configured";
+      configured: boolean;
+      reachability: ProviderReachability;
+      keySource: KeySource;
+      maskedKey: string | null;
+      message: string;
+      lastTest: ProviderTestSummary;
+    }> = [
+      {
+        name: "Local Ollama",
+        provider: "local" as const,
+        model: localModel,
+        configured: Boolean(localModel),
+        reachability: ollama.reachable && ollama.model ? "reachable" as ProviderReachability : "unreachable" as ProviderReachability,
+        keySource: "missing" as KeySource,
+        maskedKey: null,
+        message: ollama.reachable && ollama.model
+          ? `Configured model: ${localModel}. ${lastProviderTests.local.message}`
+          : `Configured model: ${localModel}. Ollama is not reachable on this machine.`,
+        lastTest: lastProviderTests.local
+      },
+      {
+        name: "OpenAI",
+        provider: "openai" as const,
+        model: config.openaiModel,
+        configured: openaiKey.source !== "missing",
+        reachability: lastProviderTests.openai.result === "untested" ? "untested" as ProviderReachability : lastProviderTests.openai.ok ? "reachable" as ProviderReachability : "unreachable" as ProviderReachability,
+        keySource: openaiKey.source,
+        maskedKey: openaiKey.key ? maskKey(openaiKey.key) : null,
+        message: openaiKey.source === "missing" ? "OpenAI key not configured." : `Masked key present (${openaiKey.source}). ${lastProviderTests.openai.message}`,
+        lastTest: lastProviderTests.openai
+      },
+      {
+        name: "OpenRouter",
+        provider: "openrouter" as const,
+        model: config.openrouterModel,
+        configured: openrouterKey.source !== "missing",
+        reachability: lastProviderTests.openrouter.result === "untested" ? "untested" as ProviderReachability : lastProviderTests.openrouter.ok ? "reachable" as ProviderReachability : "unreachable" as ProviderReachability,
+        keySource: openrouterKey.source,
+        maskedKey: openrouterKey.key ? maskKey(openrouterKey.key) : null,
+        message: openrouterKey.source === "missing" ? "OpenRouter key not configured." : `Masked key present (${openrouterKey.source}). ${lastProviderTests.openrouter.message}`,
+        lastTest: lastProviderTests.openrouter
       }
-      if (config.provider === "ollama") {
-        return {
-          status: "not_configured",
-          source: "local",
-          provider: "ollama",
-          message: "Ollama selected but not reachable. Install Ollama or switch provider.",
-          configuredProvider: "ollama",
-          localModels,
-          lastTest: lastChatTest
-        };
-      }
-    }
-
-    if (config.apiKey) {
-      const chatKeyStatus = await getChatApiKeyStatus();
-      const lastTestLabel = lastChatTest.state === "not_tested"
-        ? "Click 'Test chat model' to confirm."
-        : `Last test: ${lastChatTest.state} · ${lastChatTest.latencyMs ?? "?"}ms.`;
-      return {
-        status: "connected",
-        source: chatKeyStatus.chatSource,
-        provider: config.provider === "openrouter" ? "openrouter" : "openai-compatible",
-        model: config.model || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
-        message: `Chat configured via ${config.provider} (${config.baseUrl || "default endpoint"}). ${lastTestLabel}`,
-        configuredProvider: config.provider,
-        localModels,
-        lastTest: lastChatTest
-      };
-    }
-
-    if (ollama.reachable && ollama.model) {
-      return {
-        status: "connected",
-        source: "local",
-        provider: "ollama",
-        model: ollama.model,
-        message: `Local chat model reachable: ${ollama.model}. Click 'Test chat model' to confirm.`,
-        configuredProvider: "auto",
-        localModels,
-        lastTest: lastChatTest
-      };
-    }
+    ].map((card) => ({
+      ...card,
+      status: card.reachability === "reachable"
+        ? "reachable"
+        : card.configured
+          ? (card.reachability === "untested" ? "configured" : "unreachable")
+          : "unconfigured"
+    }));
 
     return {
-      status: "not_configured",
-      source: "missing",
-      provider: "none",
-      message: ollama.reachable ? "Ollama reachable but no model loaded." : "No chat provider configured.",
-      configuredProvider: config.provider,
+      mode: config.mode,
+      provider: selectedProvider,
+      model: selectedProvider === "local" ? localModel : selectedProvider === "openai" ? config.openaiModel : config.openrouterModel,
+      message: `${config.mode === "auto"
+        ? `Auto mode prefers ${selectedProvider === "local" ? "Local Ollama" : selectedProvider === "openai" ? "OpenAI" : "OpenRouter"}`
+        : `Selected provider: ${selectedProvider === "local" ? "Local Ollama" : selectedProvider === "openai" ? "OpenAI" : "OpenRouter"}`}. Fallback ${config.fallbackEnabled ? `enabled after ${config.fallbackTimeoutSec}s` : "disabled"}.`,
+      source: selectedProvider === "local" ? "local" : selectedProvider === "openai" ? openaiKey.source : openrouterKey.source,
+      fallbackEnabled: config.fallbackEnabled,
+      fallbackTimeoutSec: config.fallbackTimeoutSec,
       localModels,
-      lastTest: lastChatTest
+      cards
     };
   }
 
@@ -3025,17 +3047,21 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           ? `Provider: OpenAI API. Key storage: ${keyStatus.analyzeSource === "env" ? "environment variable" : "local ignored secret config"}. Model: ${imageAnalyzeModel}.`
           : "Missing. Set OPENAI_API_KEY env var or enter below in Settings → Image/API Keys."
       },
-      {
-        name: "AI Chat Provider",
-        provider: chatStatus.provider,
-        model: chatStatus.model || "unknown",
-        status: chatStatus.status,
-        source: chatStatus.source,
-        message: chatStatus.message,
-        lastTest: chatStatus.lastTest
-      }
+      ...chatStatus.cards
     ];
-    res.json({ ok: true, providers, channels });
+    res.json({
+      ok: true,
+      providers,
+      channels,
+      chatSettings: {
+        mode: chatStatus.mode,
+        selectedProvider: chatStatus.provider,
+        selectedModel: chatStatus.model,
+        fallbackEnabled: chatStatus.fallbackEnabled,
+        fallbackTimeoutSec: chatStatus.fallbackTimeoutSec,
+        summary: chatStatus.message
+      }
+    });
   });
 
   app.post("/api/ai/providers/test", async (req, res) => {
@@ -3063,8 +3089,14 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       res.json({ ok: openCode.detected, status: openCode.detected ? "connected" : "not_configured", message: openCode.message });
       return;
     }
-    if (provider === "chat") {
-      const result = await runChatInferenceTest();
+    if (provider === "chat" || provider === "local" || provider === "openai" || provider === "openrouter") {
+      const chatConfig = await getChatProviderConfig();
+      const targetProvider = provider === "chat"
+        ? (chatConfig.mode === "auto"
+          ? ((preferredApiProvider(await getOpenAIChatKeyStatus(), await getOpenRouterKeyStatus()) || "local") as ChatProviderId)
+          : chatConfig.mode)
+        : provider as ChatProviderId;
+      const result = await runProviderTest(targetProvider);
       res.json(result);
       return;
     }
@@ -3096,50 +3128,63 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
   app.get("/api/ai/providers/config", async (_req, res) => {
     const config = await getChatProviderConfig();
-    const chatKeyStatus = await getChatApiKeyStatus();
+    const openaiKey = await getOpenAIChatKeyStatus();
+    const openrouterKey = await getOpenRouterKeyStatus();
     res.json({
       ok: true,
-      provider: config.provider || "auto",
-      model: config.model || "",
-      baseUrl: config.baseUrl || "",
-      hasApiKey: Boolean(config.apiKey),
-      apiKeySource: chatKeyStatus.chatSource,
-      maskedApiKey: config.apiKey ? maskKey(config.apiKey) : null
+      providerMode: config.mode,
+      localModel: config.localModel,
+      openaiModel: config.openaiModel,
+      openrouterModel: config.openrouterModel,
+      fallbackEnabled: config.fallbackEnabled,
+      fallbackTimeoutSec: config.fallbackTimeoutSec,
+      openaiApiKeySource: openaiKey.source,
+      openrouterApiKeySource: openrouterKey.source,
+      openaiMaskedApiKey: openaiKey.key ? maskKey(openaiKey.key) : null,
+      openrouterMaskedApiKey: openrouterKey.key ? maskKey(openrouterKey.key) : null
     });
   });
 
   app.post("/api/ai/providers/config", requireAdminMw, async (req, res) => {
-    const provider = String(req.body?.provider || "auto").trim();
-    const model = String(req.body?.model || "").trim();
-    const baseUrl = String(req.body?.baseUrl || "").trim();
-    const apiKey = String(req.body?.apiKey || "").trim();
-
-    const validProviders = ["auto", "disabled", "openai", "openrouter", "ollama", "openai-compatible"];
-    if (!validProviders.includes(provider)) {
-      res.status(400).json({ ok: false, error: `Invalid provider: ${provider}` });
+    const providerMode = String(req.body?.providerMode || "auto").trim();
+    const validProviders = ["auto", "local", "openai", "openrouter"];
+    if (!validProviders.includes(providerMode)) {
+      res.status(400).json({ ok: false, error: `Invalid provider mode: ${providerMode}` });
       return;
     }
 
-    await saveChatProviderConfig({ provider, model, baseUrl, apiKey });
+    await saveChatProviderConfig({
+      providerMode,
+      localModel: String(req.body?.localModel || "").trim(),
+      openaiModel: String(req.body?.openaiModel || "").trim(),
+      openrouterModel: String(req.body?.openrouterModel || "").trim(),
+      fallbackEnabled: Boolean(req.body?.fallbackEnabled),
+      fallbackTimeoutSec: Number(req.body?.fallbackTimeoutSec),
+      openaiApiKey: String(req.body?.openaiApiKey || "").trim(),
+      openrouterApiKey: String(req.body?.openrouterApiKey || "").trim()
+    });
     const config = await getChatProviderConfig();
     res.json({
       ok: true,
-      message: "Provider configuration saved.",
-      provider: config.provider,
-      model: config.model,
-      baseUrl: config.baseUrl,
-      hasApiKey: Boolean(config.apiKey)
+      message: "Chat provider settings saved.",
+      providerMode: config.mode,
+      localModel: config.localModel,
+      openaiModel: config.openaiModel,
+      openrouterModel: config.openrouterModel,
+      fallbackEnabled: config.fallbackEnabled,
+      fallbackTimeoutSec: config.fallbackTimeoutSec
     });
   });
 
   app.get("/api/secrets/status", requireAdminMw, async (_req, res) => {
     const keyStatus = await getImageApiKeyStatus();
-    const chatStatus = await getChatApiKeyStatus();
+    const openaiChat = await getOpenAIChatKeyStatus();
+    const openrouterChat = await getOpenRouterKeyStatus();
     const chatProviderConfig = await getChatProviderConfig();
     const channels = {
       chat: {
-        ...channelSummaryFromSource(chatStatus.chatSource),
-        maskedKey: chatStatus.chatKey ? maskKey(chatStatus.chatKey) : null
+        ...channelSummaryFromSource(openaiChat.source),
+        maskedKey: openaiChat.key ? maskKey(openaiChat.key) : null
       },
       imageGen: {
         ...channelSummaryFromSource(keyStatus.genSource as "env" | "local" | "missing"),
@@ -3154,15 +3199,27 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ok: true,
       channels,
       chat: {
-        configured: chatStatus.chatSource !== "missing",
-        source: chatStatus.chatSource,
-        maskedKey: chatStatus.chatKey ? maskKey(chatStatus.chatKey) : null
+        configured: openaiChat.source !== "missing",
+        source: openaiChat.source,
+        maskedKey: openaiChat.key ? maskKey(openaiChat.key) : null
       },
       chatProvider: {
-        provider: chatProviderConfig.provider || "auto",
-        model: chatProviderConfig.model || "",
-        baseUrl: chatProviderConfig.baseUrl || "",
-        hasApiKey: Boolean(chatProviderConfig.apiKey)
+        providerMode: chatProviderConfig.mode,
+        localModel: chatProviderConfig.localModel,
+        openaiModel: chatProviderConfig.openaiModel,
+        openrouterModel: chatProviderConfig.openrouterModel,
+        fallbackEnabled: chatProviderConfig.fallbackEnabled,
+        fallbackTimeoutSec: chatProviderConfig.fallbackTimeoutSec
+      },
+      chatOpenAI: {
+        configured: openaiChat.source !== "missing",
+        source: openaiChat.source,
+        maskedKey: openaiChat.key ? maskKey(openaiChat.key) : null
+      },
+      chatOpenRouter: {
+        configured: openrouterChat.source !== "missing",
+        source: openrouterChat.source,
+        maskedKey: openrouterChat.key ? maskKey(openrouterChat.key) : null
       },
       imageGen: {
         configured: keyStatus.genSource !== "missing",
@@ -3181,10 +3238,17 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const genKey = sanitizeApiKeyInput(req.body?.imageGenApiKey);
     const analyzeKey = sanitizeApiKeyInput(req.body?.imageAnalyzeApiKey);
     const chatKey = sanitizeApiKeyInput(req.body?.chatApiKey);
+    const openaiChatKey = sanitizeApiKeyInput(req.body?.openaiChatApiKey);
+    const openrouterChatKey = sanitizeApiKeyInput(req.body?.openrouterChatApiKey);
     const secrets = await loadSecrets();
     if (genKey) secrets.imageGenApiKey = genKey;
     if (analyzeKey) secrets.imageAnalyzeApiKey = analyzeKey;
-    if (chatKey) secrets.chatApiKey = chatKey;
+    if (chatKey || openaiChatKey) {
+      const key = openaiChatKey || chatKey;
+      secrets.chatApiKey = key;
+      secrets.openaiChatApiKey = key;
+    }
+    if (openrouterChatKey) secrets.openrouterChatApiKey = openrouterChatKey;
     await saveSecrets(secrets);
     res.json({ ok: true, message: "Keys stored locally. Not committed to project." });
   });
@@ -3268,16 +3332,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const chatChannel = {
       ...channelSummaryFromSource(chatStatus.source),
       provider: chatStatus.provider,
-      model: chatStatus.model || process.env.SBUILD_CHAT_MODEL || DEFAULT_LOCAL_CHAT_MODEL,
+      model: chatStatus.model,
       message: chatStatus.message
     };
     res.json({
       ok: true,
       status: {
-        chatApi: chatStatus.status === "connected"
-          ? `configured-${chatStatus.source}`
-          : "missing-key",
-        chatModel: chatStatus.model || process.env.SBUILD_CHAT_MODEL || DEFAULT_LOCAL_CHAT_MODEL,
+        chatApi: chatStatus.source === "missing" && chatStatus.provider !== "local"
+          ? "missing-key"
+          : `configured-${chatStatus.source}`,
+        chatModel: chatStatus.model,
+        chatProviderMode: chatStatus.mode,
+        chatFallbackEnabled: chatStatus.fallbackEnabled,
+        chatFallbackTimeoutSec: chatStatus.fallbackTimeoutSec,
         imageApi: keyStatus.genSource === "missing" ? "missing-key" : `configured-${keyStatus.genSource}`,
         imageAnalyzeApi: keyStatus.analyzeSource === "missing" ? "missing-key" : `configured-${keyStatus.analyzeSource}`,
         publishMode: process.env.SBUILD_ALLOW_PUBLISH === "1" ? "live-enabled" : "dry-run",

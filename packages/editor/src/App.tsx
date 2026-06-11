@@ -70,6 +70,9 @@ type ChatItem = {
   engineModel?: string;
   engineReason?: string;
   deterministicAnswer?: boolean;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string | null;
+  fallbackReason?: string | null;
 };
 type StructuredSuggestionProposal = {
   kind: "replace-copy";
@@ -86,6 +89,8 @@ type ChannelStatus = {
 };
 type SecretStatus = {
   chat: ChannelStatus;
+  chatOpenAI: ChannelStatus;
+  chatOpenRouter: ChannelStatus;
   imageGen: ChannelStatus;
   imageAnalyze: ChannelStatus;
 };
@@ -193,7 +198,7 @@ function chatFooterText(item: ChatItem): string {
         : item.engine === "local-ollama"
           ? `local Ollama${item.engineModel ? ` (${item.engineModel})` : ""}`
           : item.engine === "openai-api"
-            ? `API${item.engineModel ? ` (${item.engineModel})` : ""}`
+            ? `${item.provider === "openrouter" ? "OpenRouter" : item.provider === "openai" ? "OpenAI" : "API"}${item.engineModel ? ` (${item.engineModel})` : ""}`
             : item.engine === "unavailable"
               ? "no engine"
               : item.engine;
@@ -205,6 +210,12 @@ function chatFooterText(item: ChatItem): string {
     }
     if (typeof item.latencyMs === "number" && Number.isFinite(item.latencyMs)) {
       parts.push(`${(item.latencyMs / 1000).toFixed(1)}s`);
+    }
+    if (item.fallbackUsed && item.fallbackFrom) {
+      parts.push(`fallback from ${item.fallbackFrom}`);
+    }
+    if (item.fallbackReason) {
+      parts.push(item.fallbackReason);
     }
   }
   return parts.join(" · ");
@@ -452,6 +463,8 @@ function normalizeSecretStatus(raw: unknown): SecretStatus {
   const root = toRecord(raw);
   const status = toRecord(root.status);
   const chat = toRecord(root.chat);
+  const chatOpenAI = toRecord(root.chatOpenAI);
+  const chatOpenRouter = toRecord(root.chatOpenRouter);
   const imageGen = toRecord(root.imageGen);
   const imageAnalyze = toRecord(root.imageAnalyze);
   return {
@@ -460,6 +473,18 @@ function normalizeSecretStatus(raw: unknown): SecretStatus {
       configuredHint: chat.configured,
       maskedKeyHint: chat.maskedKey,
       messageHint: chat.message
+    }),
+    chatOpenAI: normalizeChannel({
+      sourceHints: [chatOpenAI.source, chat.source, root.chatOpenAIKeySource, status.chatApi, status.chat],
+      configuredHint: chatOpenAI.configured,
+      maskedKeyHint: chatOpenAI.maskedKey,
+      messageHint: chatOpenAI.message
+    }),
+    chatOpenRouter: normalizeChannel({
+      sourceHints: [chatOpenRouter.source, root.chatOpenRouterKeySource, status.chatOpenRouter, status.chat],
+      configuredHint: chatOpenRouter.configured,
+      maskedKeyHint: chatOpenRouter.maskedKey,
+      messageHint: chatOpenRouter.message
     }),
     imageGen: normalizeChannel({
       sourceHints: [imageGen.source, root.imageGenKeySource, status.imageApi, status.imageGen],
@@ -478,15 +503,16 @@ function normalizeSecretStatus(raw: unknown): SecretStatus {
 
 function normalizedProviderState(input: unknown): SBuildProviderStatus["status"] {
   const value = String(input || "").trim().toLowerCase();
-  if (value === "connected") return "connected";
-  if (value === "not_configured") return "not_configured";
-  if (value === "error") return "error";
-  if (value === "unknown") return "unknown";
-  return "unknown";
+  if (value === "configured") return "configured";
+  if (value === "unconfigured" || value === "not_configured") return "unconfigured";
+  if (value === "reachable" || value === "connected") return "reachable";
+  if (value === "unreachable" || value === "error") return "unreachable";
+  if (value === "untested" || value === "unknown") return "untested";
+  return "untested";
 }
 
 function providerStateFromChannel(channel: ChannelStatus): SBuildProviderStatus["status"] {
-  return channel.configured ? "connected" : (channel.source === "missing" || channel.source === "not_configured") ? "not_configured" : "unknown";
+  return channel.configured ? "configured" : (channel.source === "missing" || channel.source === "not_configured") ? "unconfigured" : "untested";
 }
 
 type NormalizedProviderStatus = {
@@ -526,6 +552,7 @@ function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): Normalize
   const root = toRecord(raw);
   const channels = toRecord(root.channels);
   const chatChannel = toRecord(channels.chat);
+  const chatSettings = toRecord(root.chatSettings);
   const rawProviders = Array.isArray(root.providers) ? root.providers : [];
   let providers = rawProviders
     .map((item) => toRecord(item))
@@ -538,11 +565,15 @@ function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): Normalize
         : "Provider status unavailable — refresh or check Settings."
     }));
   providers = upsertProviderStatus(providers, {
-    name: "AI Chat Provider",
-    status: providerStateFromChannel(secrets.chat),
-    message: typeof chatChannel.message === "string" && chatChannel.message.trim().length > 0
-      ? chatChannel.message
-      : secrets.chat.statusText
+    name: "AI Chat Summary",
+    status: typeof chatSettings.selectedProvider === "string" && chatSettings.selectedProvider.trim()
+      ? "configured"
+      : providerStateFromChannel(secrets.chat),
+    message: typeof chatSettings.summary === "string" && chatSettings.summary.trim().length > 0
+      ? chatSettings.summary
+      : typeof chatChannel.message === "string" && chatChannel.message.trim().length > 0
+        ? chatChannel.message
+        : secrets.chat.statusText
   });
   providers = upsertProviderStatus(providers, {
     name: "Image Generation API",
@@ -558,6 +589,61 @@ function normalizeProviderStatus(raw: unknown, secrets: SecretStatus): Normalize
 }
 
 const DEFAULT_SECRET_STATUS = normalizeSecretStatus({});
+
+function formatProviderDisplayName(provider?: string | null): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "openrouter") return "OpenRouter";
+  if (provider === "local") return "Local Ollama";
+  return "API";
+}
+
+function formatChatEngineStatus(input: {
+  engine?: string | null;
+  mode?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  latencyMs?: number | null;
+  timeoutMs?: number | null;
+  reason?: string | null;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string | null;
+  fallbackReason?: string | null;
+}): string {
+  const {
+    engine,
+    mode,
+    provider,
+    model,
+    latencyMs,
+    timeoutMs,
+    reason,
+    fallbackUsed,
+    fallbackFrom,
+    fallbackReason
+  } = input;
+  const fallbackLabel = fallbackUsed && fallbackFrom
+    ? ` after fallback from ${formatProviderDisplayName(fallbackFrom)}${fallbackReason ? ` (${fallbackReason})` : ""}`
+    : "";
+  if (engine === "sbuild-brain" && mode === "deterministic") {
+    return `Answered by sBuild Brain context${reason ? ` (${reason})` : ""} · ${latencyMs ?? 0}ms`;
+  }
+  if (engine === "local-ollama" && mode === "llm") {
+    return `Answered by Local Ollama ${model || "model"} · ${latencyMs ?? "?"}ms${fallbackLabel}`;
+  }
+  if (engine === "openai-api" && mode === "llm") {
+    return `Answered by ${formatProviderDisplayName(provider)} ${model || "model"} · ${latencyMs ?? "?"}ms${fallbackLabel}`;
+  }
+  if (mode === "error" && reason === "llm-timeout") {
+    return `Local model ${model || ""} timed out after ${((timeoutMs ?? 22000) / 1000).toFixed(0)}s`;
+  }
+  if (mode === "error" && reason) {
+    return reason;
+  }
+  if (engine) {
+    return `Last answer: ${engine} (${mode || "unknown"})`;
+  }
+  return "Engine status unavailable.";
+}
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${url}`, { headers: { "Content-Type": "application/json" }, ...init });
@@ -1219,7 +1305,7 @@ export function App() {
   const siteHeaderLongPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean; startX: number; startY: number }>({ timer: null, fired: false, startX: 0, startY: 0 });
   const [themeApplied, setThemeApplied] = useState("");
   const [providerStatus, setProviderStatus] = useState<SBuildProviderStatus[]>([]);
-  const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "", chatApiKey: "" });
+  const [secretInputs, setSecretInputs] = useState({ imageGenApiKey: "", imageAnalyzeApiKey: "", openaiChatApiKey: "", openrouterChatApiKey: "" });
   const [secretStatusMsg, setSecretStatusMsg] = useState("");
   const [resizeStatus, setResizeStatus] = useState("");
   const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>("fields");
@@ -1332,6 +1418,10 @@ export function App() {
   const [lastEngineModel, setLastEngineModel] = useState<string>("");
   const [lastEngineLatencyMs, setLastEngineLatencyMs] = useState<number | null>(null);
   const [lastEngineTimeoutMs, setLastEngineTimeoutMs] = useState<number | null>(null);
+  const [lastEngineProvider, setLastEngineProvider] = useState<string>("");
+  const [lastFallbackUsed, setLastFallbackUsed] = useState<boolean>(false);
+  const [lastFallbackFrom, setLastFallbackFrom] = useState<string>("");
+  const [lastFallbackReason, setLastFallbackReason] = useState<string>("");
   const [chatClearedAt, setChatClearedAt] = useState<number | null>(null);
   const [lastDeterministic, setLastDeterministic] = useState<boolean>(false);
   const [aiProposal, setAiProposal] = useState("");
@@ -1356,10 +1446,14 @@ export function App() {
   const [imageEditSnapshot, setImageEditSnapshot] = useState<{ src: string; label: string; openedAt: number } | null>(null);
   const [imageEditApplied, setImageEditApplied] = useState(false);
   const [imageEditCustomInstruction, setImageEditCustomInstruction] = useState("");
-  const [chatProvider, setChatProvider] = useState("auto");
-  const [chatModel, setChatModel] = useState("");
-  const [chatBaseUrl, setChatBaseUrl] = useState("");
-  const [chatApiKeyInput, setChatApiKeyInput] = useState("");
+  const [chatProviderMode, setChatProviderMode] = useState("auto");
+  const [chatLocalModel, setChatLocalModel] = useState("");
+  const [chatOpenAIModel, setChatOpenAIModel] = useState("gpt-4o-mini");
+  const [chatOpenRouterModel, setChatOpenRouterModel] = useState("openai/gpt-4o-mini");
+  const [chatFallbackEnabled, setChatFallbackEnabled] = useState(true);
+  const [chatFallbackTimeoutSec, setChatFallbackTimeoutSec] = useState(12);
+  const [chatOpenAIKeyInput, setChatOpenAIKeyInput] = useState("");
+  const [chatOpenRouterKeyInput, setChatOpenRouterKeyInput] = useState("");
   const [localModels, setLocalModels] = useState<Array<{ name: string }>>([]);
   const [imageGenStyle, setImageGenStyle] = useState<string>("custom");
   const [imageGenSize, setImageGenSize] = useState<string>("fit-block");
@@ -1397,7 +1491,7 @@ export function App() {
   const [moveTargetFolder, setMoveTargetFolder] = useState("project/images");
   const [selectMode, setSelectMode] = useState(true);
   const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
-  const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Provider") || null;
+  const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Summary") || null;
   const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState("");
   const [lastLoadedAt, setLastLoadedAt] = useState("");
@@ -2293,8 +2387,8 @@ export function App() {
       if (data.ok && data.ollama?.models) {
         const nextModels = normalizeLocalModelOptions(data.ollama.models);
         setLocalModels(nextModels);
-        setChatModel((current) => {
-          if (chatProvider !== "ollama") return current;
+        setChatLocalModel((current) => {
+          if (chatProviderMode !== "local") return current;
           if (current && nextModels.some((model) => model.name === current)) return current;
           if (nextModels.some((model) => model.name === "qwen2.5:1.5b")) return "qwen2.5:1.5b";
           return nextModels[0]?.name || "";
@@ -2309,15 +2403,33 @@ export function App() {
 
   async function loadProviderConfig() {
     try {
-      const data = await fetchJson<{ ok: boolean; provider: string; model: string; baseUrl: string; hasApiKey: boolean; apiKeySource: string; maskedApiKey: string | null }>("/api/ai/providers/config");
+      const data = await fetchJson<{
+        ok: boolean;
+        providerMode: string;
+        localModel: string;
+        openaiModel: string;
+        openrouterModel: string;
+        fallbackEnabled: boolean;
+        fallbackTimeoutSec: number;
+        openaiApiKeySource: string;
+        openrouterApiKeySource: string;
+        openaiMaskedApiKey: string | null;
+        openrouterMaskedApiKey: string | null;
+      }>("/api/ai/providers/config");
       if (data.ok) {
-        setChatProvider(data.provider || "auto");
-        setChatModel(data.model || "");
-        setChatBaseUrl(data.baseUrl || "");
-        setChatApiKeyInput("");
-        if (data.hasApiKey && data.maskedApiKey) {
-          setProviderCheckMessage((prev) => prev || `Chat API key: ${data.maskedApiKey} (${data.apiKeySource})`);
-        }
+        setChatProviderMode(data.providerMode || "auto");
+        setChatLocalModel(data.localModel || "");
+        setChatOpenAIModel(data.openaiModel || "gpt-4o-mini");
+        setChatOpenRouterModel(data.openrouterModel || "openai/gpt-4o-mini");
+        setChatFallbackEnabled(data.fallbackEnabled !== false);
+        setChatFallbackTimeoutSec(Number(data.fallbackTimeoutSec || 12));
+        setChatOpenAIKeyInput("");
+        setChatOpenRouterKeyInput("");
+        const keyNotes = [
+          data.openaiMaskedApiKey ? `OpenAI key: ${data.openaiMaskedApiKey} (${data.openaiApiKeySource})` : "OpenAI key: not configured",
+          data.openrouterMaskedApiKey ? `OpenRouter key: ${data.openrouterMaskedApiKey} (${data.openrouterApiKeySource})` : "OpenRouter key: not configured"
+        ];
+        setProviderCheckMessage((prev) => prev || keyNotes.join(" | "));
       }
     } catch {
       // ignore
@@ -2331,14 +2443,20 @@ export function App() {
       await fetchJson("/api/ai/providers/config", {
         method: "POST",
         body: JSON.stringify({
-          provider: chatProvider,
-          model: chatModel,
-          baseUrl: chatBaseUrl,
-          apiKey: chatApiKeyInput
+          providerMode: chatProviderMode,
+          localModel: chatLocalModel,
+          openaiModel: chatOpenAIModel,
+          openrouterModel: chatOpenRouterModel,
+          fallbackEnabled: chatFallbackEnabled,
+          fallbackTimeoutSec: chatFallbackTimeoutSec,
+          openaiApiKey: chatOpenAIKeyInput,
+          openrouterApiKey: chatOpenRouterKeyInput
         })
       });
       setProviderConfigSaved(true);
       setTimeout(() => setProviderConfigSaved(false), 2000);
+      setChatOpenAIKeyInput("");
+      setChatOpenRouterKeyInput("");
       await discoverLocalModels();
       const refreshedSecrets = await loadSecretsStatus();
       await loadProviders(refreshedSecrets);
@@ -2745,7 +2863,7 @@ export function App() {
     const startedAt = Date.now();
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineContextUsed?: string[]; engineReason?: string; deterministicAnswer?: boolean }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineContextUsed?: string[]; engineReason?: string; deterministicAnswer?: boolean; fallbackUsed?: boolean; fallbackFrom?: string | null; fallbackReason?: string | null }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2780,7 +2898,10 @@ export function App() {
           engineReason: data.engineReason,
           deterministicAnswer: data.deterministicAnswer,
           latencyMs: data.latencyMs ?? (Date.now() - startedAt),
-          retryPrompt: isTimeoutMsg ? prompt : undefined
+          retryPrompt: isTimeoutMsg ? prompt : undefined,
+          fallbackUsed: data.fallbackUsed === true,
+          fallbackFrom: typeof data.fallbackFrom === "string" ? data.fallbackFrom : null,
+          fallbackReason: typeof data.fallbackReason === "string" ? data.fallbackReason : null
         });
         setLastEngine(data.engine || "");
         setLastEngineMode(data.mode || "");
@@ -2788,21 +2909,27 @@ export function App() {
         setLastEngineModel(data.engineModel || data.model || "");
         setLastEngineLatencyMs(typeof data.engineLatencyMs === "number" ? data.engineLatencyMs : (data.latencyMs ?? Date.now() - startedAt));
         setLastEngineTimeoutMs(typeof data.engineTimeoutMs === "number" ? data.engineTimeoutMs : null);
+        setLastEngineProvider(data.provider || "");
+        setLastFallbackUsed(data.fallbackUsed === true);
+        setLastFallbackFrom(typeof data.fallbackFrom === "string" ? data.fallbackFrom : "");
+        setLastFallbackReason(typeof data.fallbackReason === "string" ? data.fallbackReason : "");
         setLastDeterministic(data.deterministicAnswer === true);
-        // Honest status line: which engine actually answered.
-        if (data.engine === "sbuild-brain" && data.mode === "deterministic") {
-          setProviderCheckMessage(`Answered by sBuild Brain context — ${data.engineReason || "deterministic site/app fact"} (${data.engineLatencyMs ?? 0}ms)`);
-        } else if (data.engine === "local-ollama" && data.mode === "llm") {
-          setProviderCheckMessage(`Answered by local Ollama ${data.engineModel || data.model || "model"} (${(data.engineLatencyMs ?? 0)}ms)`);
-        } else if (data.engine === "openai-api" && data.mode === "llm") {
-          setProviderCheckMessage(`Answered by API model ${data.engineModel || data.model || ""} (${(data.engineLatencyMs ?? 0)}ms)`);
-        } else if (data.mode === "error" && data.engineReason === "llm-timeout") {
-          setProviderCheckMessage(`Local model timed out after ${(data.engineTimeoutMs ?? 22000) / 1000}s. Click Retry to try again.`);
-        } else if (data.mode === "error") {
-          setProviderCheckMessage("Local model error. Click Retry or check Settings for an API fallback.");
-        } else {
-          setProviderCheckMessage(`Engine: ${data.engine || "unknown"} · mode: ${data.mode || "unknown"}`);
-        }
+        setProviderCheckMessage(formatChatEngineStatus({
+          engine: data.engine,
+          mode: data.mode,
+          provider: data.provider,
+          model: data.engineModel || data.model,
+          latencyMs: data.engineLatencyMs ?? data.latencyMs ?? (Date.now() - startedAt),
+          timeoutMs: data.engineTimeoutMs,
+          reason: data.mode === "error" && data.engineReason === "llm-timeout"
+            ? "llm-timeout"
+            : data.mode === "error"
+              ? (data.message || data.engineReason || "provider-error")
+              : data.engineReason,
+          fallbackUsed: data.fallbackUsed === true,
+          fallbackFrom: typeof data.fallbackFrom === "string" ? data.fallbackFrom : null,
+          fallbackReason: typeof data.fallbackReason === "string" ? data.fallbackReason : null
+        }));
       } else {
         const rawMsg = data.error || "Provider not configured.";
         const msg = data.source === "missing"
@@ -2818,7 +2945,10 @@ export function App() {
           model: data.model,
           source: data.source,
           latencyMs: data.latencyMs ?? (Date.now() - startedAt),
-          retryPrompt: prompt
+          retryPrompt: prompt,
+          fallbackUsed: data.fallbackUsed === true,
+          fallbackFrom: typeof data.fallbackFrom === "string" ? data.fallbackFrom : null,
+          fallbackReason: typeof data.fallbackReason === "string" ? data.fallbackReason : null
         });
         if (data.message) setProviderCheckMessage(data.message);
       }
@@ -2908,6 +3038,8 @@ export function App() {
     setChatInput("");
     setChatClearedAt(Date.now());
     setAiUndoSnapshot(null);
+    setAiHistoryView(false);
+    setProviderCheckMessage("Visible chat cleared. Saved history stays hidden until you explicitly restore it.");
   }
 
   async function loadChatHistory() {
@@ -3611,11 +3743,11 @@ export function App() {
     setChatInput("");
     const startedAt = Date.now();
     try {
-      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineReason?: string; deterministicAnswer?: boolean }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })), projectContext: project, selectedBlockId: selectedBlockId || undefined, selectedPageId: selectedPageId || undefined }) });
+      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineReason?: string; deterministicAnswer?: boolean; fallbackUsed?: boolean; fallbackFrom?: string | null; fallbackReason?: string | null }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })), projectContext: project, selectedBlockId: selectedBlockId || undefined, selectedPageId: selectedPageId || undefined }) });
       const isTimeoutMsg = typeof data.response === "string" && /timed out/i.test(data.response);
-      const engine = data.engine || (data.provider === "ollama"
+      const engine = data.engine || (data.provider === "local"
         ? "local-ollama"
-        : data.provider === "openai" || data.provider === "openai-compatible" || data.provider === "openrouter"
+        : data.provider === "openai" || data.provider === "openrouter"
           ? "openai-api"
           : "unavailable");
       const mode = data.mode || (isTimeoutMsg ? "error" : "llm");
@@ -3630,7 +3762,10 @@ export function App() {
         mode,
         engineModel: data.engineModel || data.model,
         engineReason: data.engineReason || (isTimeoutMsg ? "llm-timeout" : "llm-ok"),
-        latencyMs: latency
+        latencyMs: latency,
+        fallbackUsed: data.fallbackUsed === true,
+        fallbackFrom: typeof data.fallbackFrom === "string" ? data.fallbackFrom : null,
+        fallbackReason: typeof data.fallbackReason === "string" ? data.fallbackReason : null
       });
       setLastEngine(engine);
       setLastEngineMode(mode);
@@ -3638,18 +3773,27 @@ export function App() {
       setLastEngineModel(data.engineModel || data.model || "");
       setLastEngineLatencyMs(latency);
       setLastEngineTimeoutMs(data.engineTimeoutMs ?? null);
+      setLastEngineProvider(data.provider || "");
+      setLastFallbackUsed(data.fallbackUsed === true);
+      setLastFallbackFrom(typeof data.fallbackFrom === "string" ? data.fallbackFrom : "");
+      setLastFallbackReason(typeof data.fallbackReason === "string" ? data.fallbackReason : "");
       setLastDeterministic(data.deterministicAnswer === true);
-      if (engine === "sbuild-brain" && mode === "deterministic") {
-        setProviderCheckMessage(`Answered by sBuild Brain context — ${data.engineReason || "site/app fact"} (${latency}ms)`);
-      } else if (engine === "local-ollama" && data.model && !isTimeoutMsg) {
-        setProviderCheckMessage(`Answered by local Ollama ${data.model} (${latency}ms)`);
-      } else if (engine === "openai-api" && data.model && !isTimeoutMsg) {
-        setProviderCheckMessage(`Answered by API model ${data.model} (${latency}ms)`);
-      } else if (isTimeoutMsg) {
-        setProviderCheckMessage(`Local model timed out after ${((data.engineTimeoutMs ?? 22000) / 1000).toFixed(0)}s. Click Retry to try again.`);
-      } else if (data.message) {
-        setProviderCheckMessage(data.message);
-      }
+      setProviderCheckMessage(formatChatEngineStatus({
+        engine,
+        mode,
+        provider: data.provider,
+        model: data.engineModel || data.model,
+        latencyMs: latency,
+        timeoutMs: data.engineTimeoutMs,
+        reason: mode === "error" && isTimeoutMsg
+          ? "llm-timeout"
+          : mode === "error"
+            ? (data.message || data.engineReason || "provider-error")
+            : data.engineReason,
+        fallbackUsed: data.fallbackUsed === true,
+        fallbackFrom: typeof data.fallbackFrom === "string" ? data.fallbackFrom : null,
+        fallbackReason: typeof data.fallbackReason === "string" ? data.fallbackReason : null
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushChatMessage({ role: "assistant", text: `AI chat unavailable: ${message}`, latencyMs: Date.now() - startedAt });
@@ -4341,12 +4485,13 @@ export function App() {
         body: JSON.stringify({
           imageGenApiKey: secretInputs.imageGenApiKey,
           imageAnalyzeApiKey: secretInputs.imageAnalyzeApiKey,
-          chatApiKey: secretInputs.chatApiKey
+          openaiChatApiKey: secretInputs.openaiChatApiKey,
+          openrouterChatApiKey: secretInputs.openrouterChatApiKey
         })
       });
       setSecretStatusMsg("Keys saved locally.");
       setStatus("Secret key saved");
-      setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "", chatApiKey: "" });
+      setSecretInputs({ imageGenApiKey: "", imageAnalyzeApiKey: "", openaiChatApiKey: "", openrouterChatApiKey: "" });
       const refreshedSecrets = await loadSecretsStatus();
       await loadProviders(refreshedSecrets);
       if (refreshedSecrets.imageGen.configured) {
@@ -4360,10 +4505,17 @@ export function App() {
   async function testProvider(provider: string) {
     setSecretStatusMsg(`Testing ${provider}...`);
     try {
-      const data = await fetchJson<{ ok: boolean; status: string; message: string }>("/api/ai/providers/test", { method: "POST", body: JSON.stringify({ provider }) });
-      setSecretStatusMsg(`${provider}: ${data.status} — ${data.message}`);
-      setProviderCheckMessage(`Provider status checked: ${provider} (${data.status})`);
-      setStatus(`Provider status checked: ${provider} (${data.status})`);
+      const data = await fetchJson<{ ok: boolean; status: string; message: string; provider?: string; model?: string; latencyMs?: number; errorCategory?: string }>("/api/ai/providers/test", { method: "POST", body: JSON.stringify({ provider }) });
+      const label = formatProviderDisplayName(data.provider || provider);
+      const suffix = data.model ? ` · ${data.model}` : "";
+      const latency = typeof data.latencyMs === "number" ? ` · ${data.latencyMs}ms` : "";
+      const category = data.errorCategory ? ` · ${data.errorCategory}` : "";
+      const message = `${label}: ${data.status}${suffix}${latency}${category} — ${data.message}`;
+      setSecretStatusMsg(message);
+      setProviderCheckMessage(message);
+      setStatus(`Provider status checked: ${label} (${data.status})`);
+      const refreshedSecrets = await loadSecretsStatus();
+      await loadProviders(refreshedSecrets);
     } catch (error) {
       setSecretStatusMsg(`Test failed: ${String(error)}`);
     }
@@ -5748,15 +5900,19 @@ export function App() {
                 <label>Image Analysis API Key
                   <input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder="sk-..." />
                 </label>
-                <label>AI Chat API Key
-                  <input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder="sk-..." />
+                <label>OpenAI Chat API Key
+                  <input type="password" value={secretInputs.openaiChatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, openaiChatApiKey: e.target.value }))} placeholder={secretStatus.chatOpenAI.maskedKey || "sk-..."} />
+                </label>
+                <label>OpenRouter Chat API Key
+                  <input type="password" value={secretInputs.openrouterChatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, openrouterChatApiKey: e.target.value }))} placeholder={secretStatus.chatOpenRouter.maskedKey || "sk-or-..."} />
                 </label>
                 <div className="button-row">
                   <button onClick={() => void saveSecrets()}>Save Keys Locally</button>
                   <button onClick={() => void testProvider("image-gen")}>Test Image Gen</button>
                   <button onClick={() => void testProvider("opencode")}>Test OpenCode</button>
                 </div>
-                <p className="panel-status">Chat source: {secretStatus.chat.source} · {secretStatus.chat.statusText} · Chat key: {secretStatus.chat.maskedKey || "not saved"}</p>
+                <p className="panel-status">OpenAI chat source: {secretStatus.chatOpenAI.source} · {secretStatus.chatOpenAI.statusText} · Key: {secretStatus.chatOpenAI.maskedKey || "not saved"}</p>
+                <p className="panel-status">OpenRouter chat source: {secretStatus.chatOpenRouter.source} · {secretStatus.chatOpenRouter.statusText} · Key: {secretStatus.chatOpenRouter.maskedKey || "not saved"}</p>
                 <p className="panel-status">Image gen source: {secretStatus.imageGen.source} · {secretStatus.imageGen.statusText} · Key: {secretStatus.imageGen.maskedKey || "not saved"}</p>
                 <p className="panel-status">Image analyze source: {secretStatus.imageAnalyze.source} · {secretStatus.imageAnalyze.statusText} · Key: {secretStatus.imageAnalyze.maskedKey || "not saved"}</p>
                 {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
@@ -6125,17 +6281,18 @@ export function App() {
                     </div>
                     <div className="ai-chat-scope-status" data-testid="ai-chat-engine-status">
                       {lastEngine
-                        ? lastEngine === "sbuild-brain" && lastEngineMode === "deterministic"
-                          ? `Answered by sBuild Brain context · ${lastEngineLatencyMs ?? 0}ms (${lastEngineReason || "deterministic"})`
-                          : lastEngine === "local-ollama" && lastEngineMode === "llm"
-                            ? `Answered by local Ollama ${lastEngineModel || "model"} · ${lastEngineLatencyMs ?? "?"}ms`
-                            : lastEngine === "openai-api" && lastEngineMode === "llm"
-                              ? `Answered by API model ${lastEngineModel || ""} · ${lastEngineLatencyMs ?? "?"}ms`
-                              : lastEngine === "unavailable" || lastEngineMode === "error"
-                                ? lastEngineReason === "llm-timeout"
-                                  ? `Local model ${lastEngineModel || ""} timed out after ${((lastEngineTimeoutMs ?? 22000) / 1000).toFixed(0)}s`
-                                  : "No engine available"
-                                : `Last answer: ${lastEngine} (${lastEngineMode || "?"})`
+                        ? formatChatEngineStatus({
+                            engine: lastEngine,
+                            mode: lastEngineMode,
+                            provider: lastEngineProvider,
+                            model: lastEngineModel,
+                            latencyMs: lastEngineLatencyMs,
+                            timeoutMs: lastEngineTimeoutMs,
+                            reason: lastEngineReason,
+                            fallbackUsed: lastFallbackUsed,
+                            fallbackFrom: lastFallbackFrom,
+                            fallbackReason: lastFallbackReason
+                          })
                         : aiChatTarget === "block"
                           ? "Default: focus on selected block, full site context in LLM prompt"
                           : aiChatTarget === "page"
@@ -6938,52 +7095,77 @@ export function App() {
               <hr style={{ margin: "16px 0" }} />
               <p className="hint"><strong>B) AI Chat Provider Configuration</strong></p>
               <p className="hint">Configure how AI Chat connects. Settings are saved locally and never stored in project.json.</p>
+              <p className="hint">Model benchmarking and replacing the local tiny model are later tasks. This screen is for honest routing and fallback only.</p>
               <label style={{ display: "block", marginBottom: 8 }}>
-                Provider
-                <select value={chatProvider} onChange={(e) => setChatProvider(e.target.value)} style={{ marginLeft: 8 }}>
-                  <option value="auto">Auto (try local Ollama first, then API key)</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="ollama">Ollama / Local</option>
+                Chat provider mode
+                <select value={chatProviderMode} onChange={(e) => setChatProviderMode(e.target.value)} style={{ marginLeft: 8 }}>
+                  <option value="auto">Auto</option>
+                  <option value="local">Local Ollama</option>
                   <option value="openai">OpenAI</option>
                   <option value="openrouter">OpenRouter</option>
-                  <option value="openai-compatible">OpenAI-Compatible Endpoint</option>
                 </select>
               </label>
-              {chatProvider === "ollama" && localModels.length > 0 && (
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Local Model
-                  <select value={chatModel} onChange={(e) => setChatModel(e.target.value)} style={{ marginLeft: 8 }}>
-                    <option value="">Auto (use first available)</option>
-                    {localModels.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
-                  </select>
-                </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                Local model
+                <select value={chatLocalModel} onChange={(e) => setChatLocalModel(e.target.value)} style={{ marginLeft: 8 }}>
+                  <option value="">Auto (prefer qwen2.5:1.5b)</option>
+                  {localModels.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+                </select>
+              </label>
+              {localModels.length === 0 && (
+                <p className="hint" style={{ color: "#c0392b" }}>No Ollama models detected. Local mode is available only if Ollama is reachable and a model is installed.</p>
               )}
-              {chatProvider === "ollama" && localModels.length === 0 && (
-                <p className="hint" style={{ color: "#c0392b" }}>No Ollama models detected. Install Ollama and run `ollama pull` to use local models.</p>
-              )}
-              {(chatProvider === "openai" || chatProvider === "openrouter" || chatProvider === "openai-compatible") && (
-                <>
-                  <label style={{ display: "block", marginBottom: 8 }}>
-                    Model
-                    <input type="text" value={chatModel} onChange={(e) => setChatModel(e.target.value)} placeholder={chatProvider === "openai" ? "gpt-4o-mini" : "e.g. anthropic/claude-3-haiku"} style={{ marginLeft: 8, flex: 1 }} />
-                  </label>
-                  <label style={{ display: "block", marginBottom: 8 }}>
-                    Base URL
-                    <input type="text" value={chatBaseUrl} onChange={(e) => setChatBaseUrl(e.target.value)} placeholder={chatProvider === "openrouter" ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1"} style={{ marginLeft: 8, flex: 1 }} />
-                  </label>
-                </>
-              )}
-              {(chatProvider !== "ollama" && chatProvider !== "disabled") && (
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  API Key {chatApiKeyInput ? "(entered)" : "(leave blank to keep saved)"}
-                  <input type="password" value={chatApiKeyInput} onChange={(e) => setChatApiKeyInput(e.target.value)} placeholder={chatApiKeyInput ? "••••••••" : "sk-..."} style={{ marginLeft: 8, flex: 1 }} />
-                </label>
-              )}
+              <label style={{ display: "block", marginBottom: 8 }}>
+                OpenAI model
+                <input type="text" value={chatOpenAIModel} onChange={(e) => setChatOpenAIModel(e.target.value)} placeholder="gpt-4o-mini" style={{ marginLeft: 8, flex: 1 }} />
+              </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                OpenRouter model
+                <input type="text" value={chatOpenRouterModel} onChange={(e) => setChatOpenRouterModel(e.target.value)} placeholder="openai/gpt-4o-mini" style={{ marginLeft: 8, flex: 1 }} />
+              </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                <input type="checkbox" checked={chatFallbackEnabled} onChange={(e) => setChatFallbackEnabled(e.target.checked)} style={{ marginRight: 8 }} />
+                Local-to-API fallback enabled
+              </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                Fallback timeout (seconds)
+                <input type="number" min={3} max={60} value={chatFallbackTimeoutSec} onChange={(e) => setChatFallbackTimeoutSec(Number(e.target.value || 12))} style={{ marginLeft: 8, width: 96 }} />
+              </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                OpenAI key {chatOpenAIKeyInput ? "(entered)" : "(leave blank to keep saved)"}
+                <input type="password" value={chatOpenAIKeyInput} onChange={(e) => setChatOpenAIKeyInput(e.target.value)} placeholder={chatOpenAIKeyInput ? "••••••••" : "sk-..."} style={{ marginLeft: 8, flex: 1 }} />
+              </label>
+              <label style={{ display: "block", marginBottom: 8 }}>
+                OpenRouter key {chatOpenRouterKeyInput ? "(entered)" : "(leave blank to keep saved)"}
+                <input type="password" value={chatOpenRouterKeyInput} onChange={(e) => setChatOpenRouterKeyInput(e.target.value)} placeholder={chatOpenRouterKeyInput ? "••••••••" : "sk-or-..."} style={{ marginLeft: 8, flex: 1 }} />
+              </label>
               <div className="button-row">
-                <button onClick={() => void saveProviderConfig()}>{providerConfigSaved ? "Saved!" : "Save Provider Config"}</button>
+                <button onClick={() => void saveProviderConfig()}>{providerConfigSaved ? "Saved!" : "Save Chat Provider Settings"}</button>
+                <button onClick={() => {
+                  setChatProviderMode("auto");
+                  setChatLocalModel("qwen2.5:1.5b");
+                  setChatOpenAIModel("gpt-4o-mini");
+                  setChatOpenRouterModel("openai/gpt-4o-mini");
+                  setChatFallbackEnabled(true);
+                  setChatFallbackTimeoutSec(12);
+                  setChatOpenAIKeyInput("");
+                  setChatOpenRouterKeyInput("");
+                  setProviderCheckMessage("Chat provider settings reset locally. Click Save Chat Provider Settings to persist.");
+                }}>Clear/Reset Chat Provider Settings</button>
                 <button onClick={() => void discoverLocalModels()}>Refresh Local Models</button>
-                <button onClick={() => void testProvider("chat")}>Test Chat Model</button>
               </div>
+              <div className="button-row">
+                <button onClick={() => void testProvider("local")}>Test Local Chat</button>
+                <button onClick={() => void testProvider("openai")}>Test OpenAI Chat</button>
+                <button onClick={() => void testProvider("openrouter")}>Test OpenRouter Chat</button>
+              </div>
+              {providerStatus.filter((p) => p.name === "Local Ollama" || p.name === "OpenAI" || p.name === "OpenRouter").map((p) => (
+                <div key={`chat-${p.name}`} className={`provider-card provider-${p.status}`}>
+                  <strong>{p.name}</strong>
+                  <span className="provider-badge">{p.status}</span>
+                  <p>{p.message}</p>
+                </div>
+              ))}
               {chatProviderStatus && <p className="panel-status">{chatProviderStatus.message}</p>}
               <hr style={{ margin: "16px 0" }} />
               <p className="hint"><strong>C) API-key providers</strong> use local secret fields in Image/API Keys.</p>
@@ -6994,9 +7176,11 @@ export function App() {
               <p className="hint">Keys are saved in local ignored secret config, never project.json. They persist across hard refresh and service restarts.</p>
               <label>Image Generation API Key<input type="password" value={secretInputs.imageGenApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageGenApiKey: e.target.value }))} placeholder={secretStatus.imageGen.maskedKey || "sk-..."} /></label>
               <label>Image Analyze API Key<input type="password" value={secretInputs.imageAnalyzeApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, imageAnalyzeApiKey: e.target.value }))} placeholder={secretStatus.imageAnalyze.maskedKey || "sk-..."} /></label>
-              <label>AI Chat API Key<input type="password" value={secretInputs.chatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, chatApiKey: e.target.value }))} placeholder={secretStatus.chat.maskedKey || "sk-..."} /></label>
+              <label>OpenAI Chat API Key<input type="password" value={secretInputs.openaiChatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, openaiChatApiKey: e.target.value }))} placeholder={secretStatus.chatOpenAI.maskedKey || "sk-..."} /></label>
+              <label>OpenRouter Chat API Key<input type="password" value={secretInputs.openrouterChatApiKey} onChange={(e) => setSecretInputs((s) => ({ ...s, openrouterChatApiKey: e.target.value }))} placeholder={secretStatus.chatOpenRouter.maskedKey || "sk-or-..."} /></label>
               <div className="button-row"><button onClick={() => void saveSecrets()}>Save Keys</button><button onClick={() => void testProvider("image-gen")}>Test Keys</button></div>
-              <p className="panel-status">Chat source: {secretStatus.chat.source} · {secretStatus.chat.statusText} · Chat key: {secretStatus.chat.maskedKey || "not saved"}</p>
+              <p className="panel-status">OpenAI chat source: {secretStatus.chatOpenAI.source} · {secretStatus.chatOpenAI.statusText} · Key: {secretStatus.chatOpenAI.maskedKey || "not saved"}</p>
+              <p className="panel-status">OpenRouter chat source: {secretStatus.chatOpenRouter.source} · {secretStatus.chatOpenRouter.statusText} · Key: {secretStatus.chatOpenRouter.maskedKey || "not saved"}</p>
               <p className="panel-status">Image gen source: {secretStatus.imageGen.source} · {secretStatus.imageGen.statusText} · Key: {secretStatus.imageGen.maskedKey || "not saved"}</p>
               <p className="panel-status">Image analyze source: {secretStatus.imageAnalyze.source} · {secretStatus.imageAnalyze.statusText} · Key: {secretStatus.imageAnalyze.maskedKey || "not saved"}</p>
               {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}

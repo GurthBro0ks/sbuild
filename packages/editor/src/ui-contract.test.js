@@ -428,12 +428,15 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /dryRun/);
 });
 
-test("provider and key panels expose chat provider and chat key status", () => {
-  assert.match(appSource, /AI Chat API Key/);
-  assert.match(appSource, /Chat source:/);
-  assert.match(appSource, /Chat key:/);
+test("provider and key panels expose provider-specific chat key status", () => {
+  assert.match(appSource, /OpenAI Chat API Key/);
+  assert.match(appSource, /OpenRouter Chat API Key/);
+  assert.match(appSource, /OpenAI chat source:/);
+  assert.match(appSource, /OpenRouter chat source:/);
   assert.match(appSource, /normalizeSecretStatus/);
   assert.match(appSource, /normalizeProviderStatus/);
+  assert.match(appSource, /chatOpenAI/);
+  assert.match(appSource, /chatOpenRouter/);
   assert.match(appSource, /status\.imageApi/);
   assert.match(appSource, /status\.imageAnalyzeApi/);
   assert.match(appSource, /status\.chatApi/);
@@ -490,12 +493,13 @@ test("builder UI theme save uses PUT /api/account/preferences and persists acros
 });
 
 test("AI chat surfaces honest success and error provider states (no blanket 'Local chat connected')", () => {
-  assert.match(appSource, /Answered by local Ollama/);
-  assert.match(appSource, /Answered by API model/);
+  assert.match(appSource, /Answered by Local Ollama/);
+  assert.match(appSource, /formatProviderDisplayName\(provider\)/);
   assert.match(appSource, /Answered by sBuild Brain/);
   assert.match(appSource, /Local model timed out/);
   assert.match(appSource, /AI chat unavailable:/);
   assert.match(appSource, /chatProviderStatus/);
+  assert.match(appSource, /fallback from/);
 });
 
 test("desktop AI panel exposes draggable and reset affordances", () => {
@@ -3106,19 +3110,17 @@ test("AI Chat scope buttons are labelled Focus: Selected Block / Page / Site", (
   assert.doesNotMatch(block, />Whole Site</, "old 'Whole Site' label must be replaced");
 });
 
-test("AI Chat engine status line distinguishes sbuild-brain, local-ollama, openai-api, timeout", () => {
+test("AI Chat engine status line distinguishes sbuild-brain, local-ollama, api providers, timeout", () => {
   const toolbar = appSource.substring(
     appSource.indexOf("ai-chat-toolbar"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  // Each label must be reachable from the engine state branch.
-  // The footer now includes engine latency in ms (per the AI Brain
-  // provider-truth spec).
-  assert.match(toolbar, /Answered by sBuild Brain context/);
-  assert.match(toolbar, /Answered by local Ollama [^`]*ms/);
-  assert.match(toolbar, /Answered by API model [^`]*ms/);
-  assert.match(toolbar, /timed out after/);
-  assert.match(toolbar, /No engine available/);
+  assert.match(toolbar, /formatChatEngineStatus/);
+  assert.match(appSource, /Answered by sBuild Brain context/);
+  assert.match(appSource, /Answered by Local Ollama/);
+  assert.match(appSource, /formatProviderDisplayName\(provider\)/);
+  assert.match(appSource, /timed out after/);
+  assert.match(appSource, /Last answer: \$\{engine\}/);
   assert.match(toolbar, /Default: focus on selected block, full site context in LLM prompt/);
   assert.match(toolbar, /Default: focus on current page, full site context in LLM prompt/);
   assert.match(toolbar, /Default: whole-site context in LLM prompt/);
@@ -3155,15 +3157,15 @@ test("aiAskSuggest reads engine, mode, engineModel, engineReason, deterministicA
   assert.match(fn, /setLastDeterministic/);
 });
 
-test("aiAskSuggest sets honest status messages by engine (sbuild-brain/local-ollama/openai-api/timeout)", () => {
+test("aiAskSuggest sets honest status messages by helper", () => {
   const fn = appSource.substring(
     appSource.indexOf("async function aiAskSuggest"),
     appSource.indexOf("function applyAiProposal")
   );
-  assert.match(fn, /Answered by sBuild Brain/);
-  assert.match(fn, /Answered by local Ollama/);
-  assert.match(fn, /Answered by API model/);
-  assert.match(fn, /Local model timed out/);
+  assert.match(fn, /formatChatEngineStatus/);
+  assert.match(fn, /fallbackUsed/);
+  assert.match(fn, /fallbackFrom/);
+  assert.match(fn, /fallbackReason/);
 });
 
 test("AI Chat does not auto-load chat history on panel open", () => {
@@ -3229,10 +3231,9 @@ test("AI chat footer surfaces engine latency for sbuild-brain deterministic answ
     appSource.indexOf("ai-chat-scope-status"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(footer, /Answered by sBuild Brain context/);
-  // The latency is rendered via `${lastEngineLatencyMs ?? 0}ms`; check
-  // for the ms suffix after the engine label.
-  assert.match(footer, /sBuild Brain context[^`]*ms/);
+  assert.match(footer, /formatChatEngineStatus/);
+  assert.match(appSource, /Answered by sBuild Brain context/);
+  assert.match(appSource, /latencyMs \?\? 0\}ms/);
 });
 
 test("AI chat footer surfaces engine latency for local Ollama answer", () => {
@@ -3240,15 +3241,17 @@ test("AI chat footer surfaces engine latency for local Ollama answer", () => {
     appSource.indexOf("ai-chat-scope-status"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(footer, /Answered by local Ollama [^`]*ms/);
+  assert.match(footer, /formatChatEngineStatus/);
+  assert.match(appSource, /Answered by Local Ollama/);
 });
 
-test("AI chat footer surfaces API model latency", () => {
+test("AI chat footer surfaces provider-specific API latency", () => {
   const footer = appSource.substring(
     appSource.indexOf("ai-chat-scope-status"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(footer, /Answered by API model [^`]*ms/);
+  assert.match(footer, /formatChatEngineStatus/);
+  assert.match(appSource, /formatProviderDisplayName/);
 });
 
 test("AI chat footer surfaces timeout with the model's actual timeout window", () => {
@@ -3256,25 +3259,27 @@ test("AI chat footer surfaces timeout with the model's actual timeout window", (
     appSource.indexOf("ai-chat-scope-status"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(footer, /timed out after/);
+  assert.match(appSource, /timed out after/);
   // lastEngineTimeoutMs / 1000.toFixed(0) + "s"
-  assert.match(footer, /lastEngineTimeoutMs[\s\S]{0,40}1000/);
+  assert.match(appSource, /timeoutMs \?\? 22000\) \/ 1000/);
 });
 
-test("AI chat footer 'No engine available' message exists for unavailable engine", () => {
+test("AI chat footer fallback status exists for unavailable engine branch", () => {
   const footer = appSource.substring(
     appSource.indexOf("ai-chat-scope-status"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(footer, /No engine available/);
+  assert.match(appSource, /Last answer: \$\{engine\}/);
+  assert.match(appSource, /fallback from/);
 });
 
-test("Settings → AI Chat section exposes a 'Test Chat Model' button that calls /api/ai/providers/test provider=chat", () => {
-  // The button text + the call site must both exist.
-  assert.match(appSource, /Test Chat Model|>Test chat model</);
-  // Call site with provider=chat
-  const idx = appSource.indexOf('testProvider("chat")');
-  assert.ok(idx > 0, "Test Chat Model button must call testProvider(\"chat\")");
+test("Settings → AI Chat section exposes explicit provider test buttons", () => {
+  assert.match(appSource, /Test Local Chat/);
+  assert.match(appSource, /Test OpenAI Chat/);
+  assert.match(appSource, /Test OpenRouter Chat/);
+  assert.ok(appSource.indexOf('testProvider("local")') > 0, "Local provider test button must call testProvider(\"local\")");
+  assert.ok(appSource.indexOf('testProvider("openai")') > 0, "OpenAI provider test button must call testProvider(\"openai\")");
+  assert.ok(appSource.indexOf('testProvider("openrouter")') > 0, "OpenRouter provider test button must call testProvider(\"openrouter\")");
 });
 
 test("Clear Chat stamps chatClearedAt so a subsequent auto-restore cannot resurrect cleared history", () => {

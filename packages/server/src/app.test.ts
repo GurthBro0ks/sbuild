@@ -385,7 +385,7 @@ test("/api/status reports chat API source and model", async () => {
   });
 });
 
-test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
+test("/api/ai/providers/status includes AI chat summary metadata", async () => {
   const response = await fetch(`${baseUrl}/api/ai/providers/status`);
   assert.equal(response.status, 200);
   const body = await response.json() as {
@@ -396,15 +396,15 @@ test("/api/ai/providers/status includes AI Chat Provider entry", async () => {
       imageAnalyze?: { configured?: boolean; source?: string; status?: string };
     };
     providers?: Array<{ name: string; status: string; message?: string }>;
+    chatSettings?: { mode?: string; selectedProvider?: string; selectedModel?: string; summary?: string };
   };
   assert.equal(body.ok, true);
   assert.equal(typeof body.channels?.chat?.configured, "boolean");
   assert.equal(typeof body.channels?.imageGen?.configured, "boolean");
   assert.equal(typeof body.channels?.imageAnalyze?.configured, "boolean");
-  const chatProvider = (body.providers || []).find((provider) => provider.name === "AI Chat Provider");
-  assert.ok(chatProvider);
-  assert.ok(["connected", "not_configured", "unknown", "error"].includes(String(chatProvider?.status || "")));
-  assert.ok(typeof chatProvider?.message === "string");
+  assert.ok(typeof body.chatSettings?.summary === "string" && body.chatSettings.summary.length > 0);
+  assert.ok(["auto", "local", "openai", "openrouter"].includes(String(body.chatSettings?.mode || "")));
+  assert.ok(["local", "openai", "openrouter"].includes(String(body.chatSettings?.selectedProvider || "")));
 });
 
 test("/api/ai/providers/discover prefers qwen2.5:1.5b and only returns installed models", async () => {
@@ -450,18 +450,18 @@ test("/api/ai/providers/config prefers local qwen2.5 without reusing image keys"
         assert.equal(response.status, 200);
         const body = await response.json() as {
           ok: boolean;
-          provider?: string;
-          model?: string;
-          baseUrl?: string;
-          hasApiKey?: boolean;
-          apiKeySource?: string;
+          providerMode?: string;
+          localModel?: string;
+          openaiModel?: string;
+          openrouterModel?: string;
+          openaiApiKeySource?: string;
+          openrouterApiKeySource?: string;
         };
         assert.equal(body.ok, true);
-        assert.equal(body.provider, "ollama");
-        assert.equal(body.model, "qwen2.5:1.5b");
-        assert.equal(body.baseUrl, endpoint);
-        assert.equal(body.hasApiKey, false);
-        assert.equal(body.apiKeySource, "missing");
+        assert.equal(body.providerMode, "local");
+        assert.equal(body.localModel, "qwen2.5:1.5b");
+        assert.equal(body.openaiApiKeySource, "missing");
+        assert.equal(body.openrouterApiKeySource, "missing");
       });
     });
   });
@@ -481,7 +481,7 @@ test("auth: saving chat provider config does not overwrite image channel secrets
         const saveRes = await fetch(`${server.baseUrl}/api/ai/providers/config`, {
           method: "POST",
           headers: { "content-type": "application/json", cookie: `sbuild_session=${adminSession}` },
-          body: JSON.stringify({ provider: "ollama", model: "qwen3:4b", baseUrl: "https://api.openai.com/v1" })
+          body: JSON.stringify({ providerMode: "local", localModel: "qwen3:4b", fallbackEnabled: true, fallbackTimeoutSec: 12 })
         });
         assert.equal(saveRes.status, 200);
 
@@ -491,15 +491,16 @@ test("auth: saving chat provider config does not overwrite image channel secrets
         assert.equal(statusRes.status, 200);
         const body = await statusRes.json() as {
           ok: boolean;
-          chatProvider?: { provider?: string; model?: string; baseUrl?: string };
+          chatProvider?: { providerMode?: string; localModel?: string; fallbackEnabled?: boolean; fallbackTimeoutSec?: number };
           imageGen?: { configured?: boolean; source?: string; maskedKey?: string | null };
           imageAnalyze?: { configured?: boolean; source?: string; maskedKey?: string | null };
           chat?: { configured?: boolean; maskedKey?: string | null };
         };
         assert.equal(body.ok, true);
-        assert.equal(body.chatProvider?.provider, "ollama");
-        assert.equal(body.chatProvider?.model, "qwen3:4b");
-        assert.equal(body.chatProvider?.baseUrl, `http://127.0.0.1:${new URL(process.env.SBUILD_OLLAMA_ENDPOINT || "").port}`);
+        assert.equal(body.chatProvider?.providerMode, "local");
+        assert.equal(body.chatProvider?.localModel, "qwen3:4b");
+        assert.equal(body.chatProvider?.fallbackEnabled, true);
+        assert.equal(body.chatProvider?.fallbackTimeoutSec, 12);
         assert.equal(body.imageGen?.configured, true);
         assert.equal(body.imageGen?.source, "local");
         assert.ok((body.imageGen?.maskedKey || "").length >= 4);
@@ -1191,7 +1192,7 @@ test("POST /api/ai/suggest returns structured response", async () => {
       };
       assert.equal(body.ok, true);
       assert.ok(body.suggestion, "suggestion field exists");
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen3:4b");
       assert.equal(body.source, "local");
       assert.equal(typeof body.latencyMs, "number");
@@ -1345,7 +1346,7 @@ test("POST /api/ai/suggest routes UI state questions to the LLM (no hardcoded an
       assert.equal(body.mode, "llm");
       assert.equal(body.deterministicAnswer, false);
       assert.equal(body.hasProposal, false);
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen2.5:1.5b");
       assert.match(String(body.suggestion || ""), /hero-abc123/);
     });
@@ -1409,7 +1410,7 @@ test("POST /api/ai/chat answers identity questions from runtime metadata", async
       });
       assert.equal(response.status, 200);
       const body = await response.json() as { provider?: string; model?: string; source?: string; response?: string; latencyMs?: number };
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen3:4b");
       assert.equal(body.source, "local");
       assert.match(String(body.response || ""), /local Ollama model:?\s*qwen3:4b/i);
@@ -1428,11 +1429,11 @@ test("POST /api/ai/chat keeps local provider metadata on no-content replies", as
       });
       assert.equal(response.status, 200);
       const body = await response.json() as { provider?: string; model?: string; source?: string; response?: string; message?: string };
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen3:4b");
       assert.equal(body.source, "local");
-      assert.match(String(body.response || ""), /still configured/i);
-      assert.match(String(body.message || ""), /still configured/i);
+      assert.match(String(body.response || ""), /returned no content/i);
+      assert.match(String(body.message || ""), /returned no content/i);
     });
   });
 });
@@ -1456,7 +1457,7 @@ test("POST /api/ai/chat follow-up after identity keeps configured local provider
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "Rewrite this briefly: Fresh catfish available every Friday." })
       }).then((r) => r.json() as Promise<{ provider?: string; model?: string; source?: string; response?: string }>);
-      assert.equal(first.provider, "ollama");
+      assert.equal(first.provider, "local");
       assert.equal(first.model, "qwen3:4b");
       assert.equal(first.source, "local");
       assert.equal(first.response, "normal reply");
@@ -1466,10 +1467,10 @@ test("POST /api/ai/chat follow-up after identity keeps configured local provider
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "Which scope tab is selected?" })
       }).then((r) => r.json() as Promise<{ provider?: string; model?: string; source?: string; response?: string }>);
-      assert.equal(second.provider, "ollama");
+      assert.equal(second.provider, "local");
       assert.equal(second.model, "qwen3:4b");
       assert.equal(second.source, "local");
-      assert.match(String(second.response || ""), /still configured/i);
+      assert.match(String(second.response || ""), /returned no content/i);
       assert.doesNotMatch(String(second.response || ""), /no provider configured/i);
     });
   });
@@ -1548,9 +1549,9 @@ test("POST /api/ai/chat fails safely with malformed provider config", async () =
     assert.equal(response.status, 200);
     const body = await response.json() as { ok: boolean; provider?: string; response?: string; source?: string };
     assert.equal(body.ok, true);
-    assert.equal(body.provider, "none");
-    assert.equal(body.source, "missing");
-    assert.match(String(body.response || ""), /no provider configured/i);
+    assert.equal(body.provider, "local");
+    assert.equal(body.source, "local");
+    assert.ok(String(body.response || "").length > 0);
   });
 });
 
@@ -1617,7 +1618,7 @@ test("POST /api/ai/suggest does not intercept model identity questions as UI sta
       const body = await response.json() as { ok: boolean; suggestion?: string; provider?: string; model?: string };
       assert.equal(body.ok, true);
       assert.match(String(body.suggestion || ""), /local Ollama model:?\s*qwen2\.5:1\.5b/i);
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen2.5:1.5b");
     });
   });
@@ -1715,13 +1716,13 @@ test("stale qwen3:4b old-default config migrates to qwen2.5:1.5b when available"
     }), async () => {
       const response = await fetch(`${baseUrl}/api/ai/providers/config`);
       assert.equal(response.status, 200);
-      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      const body = await response.json() as { ok: boolean; providerMode?: string; localModel?: string };
       assert.equal(body.ok, true);
-      assert.equal(body.provider, "ollama");
-      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.providerMode, "local");
+      assert.equal(body.localModel, "qwen2.5:1.5b");
       const secretsRaw = await fs.readFile(secretsFile, "utf8");
       const secretsParsed = JSON.parse(secretsRaw) as Record<string, unknown>;
-      assert.equal(secretsParsed.chatModel, "qwen2.5:1.5b");
+      assert.equal(secretsParsed.chatLocalModel, "qwen2.5:1.5b");
       assert.equal(secretsParsed._chatModelMigrated, true);
     });
   });
@@ -1743,10 +1744,10 @@ test("explicit qwen3:4b selection preserved when migration flag is already set",
     }), async () => {
       const response = await fetch(`${baseUrl}/api/ai/providers/config`);
       assert.equal(response.status, 200);
-      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      const body = await response.json() as { ok: boolean; providerMode?: string; localModel?: string };
       assert.equal(body.ok, true);
-      assert.equal(body.provider, "ollama");
-      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.providerMode, "local");
+      assert.equal(body.localModel, "qwen3:4b");
     });
   });
 });
@@ -1761,9 +1762,9 @@ test("migration does not run when new default is not available", async () => {
     }), async () => {
       const response = await fetch(`${baseUrl}/api/ai/providers/config`);
       assert.equal(response.status, 200);
-      const body = await response.json() as { ok: boolean; provider?: string; model?: string };
+      const body = await response.json() as { ok: boolean; localModel?: string };
       assert.equal(body.ok, true);
-      assert.equal(body.model, "qwen3:4b");
+      assert.equal(body.localModel, "qwen3:4b");
     });
   });
 });
@@ -1785,16 +1786,18 @@ test("provider status reports active model consistently across endpoints", async
       assert.equal(providersRes.status, 200);
       const providersBody = await providersRes.json() as {
         channels?: { chat?: { model?: string; message?: string } };
-        providers?: Array<{ name: string; message?: string }>;
+        providers?: Array<{ name: string; message?: string; model?: string }>;
       };
       assert.equal(providersBody.channels?.chat?.model, "qwen2.5:1.5b");
-      assert.match(String(providersBody.channels?.chat?.message || ""), /qwen2\.5:1\.5b/);
+      const localCard = providersBody.providers?.find((provider) => provider.name === "Local Ollama");
+      assert.equal(localCard?.model, "qwen2.5:1.5b");
+      assert.match(String(localCard?.message || ""), /qwen2\.5:1\.5b/);
       const statusRes = await fetch(`${baseUrl}/api/status`);
       assert.equal(statusRes.status, 200);
       const statusBody = await statusRes.json() as { status?: { chatModel?: string; chat?: { model?: string; message?: string } } };
       assert.equal(statusBody.status?.chatModel, "qwen2.5:1.5b");
       assert.equal(statusBody.status?.chat?.model, "qwen2.5:1.5b");
-      assert.match(String(statusBody.status?.chat?.message || ""), /qwen2\.5:1\.5b/);
+      assert.match(String(statusBody.status?.chat?.message || ""), /Selected provider: Local Ollama/);
     });
   });
 });
@@ -2730,7 +2733,7 @@ test("masked chat key cannot overwrite saved real chat key", async () => {
     const save1 = await fetch(`${baseUrl}/api/ai/providers/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: realChatKey })
+      body: JSON.stringify({ providerMode: "openai", openaiModel: "gpt-4o-mini", openaiApiKey: realChatKey, fallbackEnabled: true, fallbackTimeoutSec: 12 })
     });
     assert.equal(save1.status, 200);
 
@@ -2738,14 +2741,14 @@ test("masked chat key cannot overwrite saved real chat key", async () => {
     const save2 = await fetch(`${baseUrl}/api/ai/providers/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: masked })
+      body: JSON.stringify({ providerMode: "openai", openaiModel: "gpt-4o-mini", openaiApiKey: masked, fallbackEnabled: true, fallbackTimeoutSec: 12 })
     });
     assert.equal(save2.status, 200);
 
     const configRes = await fetch(`${baseUrl}/api/ai/providers/config`);
-    const config = await configRes.json() as { maskedApiKey?: string | null };
+    const config = await configRes.json() as { openaiMaskedApiKey?: string | null };
     const expectedMask = `${realChatKey.slice(0, 4)}...${realChatKey.slice(-4)}`;
-    assert.equal(config.maskedApiKey, expectedMask, "real chat key must survive masked overwrite attempt");
+    assert.equal(config.openaiMaskedApiKey, expectedMask, "real chat key must survive masked overwrite attempt");
   });
 });
 
@@ -2914,7 +2917,7 @@ test("saving chat provider config does not overwrite image channel secrets", asy
     await fetch(`${baseUrl}/api/ai/providers/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "ollama", model: "qwen2.5:1.5b" })
+      body: JSON.stringify({ providerMode: "local", localModel: "qwen2.5:1.5b", fallbackEnabled: true, fallbackTimeoutSec: 12 })
     });
 
     const status = await fetch(`${baseUrl}/api/secrets/status`);
@@ -3091,20 +3094,20 @@ test("chat provider config masked key attempt cannot overwrite real chat key", a
     await fetch(`${baseUrl}/api/ai/providers/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: realChat })
+      body: JSON.stringify({ providerMode: "openai", openaiModel: "gpt-4o-mini", openaiApiKey: realChat, fallbackEnabled: true, fallbackTimeoutSec: 12 })
     });
 
     const masked = `sk-p...wxyz`;
     const res = await fetch(`${baseUrl}/api/ai/providers/config`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider: "openai", model: "gpt-4o-mini", apiKey: masked })
+      body: JSON.stringify({ providerMode: "openai", openaiModel: "gpt-4o-mini", openaiApiKey: masked, fallbackEnabled: true, fallbackTimeoutSec: 12 })
     });
     assert.equal(res.status, 200);
 
     const configRes = await fetch(`${baseUrl}/api/ai/providers/config`);
-    const config = await configRes.json() as { maskedApiKey?: string | null };
-    assert.equal(config.maskedApiKey, `${realChat.slice(0, 4)}...${realChat.slice(-4)}`);
+    const config = await configRes.json() as { openaiMaskedApiKey?: string | null };
+    assert.equal(config.openaiMaskedApiKey, `${realChat.slice(0, 4)}...${realChat.slice(-4)}`);
   });
 });
 
@@ -3132,17 +3135,15 @@ test("/api/ai/providers/status distinguishes OpenAI API provider from local key 
   );
 });
 
-test("/api/ai/providers/status AI Chat Provider entry shows configured status when Ollama is reachable", async () => {
+test("/api/ai/providers/status Local Ollama entry shows reachable/configured status when Ollama is reachable", async () => {
   const res = await fetch(`${baseUrl}/api/ai/providers/status`);
   const body = await res.json() as {
     providers: Array<{ name: string; status: string; message: string; provider?: string; model?: string; source?: string }>;
   };
-  const chat = body.providers.find((p) => p.name === "AI Chat Provider");
-  assert.ok(chat, "AI Chat Provider entry must exist");
-  assert.equal(chat.provider, "ollama", "AI Chat Provider should report ollama when local chat connected");
-  if (chat.source === "local") {
-    assert.equal(chat.status, "connected", "status should be 'connected' when Ollama is reachable");
-  }
+  const chat = body.providers.find((p) => p.name === "Local Ollama");
+  assert.ok(chat, "Local Ollama entry must exist");
+  assert.equal(chat.provider, "local", "Local Ollama card should report local provider");
+  assert.ok(["configured", "reachable"].includes(String(chat.status)), `unexpected local status ${chat.status}`);
   assert.match(String(chat.model || ""), /qwen|gemma|llama|mistral|phi/, "model name should be present");
 });
 
@@ -4342,7 +4343,7 @@ test("brain: /api/ai/brain answers card titles site-fact question (no needs-llm)
 // /api/ai/providers/test for chat — real inference test
 // =========================================================
 
-test("providers/test chat: qwen2.5:1.5b small inference returns ok=true and state=inference-tested", async () => {
+test("providers/test chat: qwen2.5:1.5b small inference returns ok=true and result=passed", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
     chat: { body: { message: { content: "hi" } } }
@@ -4354,19 +4355,18 @@ test("providers/test chat: qwen2.5:1.5b small inference returns ok=true and stat
         body: JSON.stringify({ provider: "chat" })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; state: string; provider: string; model: string | null; latencyMs: number | null; timedOut: boolean; message: string; testedAt: string };
+      const body = await res.json() as { ok: boolean; result: string; provider: string; model: string | null; latencyMs: number | null; message: string; testedAt: string };
       assert.equal(body.ok, true);
-      assert.equal(body.state, "inference-tested", `expected inference-tested, got ${body.state}`);
-      assert.equal(body.provider, "ollama");
+      assert.equal(body.result, "passed", `expected passed, got ${body.result}`);
+      assert.equal(body.provider, "local");
       assert.equal(body.model, "qwen2.5:1.5b");
-      assert.equal(body.timedOut, false);
       assert.ok(typeof body.latencyMs === "number" && body.latencyMs >= 0);
       assert.match(body.message, /qwen2\.5:1\.5b/);
     });
   });
 });
 
-test("providers/test chat: empty-content ollama does not fake an answer (state=timeout or unavailable, ok=false)", async () => {
+test("providers/test chat: empty-content local provider does not fake an answer (result=failed, ok=false)", async () => {
   // The mock ollama returns 200 with empty content. chatWithProviders
   // cannot mark this as a successful inference, so runChatInferenceTest
   // must NOT claim inference-tested/slow. It must report either timeout
@@ -4386,18 +4386,16 @@ test("providers/test chat: empty-content ollama does not fake an answer (state=t
         body: JSON.stringify({ provider: "chat" })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; state: string; provider: string; model: string | null; latencyMs: number | null; timedOut: boolean; message: string };
+      const body = await res.json() as { ok: boolean; result: string; provider: string; model: string | null; latencyMs: number | null; errorCategory?: string | null; message: string };
       assert.equal(body.ok, false, "empty-content response must NOT be marked ok");
-      assert.ok(
-        ["timeout", "unavailable"].includes(body.state),
-        `state must be timeout or unavailable; got ${body.state}`
-      );
+      assert.equal(body.result, "failed");
+      assert.ok(["timeout", "no-content", "ollama-unreachable", "request-failed", "unknown"].includes(String(body.errorCategory || "")));
       assert.match(body.message, /qwen2\.5:1\.5b|did not|unavailable|returned|timed out/i);
     });
   });
 });
 
-test("providers/test chat: state enum includes all six expected values", async () => {
+test("providers/test chat: result enum stays within documented values", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       // First call seeds lastChatTest with a real value.
@@ -4406,17 +4404,16 @@ test("providers/test chat: state enum includes all six expected values", async (
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ provider: "chat" })
       });
-      const body = await res.json() as { state: string };
-      // The state should be one of the documented six.
+      const body = await res.json() as { result: string };
       assert.ok(
-        ["configured", "reachable", "inference-tested", "slow", "timeout", "unavailable"].includes(body.state),
-        `state ${body.state} not in expected enum`
+        ["passed", "failed", "unconfigured", "untested"].includes(body.result),
+        `result ${body.result} not in expected enum`
       );
     });
   });
 });
 
-test("providers/status: chat provider exposes lastTest with state, latencyMs, model", async () => {
+test("providers/status: Local Ollama card exposes lastTest with result, latencyMs, model", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
     chat: { body: { message: { content: "hi" } } }
@@ -4432,24 +4429,23 @@ test("providers/status: chat provider exposes lastTest with state, latencyMs, mo
       assert.equal(res.status, 200);
       const body = await res.json() as {
         ok: boolean;
-        providers: Array<{ name: string; lastTest?: { state: string; model: string | null; latencyMs: number | null; testedAt: string } }>;
+        providers: Array<{ name: string; lastTest?: { result: string; model: string | null; latencyMs: number | null; testedAt: string } }>;
       };
       assert.ok(body.ok);
-      const chat = body.providers.find((p) => p.name === "AI Chat Provider");
+      const chat = body.providers.find((p) => p.name === "Local Ollama");
       assert.ok(chat);
-      assert.ok(chat!.lastTest, "AI Chat Provider must expose lastTest");
-      assert.equal(chat!.lastTest!.state, "inference-tested");
+      assert.ok(chat!.lastTest, "Local Ollama must expose lastTest");
+      assert.equal(chat!.lastTest!.result, "passed");
       assert.equal(chat!.lastTest!.model, "qwen2.5:1.5b");
       assert.ok(typeof chat!.lastTest!.latencyMs === "number" && chat!.lastTest!.latencyMs >= 0);
     });
   });
 });
 
-test("providers/status: chat provider message reflects last-test state (not a blanket 'connected' claim)", async () => {
+test("providers/status: Local Ollama card message reflects last-test result (not a blanket 'connected' claim)", async () => {
   // The chat provider message must be one of:
-  //   - "Click 'Test chat model' to confirm." (state=not_tested)
-  //   - "Last test: <state> · <latencyMs>ms." (state=inference-tested/slow/timeout/unavailable)
-  //   - "Local chat model configured: <model>. ..." (configured)
+  //   - "Configured model: <model>. Not tested yet."
+  //   - "Configured model: <model>. <test result message>"
   // It must NOT be the old blanket "Local chat connected: <model>" claim
   // that the prior architecture used to display without a real test.
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
@@ -4457,18 +4453,16 @@ test("providers/status: chat provider message reflects last-test state (not a bl
       const res = await fetch(`${baseUrl}/api/ai/providers/status`);
       const body = await res.json() as {
         ok: boolean;
-        providers: Array<{ name: string; message?: string; lastTest?: { state: string; testedAt: string } }>;
+        providers: Array<{ name: string; message?: string; lastTest?: { result: string; testedAt: string } }>;
       };
-      const chat = body.providers.find((p) => p.name === "AI Chat Provider");
+      const chat = body.providers.find((p) => p.name === "Local Ollama");
       assert.ok(chat);
       assert.ok(chat!.message);
       assert.doesNotMatch(chat!.message!, /^Local chat connected:/, "blanket 'Local chat connected' claim is banned");
-      // Message must mention one of the three honest forms.
-      const ok = /Test chat model/.test(chat!.message!) || /Last test:/.test(chat!.message!) || /configured:/.test(chat!.message!);
-      assert.ok(ok, `message must be one of the three honest forms; got: ${chat!.message}`);
-      // lastTest object must be exposed and have a valid state.
+      const ok = /Configured model:/.test(chat!.message!) || /Not tested yet/.test(chat!.message!);
+      assert.ok(ok, `message must stay honest about config/testing; got: ${chat!.message}`);
       assert.ok(chat!.lastTest, "lastTest must be exposed");
-      assert.ok(["not_tested", "configured", "reachable", "inference-tested", "slow", "timeout", "unavailable"].includes(chat!.lastTest!.state));
+      assert.ok(["passed", "failed", "unconfigured", "untested"].includes(chat!.lastTest!.result));
     });
   });
 });

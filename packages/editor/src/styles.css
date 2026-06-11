@@ -1648,9 +1648,11 @@ button:disabled {
   background: #eee;
   margin-left: 4px;
 }
-.provider-connected .provider-badge { background: #d4edda; color: #155724; }
-.provider-not_configured .provider-badge { background: #f8d7da; color: #721c24; }
-.provider-unknown .provider-badge { background: #fff3cd; color: #856404; }
+.provider-configured .provider-badge { background: #d9ecff; color: #0b5394; }
+.provider-unconfigured .provider-badge { background: #f8d7da; color: #721c24; }
+.provider-reachable .provider-badge { background: #d4edda; color: #155724; }
+.provider-unreachable .provider-badge { background: #f8d7da; color: #721c24; }
+.provider-untested .provider-badge { background: #fff3cd; color: #856404; }
 
 .hint {
   font-size: 12px;

@@ -272,18 +272,37 @@ export interface SBuildSiteSettings {
   nav: SBuildNavItem[];
 }
 
-export type AiChatProvider = "disabled" | "openai" | "openrouter" | "ollama" | "openai-compatible";
+export type AiChatProvider = "auto" | "local" | "openai" | "openrouter" | "disabled" | "ollama" | "openai-compatible";
 
 export interface SBuildAISettings {
   provider: AiChatProvider;
   model: string;
   baseUrl?: string;
+  providerMode?: "auto" | "local" | "openai" | "openrouter";
+  localModel?: string;
+  openaiModel?: string;
+  openrouterModel?: string;
+  fallbackEnabled?: boolean;
+  fallbackTimeoutSec?: number;
 }
 
 export interface SBuildProviderStatus {
   name: string;
-  status: "connected" | "not_configured" | "unknown" | "error";
+  status: "configured" | "unconfigured" | "reachable" | "unreachable" | "untested";
   message?: string;
+  provider?: string;
+  model?: string;
+  keySource?: "env" | "local" | "missing";
+  configured?: boolean;
+  reachability?: "reachable" | "unreachable" | "untested";
+  lastTest?: {
+    ok: boolean;
+    result: "passed" | "failed" | "unconfigured" | "untested";
+    testedAt: string;
+    latencyMs: number | null;
+    errorCategory: string | null;
+    message: string;
+  };
 }
 
 export interface SBuildLocalModel {
@@ -312,6 +331,8 @@ export interface SBuildSecretConfig {
   openCodePath?: string;
   openCodeDetected?: boolean;
   chatApiKey?: string;
+  openaiChatApiKey?: string;
+  openrouterChatApiKey?: string;
   chatKeySource?: "env" | "local" | "missing";
   imageGenApiKey?: string;
   imageAnalyzeApiKey?: string;
@@ -320,6 +341,12 @@ export interface SBuildSecretConfig {
   chatProvider?: AiChatProvider;
   chatModel?: string;
   chatBaseUrl?: string;
+  chatProviderMode?: "auto" | "local" | "openai" | "openrouter";
+  chatLocalModel?: string;
+  chatOpenAIModel?: string;
+  chatOpenRouterModel?: string;
+  chatFallbackEnabled?: boolean;
+  chatFallbackTimeoutSec?: number;
 }
 
 export interface SBuildDeploySettings {
