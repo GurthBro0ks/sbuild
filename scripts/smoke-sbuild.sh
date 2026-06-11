@@ -118,6 +118,30 @@ else
 fi
 
 node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.version||typeof p.version!=='string'){throw new Error('version missing from /health')}if(!p.gitCommit||typeof p.gitCommit!=='string'){throw new Error('gitCommit missing from /health')}if(!p.displayVersion||typeof p.displayVersion!=='string'){throw new Error('displayVersion missing from /health')}if(!p.baseVersion||typeof p.baseVersion!=='string'){throw new Error('baseVersion missing from /health')}if(typeof p.commitCount!=='number'){throw new Error('commitCount missing from /health')}if(p.displayVersion===p.baseVersion){throw new Error('displayVersion should include commit identity beyond baseVersion')}console.log('health version check ok')" "$PROOF_DIR/curl-health.json" | tee -a "$PROOF_DIR/smoke.log"
+
+# Browser / server build match check. /health reports the server-side
+# gitCommit (the running node process), and the editor dist JS bundle
+# has the browser-side BUILD_META.gitCommitShort baked in at build
+# time. If the prebuild hook didn't fire (or fired against the wrong
+# HEAD), these two will diverge. The smoke must catch that.
+node -e "
+const fs = require('fs');
+const health = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const editorDir = process.argv[2];
+const indexHtml = fs.readFileSync(editorDir + '/index.html', 'utf8');
+const jsMatch = indexHtml.match(/src=\"([^\"]*index-[A-Za-z0-9_-]+\.js)\"/);
+if (!jsMatch) throw new Error('editor dist index.html has no hashed JS asset');
+const jsAsset = jsMatch[1].replace(/^\//, '');
+const jsText = fs.readFileSync(editorDir + '/' + jsAsset, 'utf8');
+const browserMatch = jsText.match(/gitCommitShort:\"([a-f0-9]+)\"/);
+if (!browserMatch) throw new Error('editor JS bundle does not contain gitCommitShort=\"...\" literal (search: BUILD_META)');
+const serverShort = (health.gitCommit || '').slice(0, browserMatch[1].length);
+if (serverShort !== browserMatch[1]) {
+  throw new Error('browser/server build mismatch: server=' + health.gitCommit + ' (short ' + serverShort + ') vs browser BUILD_META.gitCommitShort=' + browserMatch[1] + ' in ' + jsAsset + '. Restart sbuild.service or rerun pnpm -r build.');
+}
+console.log('browser/server build match check ok (server=' + health.gitCommit + ' browser=' + browserMatch[1] + ' asset=' + jsAsset + ')');
+" "$PROOF_DIR/curl-health.json" "packages/editor/dist" | tee -a "$PROOF_DIR/smoke.log"
+
 if [[ ! -f CHANGELOG.md ]]; then log "FAIL CHANGELOG.md missing"; exit 1; fi
 log "PASS CHANGELOG.md exists"
 

@@ -2953,6 +2953,26 @@ test("build generates build-meta.ts automatically via prebuild hook", () => {
   assert.match(rootPkg, /generate-build-meta\.sh/);
 });
 
+test("shared package has its own prebuild hook (so pnpm -r build regenerates build-meta.ts)", () => {
+  // Regression: prior to this fix, only the root package.json had the
+  // prebuild hook, so `pnpm -r build` (used by smoke / test scripts)
+  // skipped it and built with a stale gitCommitShort. The browser
+  // bundle then baked the wrong commit hash and Settings -> About
+  // reported a "browser/server build mismatch".
+  const sharedPkg = readFileSync(new URL("../../shared/package.json", import.meta.url), "utf8");
+  assert.match(sharedPkg, /"prebuild"\s*:\s*"[^"]*generate-build-meta\.sh/);
+});
+
+test("packages/shared/build is hoisted to the front of pnpm -r build order so its prebuild runs first", () => {
+  // pnpm -r runs workspace scripts in topological dependency order.
+  // shared is depended on by editor and server, so its prebuild runs
+  // first. This is the property that makes the regression fix work
+  // even when the user calls `pnpm -r build` directly.
+  const rootPkg = readFileSync(new URL("../../../package.json", import.meta.url), "utf8");
+  // Root prebuild is still wired (defense in depth for `npm run build`).
+  assert.match(rootPkg, /"prebuild"\s*:\s*"bash scripts\/generate-build-meta\.sh"/);
+});
+
 test("build-meta.ts is gitignored", () => {
   const gitignore = readFileSync(new URL("../../../.gitignore", import.meta.url), "utf8");
   assert.match(gitignore, /build-meta\.ts/);
@@ -3271,4 +3291,54 @@ test("editor state tracks lastEngineLatencyMs and lastEngineTimeoutMs for the fo
   assert.match(appSource, /setLastEngineTimeoutMs/);
   assert.match(appSource, /lastEngineLatencyMs/);
   assert.match(appSource, /lastEngineTimeoutMs/);
+});
+
+// =========================================================
+// Browser / server build match — regression test
+// =========================================================
+
+test("generate-build-meta.sh regenerates build-meta.ts with current HEAD", async () => {
+  // 1. Read current HEAD's short commit.
+  const { execFileSync } = await import("node:child_process");
+  const repoRoot = new URL("../../../", import.meta.url);
+  const headShort = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
+
+  // 2. Stomp build-meta.ts to a known-wrong value.
+  const buildMetaPath = new URL("../../shared/src/build-meta.ts", import.meta.url);
+  const fs = await import("node:fs/promises");
+  const original = await fs.readFile(buildMetaPath, "utf8");
+  const stompRegExp = /gitCommitShort: "[a-f0-9]+"/;
+  const stompValue = 'gitCommitShort: "stale-fake-fake-fake"';
+  const stompRegExpFull = /gitCommitFull: "[a-f0-9]+"/;
+  const stompFullValue = 'gitCommitFull: "stale-fake-fake-fake-stale-fake-fake-fake-stale"';
+  if (!stompRegExp.test(original)) throw new Error("could not stomp gitCommitShort; file format changed");
+  if (!stompRegExpFull.test(original)) throw new Error("could not stomp gitCommitFull; file format changed");
+  const stomped = original
+    .replace(stompRegExp, stompValue)
+    .replace(stompRegExpFull, stompFullValue);
+  await fs.writeFile(buildMetaPath, stomped, "utf8");
+
+  try {
+    // 3. Run the prebuild script (the way pnpm -r build invokes it via
+    //    packages/shared prebuild hook).
+    execFileSync("bash", ["scripts/generate-build-meta.sh"], {
+      cwd: repoRoot,
+      encoding: "utf8"
+    });
+
+    // 4. Read the regenerated file and assert it now matches HEAD.
+    const after = await fs.readFile(buildMetaPath, "utf8");
+    assert.match(after, new RegExp(`gitCommitShort: "${headShort}"`),
+      `regenerated build-meta.ts must contain gitCommitShort="${headShort}" (got: ${after.match(/gitCommitShort:[^\n]+/)?.[0] || "not found"})`);
+    assert.doesNotMatch(after, /stale-fake-fake/,
+      "regenerated build-meta.ts must not retain the stomped value");
+  } finally {
+    // 5. Restore the original (in case the test failed mid-flight).
+    await fs.writeFile(buildMetaPath, original, "utf8");
+    // Re-run prebuild to leave a consistent state.
+    execFileSync("bash", ["scripts/generate-build-meta.sh"], {
+      cwd: repoRoot,
+      encoding: "utf8"
+    });
+  }
 });
