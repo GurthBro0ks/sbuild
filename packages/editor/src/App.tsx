@@ -1305,6 +1305,8 @@ export function App() {
   const [aiPanelDrag, setAiPanelDrag] = useState<AiPanelDragState>(null);
   const [aiPanelResize, setAiPanelResize] = useState<AiPanelResizeState>(null);
   const [aiChatTarget, setAiChatTarget] = useState<AiChatTarget>("block");
+  const [lastBrainSource, setLastBrainSource] = useState<string>("");
+  const [lastBrainScope, setLastBrainScope] = useState<string>("");
   const [aiProposal, setAiProposal] = useState("");
   const [aiStructuredProposal, setAiStructuredProposal] = useState<StructuredSuggestionProposal | null>(null);
   const [aiProposalBlockId, setAiProposalBlockId] = useState("");
@@ -2550,10 +2552,7 @@ export function App() {
   }
 
   function toggleAiTopMenu() {
-    setAiTopMenuOpen((prev) => {
-      if (!prev) void loadChatHistory();
-      return !prev;
-    });
+    setAiTopMenuOpen((prev) => !prev);
   }
 
   function aiChatTargetLabel(): string {
@@ -2719,7 +2718,7 @@ export function App() {
     const startedAt = Date.now();
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null; brainSource?: string; brainScope?: string }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2728,7 +2727,10 @@ export function App() {
           blockType: aiChatTarget === "block" ? (target.blockType || selectedBlock?.type || "") : "",
           chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })),
           pageContent: aiChatTarget !== "block" ? extractPageContent(aiChatTarget === "site" ? "site" : "page") : "",
-          blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined
+          blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined,
+          projectContext: project || undefined,
+          selectedBlockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId || "") : "",
+          selectedPageId: selectedPageId || selectedPage?.id || ""
         })
       });
       if (data.ok && data.suggestion) {
@@ -2748,6 +2750,8 @@ export function App() {
           latencyMs: data.latencyMs ?? (Date.now() - startedAt),
           retryPrompt: isTimeoutMsg ? prompt : undefined
         });
+        setLastBrainSource(data.brainSource || "");
+        setLastBrainScope(data.brainScope || "");
         if (data.provider === "ollama" && data.model) {
           setProviderCheckMessage(`Local chat connected: ${data.model}`);
         } else if (data.message) {
@@ -6043,9 +6047,30 @@ export function App() {
                 {!previewMode && !paintMode && (
                   <div className="ai-chat-toolbar">
                     <div className="ai-chat-target-buttons">
-                      <button onClick={() => setAiChatTarget("block")} className={aiChatTarget === "block" ? "selected" : ""}>Selected Block</button>
-                      <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""}>Current Page</button>
-                      <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""}>Whole Site</button>
+                      <button onClick={() => setAiChatTarget("block")} className={aiChatTarget === "block" ? "selected" : ""} title="Prefer the selected block when the user asks about it">Focus: Selected Block</button>
+                      <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""} title="Prefer the current page">Focus: Page</button>
+                      <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""} title="Whole site context">Focus: Site</button>
+                    </div>
+                    <div className="ai-chat-scope-status">
+                      {lastBrainSource
+                        ? lastBrainSource === "brain-version"
+                          ? "Answering from: Version/Build info"
+                          : lastBrainSource === "brain-ui"
+                            ? "Answering from: Selected block focus"
+                            : lastBrainSource === "brain-block"
+                              ? "Answering from: Selected block focus (deterministic)"
+                              : lastBrainSource === "brain-site"
+                                ? "Answering from: Whole site (deterministic)"
+                                : lastBrainSource === "brain-app"
+                                  ? "Answering from: sBuild app knowledge"
+                                  : lastBrainSource === "brain-route"
+                                    ? "Answering from: Language model (general knowledge)"
+                                    : `Answering from: ${lastBrainSource}`
+                        : aiChatTarget === "block"
+                          ? "Answering from: Selected block + whole-site context"
+                          : aiChatTarget === "page"
+                            ? "Answering from: Current page + whole-site context"
+                            : "Answering from: Whole site context"}
                     </div>
                     {paintAppliedStrokes.length > 0 && (
                       <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length})</button>

@@ -3479,3 +3479,404 @@ test("block scope LLM context uses blockContent not pageContent when pageContent
     assert.ok(body.ok, "must respond ok");
   });
 });
+
+function makeBrainProject(): Record<string, unknown> {
+  return {
+    version: "1",
+    updatedAt: "2026-06-10T00:00:00Z",
+    site: {
+      siteName: "Blackfish Farms",
+      title: "Blackfish Farms",
+      description: "Family farm",
+      domain: "blackfishfarms.com",
+      nav: []
+    },
+    globalStyles: { headingFont: "system", bodyFont: "system", colors: { bg: "#fff", surface: "#fff", text: "#000", accent: "#0a0", muted: "#666" } },
+    ai: { provider: "ollama", model: "qwen2.5:1.5b" },
+    deploy: { method: "dry-run", webRoot: "" },
+    pages: [
+      {
+        id: "page-home",
+        slug: "home",
+        title: "Home",
+        blocks: [
+          { id: "hero-1", type: "hero", data: { heading: "Fresh from the farm", subheading: "Seasonal produce picked daily" } },
+          {
+            id: "cards-1",
+            type: "cards",
+            data: {
+              title: "What We Grow",
+              cards: [
+                { id: "c1", title: "Seasonal Vegetables", body: "Tomatoes, peppers, squash." },
+                { id: "c2", title: "Herbs & Greens", body: "Basil, cilantro, kale." },
+                { id: "c3", title: "Farm Flowers", body: "Cut-flower bouquets." }
+              ]
+            }
+          },
+          {
+            id: "hours-1",
+            type: "hours",
+            data: {
+              title: "Pickup Hours",
+              rows: [
+                { day: "Monday", open: "9:00 AM", close: "5:00 PM" },
+                { day: "Saturday", open: "8:00 AM", close: "2:00 PM", note: "Farmers market" }
+              ]
+            }
+          },
+          { id: "contact-1", type: "contact", data: { phone: "555-0123", email: "hello@blackfish.example", address: "100 Farm Road" } }
+        ]
+      }
+    ]
+  };
+}
+
+test("brain: /api/ai/suggest with projectContext returns card titles from brain without calling Ollama", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the titles and details of each card?",
+          targetKind: "site",
+          projectContext: makeBrainProject(),
+          selectedBlockId: "cards-1"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.source, "brain");
+      assert.equal(body.brainSource, "brain-block");
+      const text = String(body.suggestion || "");
+      assert.match(text, /Seasonal Vegetables/);
+      assert.match(text, /Herbs\s*&\s*Greens/);
+      assert.match(text, /Farm Flowers/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest returns pickup hours from site even when cards block is selected", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the farm pickup hours?",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          projectContext: makeBrainProject(),
+          selectedBlockId: "cards-1"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.source, "brain");
+      assert.equal(body.brainSource, "brain-site");
+      const text = String(body.suggestion || "");
+      assert.match(text, /Monday/);
+      assert.match(text, /Saturday/);
+      assert.match(text, /Farmers market/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers selected-block title/description question from focus", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what is the title and description of this block?",
+          targetKind: "block",
+          blockId: "hero-1",
+          blockType: "hero",
+          projectContext: makeBrainProject(),
+          selectedBlockId: "hero-1"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.brainSource, "brain-block");
+      assert.equal(body.brainScope, "selected-block");
+      const text = String(body.suggestion || "");
+      assert.match(text, /Fresh from the farm/);
+      assert.match(text, /Seasonal produce picked daily/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers version question from build info without Ollama", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what version/build am I running?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.source, "brain");
+      const text = String(body.suggestion || "");
+      assert.match(text, /sBuild/);
+      assert.match(text, /on branch main/);
+      assert.match(text, /Git commit/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest routes general knowledge to LLM when brain has no answer", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "A kernel of corn is typically yellow, though it can be white, red, or blue." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is a kernel of corn?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.source, "local");
+      const text = String(body.suggestion || "");
+      assert.match(text, /yellow|color/i);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest keeps block scope preferring selected block but does not blindfold LLM", async () => {
+  let capturedPrompt = "";
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: {
+      body: { message: { content: "A friendly welcome." } },
+      capture: (body: unknown) => { const b = body as { messages?: Array<{ content?: string }> }; const last = b.messages?.[b.messages.length - 1]; if (last) capturedPrompt = last.content || ""; }
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Write a friendly welcome for the hero.",
+          targetKind: "block",
+          blockId: "hero-1",
+          blockType: "hero",
+          projectContext: makeBrainProject(),
+          selectedBlockId: "hero-1"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean };
+      assert.ok(body.ok);
+      assert.ok(capturedPrompt.length > 0, "LLM should have been called");
+      assert.match(capturedPrompt, /sBuild Brain/i, "Brain context block must be in prompt");
+      assert.match(capturedPrompt, /Blackfish Farms/, "Project name must be in prompt");
+      assert.match(capturedPrompt, /hero/, "Selected block type must be referenced");
+      assert.doesNotMatch(capturedPrompt, /Only answer from the selected block content/, "Block scope must NOT blindfold LLM to only the selected block anymore");
+    });
+  });
+});
+
+test("brain: /api/ai/suggest without projectContext falls through to legacy content-router", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "What are the farm pickup hours?",
+        targetKind: "block",
+        blockId: "hero-1",
+        blockType: "hero",
+        pageContent: "[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; model?: string };
+    assert.ok(body.ok);
+    assert.equal(body.model, "content-router");
+  });
+});
+
+test("brain: /api/ai/suggest on empty prompt returns 400", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "", projectContext: makeBrainProject() })
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { ok: boolean; error?: string };
+    assert.equal(body.ok, false);
+    assert.match(String(body.error || ""), /prompt/i);
+  });
+});
+
+test("brain: /api/ai/brain answers version question", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what version/build am I running?",
+        projectContext: makeBrainProject()
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; kind?: string; source?: string; suggestion?: string; brainLoaded?: boolean };
+    assert.ok(body.ok);
+    assert.equal(body.kind, "answered");
+    assert.equal(body.source, "brain");
+    assert.equal(body.brainLoaded, true);
+    assert.match(String(body.suggestion || ""), /sBuild/);
+  });
+});
+
+test("brain: /api/ai/brain returns card titles and details for selected cards block", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what are the titles and details of each card?",
+        projectContext: makeBrainProject(),
+        selectedBlockId: "cards-1"
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; kind?: string; brainSource?: string; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.kind, "answered");
+    assert.equal(body.brainSource, "brain-block");
+    const text = String(body.suggestion || "");
+    assert.match(text, /Seasonal Vegetables/);
+    assert.match(text, /Farm Flowers/);
+  });
+});
+
+test("brain: /api/ai/brain returns needs-llm for general-knowledge question", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what color is a kernel of corn?",
+        projectContext: makeBrainProject()
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean; brainContext?: string };
+    assert.ok(body.ok);
+    assert.equal(body.kind, "needs-llm");
+    assert.equal(body.brainLoaded, true);
+    assert.ok((body.brainContext || "").includes("sBuild Brain"));
+  });
+});
+
+test("brain: /api/ai/brain answers page list question", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what pages are on this site?",
+        projectContext: makeBrainProject()
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; kind?: string; brainSource?: string; suggestion?: string };
+    assert.ok(body.ok);
+    assert.equal(body.kind, "answered");
+    assert.equal(body.brainSource, "brain-site");
+    assert.match(String(body.suggestion || ""), /Home/);
+  });
+});
+
+test("brain: /api/ai/brain/health returns capability list", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain/health`);
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; brain?: string; capabilities?: string[] };
+    assert.ok(body.ok);
+    assert.equal(body.brain, "sbuild-brain");
+    assert.ok(Array.isArray(body.capabilities));
+    assert.ok((body.capabilities || []).includes("site-pickup-hours"));
+  });
+});
+
+test("brain: /api/ai/brain without projectContext returns no-project guidance", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "what version am I running?" })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean };
+    assert.ok(body.ok);
+    assert.equal(body.kind, "no-project");
+    assert.equal(body.brainLoaded, true);
+  });
+});
+
+test("brain: /api/ai/brain empty prompt returns 400", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/brain`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectContext: makeBrainProject() })
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("brain: /api/ai/suggest persists history for site-scope brain answers", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const projectPath = `/brain-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what pages are on this site?",
+          targetKind: "site",
+          projectPath,
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string };
+      assert.ok(body.ok);
+      assert.equal(body.model, "sbuild-brain");
+      const histRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent(projectPath)}`);
+      const histBody = await histRes.json() as { ok: boolean; messages: Array<{ text: string }> };
+      assert.ok(histBody.ok);
+      assert.ok(histBody.messages.length >= 2, "user+assistant must be persisted");
+      assert.match(histBody.messages[0]?.text || "", /what pages/);
+      assert.match(histBody.messages[1]?.text || "", /Home/);
+      await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath }) });
+    });
+  });
+});

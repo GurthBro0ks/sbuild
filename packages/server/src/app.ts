@@ -113,6 +113,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
 import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
 import { getChatHistory, appendChatHistory, clearChatHistory, replaceChatHistory, sanitizeChatText as sanitizeChatTextImported } from "./lib/chatHistoryStore.js";
+import { answerBrainQuestion, buildBrainContext, formatBrainContextForPrompt } from "./lib/sbuildBrain.js";
 import type { PersistedChatItem } from "./lib/chatHistoryStore.js";
 import {
   backupsDir,
@@ -1268,10 +1269,34 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const chatHistory = Array.isArray(req.body?.chatHistory) ? req.body.chatHistory as Array<{ role: string; text: string }> : [];
     const pageContent = String(req.body?.pageContent || "");
     const blockContent = String(req.body?.blockContent || "");
+    const projectContext = (req.body?.projectContext && typeof req.body.projectContext === "object")
+      ? req.body.projectContext as Partial<SBuildProject>
+      : null;
+    const selectedBlockId = req.body?.selectedBlockId ? String(req.body.selectedBlockId) : blockId;
+    const selectedPageId = req.body?.selectedPageId ? String(req.body.selectedPageId) : "";
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
     }
+
+    const brainProject = projectContext
+      ? ({
+          version: (projectContext as SBuildProject).version || "1",
+          updatedAt: (projectContext as SBuildProject).updatedAt || new Date().toISOString(),
+          site: (projectContext as SBuildProject).site || { siteName: "Untitled site", title: "Untitled", description: "", nav: [] },
+          globalStyles: (projectContext as SBuildProject).globalStyles || { headingFont: "", bodyFont: "", colors: { bg: "#fff", surface: "#fff", text: "#000", accent: "#000", muted: "#666" } },
+          ai: (projectContext as SBuildProject).ai || { provider: "ollama", model: "" },
+          deploy: (projectContext as SBuildProject).deploy || { method: "dry-run", webRoot: "" },
+          pages: Array.isArray((projectContext as SBuildProject).pages) ? (projectContext as SBuildProject).pages : []
+        } as SBuildProject)
+      : null;
+    const brain = buildBrainContext({
+      project: brainProject,
+      selectedBlockId: selectedBlockId || null,
+      selectedPageId: selectedPageId || null,
+      build: getBuildInfo()
+    });
+
     if (isRuntimeIdentityQuestion(prompt)) {
       const config = await getChatProviderConfig();
       const provider = config.provider || "auto";
@@ -1292,7 +1317,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
             hasProposal: false,
             targetKind,
             blockId,
-            blockType
+            blockType,
+            brainSource: "brain-version"
           });
           return;
         }
@@ -1314,7 +1340,42 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           hasProposal: false,
           targetKind,
           blockId,
-          blockType
+          blockType,
+          brainSource: "brain-ui"
+        });
+        return;
+      }
+    }
+    if (brainProject) {
+      const brainAnswer = answerBrainQuestion(prompt, brain);
+      if (brainAnswer && brainAnswer.kind === "answered") {
+        const brainUsername = auth.enabled ? (() => {
+          const session = getSession(req);
+          return session ? session.u : null;
+        })() : "dev";
+        if (brainUsername) {
+          const brainPersisted: PersistedChatItem[] = [
+            { role: "user", text: prompt, timestamp: Date.now() },
+            { role: "assistant", text: brainAnswer.text, timestamp: Date.now(), provider: "local", model: "sbuild-brain", source: "brain", latencyMs: 0 }
+          ];
+          appendChatHistory(brainUsername, req.body?.projectPath || undefined, brainPersisted);
+        }
+        res.json({
+          ok: true,
+          suggestion: brainAnswer.text,
+          provider: "local",
+          model: "sbuild-brain",
+          message: `sBuild Brain: ${brainAnswer.source}`,
+          source: "brain",
+          latencyMs: 0,
+          isLocal: true,
+          proposal: null,
+          hasProposal: false,
+          targetKind,
+          blockId,
+          blockType,
+          brainSource: brainAnswer.source,
+          brainScope: brainAnswer.scope || "site"
         });
         return;
       }
@@ -1334,7 +1395,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         hasProposal: false,
         targetKind,
         blockId,
-        blockType
+        blockType,
+        brainSource: "brain-site"
       });
       return;
     }
@@ -1368,13 +1430,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       });
       return;
     }
-    const contextPrefix = targetKind === "site"
-      ? "You are editing the whole website. Only answer from the site content provided. "
+    const scopeInstruction = targetKind === "site"
+      ? "Focus: the whole website. Prefer site-wide context. "
       : targetKind === "page"
-        ? "You are editing the current page. Only answer from the page content provided. "
-        : blockType
-          ? `You are editing a ${blockType} block. Only answer from the selected block content. If the answer is not in the selected block, say it is not available in the selected block. `
-          : "You are editing a block. Only answer from the selected block content. If the answer is not in the selected block, say it is not available in the selected block. ";
+        ? `Focus: the current page${selectedPageId ? " (selected by the operator)" : ""}. Prefer content on this page. `
+        : blockType && selectedBlockId
+          ? `Focus: a ${blockType} block (id ${selectedBlockId}) on "${brain.selectedBlock?.pageTitle || "the current page"}". Prefer the selected block when the user asks about it, but you may also use site facts (other pages, hours, contact, cards, page list) from the sBuild Brain context. `
+          : "Focus: a block in the editor. Prefer the selected block when the user asks about it, but you may also use site facts from the sBuild Brain context. ";
+    const brainContextBlock = brainProject
+      ? `\n\n${formatBrainContextForPrompt(brain)}\n\n`
+      : "";
     const contentContext = targetKind === "block" && blockContent
       ? `\n\nSelected block content:\n${blockContent.slice(0, 2000)}\n\n`
       : pageContent
@@ -1387,7 +1452,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const proposalInstruction = !isQuestion && targetKind === "block"
       ? `If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced \`\`\`json block with {"kind":"replace-copy","replaceText":"...","targetField":"heading or subheading or body"}. Otherwise answer normally with plain text and no proposal object. `
       : "";
-    const fullPrompt = `${contextPrefix}${contentContext}${fieldInstruction}${proposalInstruction}${prompt}`;
+    const fullPrompt = `${scopeInstruction}${brainContextBlock}${contentContext}${fieldInstruction}${proposalInstruction}${prompt}`;
     const result = await chatWithProviders(fullPrompt, chatHistory);
     const rawProposal = !isQuestion && result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
@@ -1425,7 +1490,112 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       hasProposal,
       targetKind,
       blockId,
-      blockType
+      blockType,
+      brainScope: brain.selectedBlock ? "selected-block" : targetKind === "page" ? "page" : "site"
+    });
+  });
+
+  app.post("/api/ai/brain", async (req, res) => {
+    const prompt = String(req.body?.prompt || "").trim();
+    if (!prompt) {
+      res.status(400).json({ ok: false, error: "prompt is required" });
+      return;
+    }
+    const projectContext = (req.body?.projectContext && typeof req.body.projectContext === "object")
+      ? req.body.projectContext as Partial<SBuildProject>
+      : null;
+    const selectedBlockId = req.body?.selectedBlockId ? String(req.body.selectedBlockId) : "";
+    const selectedPageId = req.body?.selectedPageId ? String(req.body.selectedPageId) : "";
+    const brainProject = projectContext
+      ? ({
+          version: (projectContext as SBuildProject).version || "1",
+          updatedAt: (projectContext as SBuildProject).updatedAt || new Date().toISOString(),
+          site: (projectContext as SBuildProject).site || { siteName: "Untitled site", title: "Untitled", description: "", nav: [] },
+          globalStyles: (projectContext as SBuildProject).globalStyles || { headingFont: "", bodyFont: "", colors: { bg: "#fff", surface: "#fff", text: "#000", accent: "#000", muted: "#666" } },
+          ai: (projectContext as SBuildProject).ai || { provider: "ollama", model: "" },
+          deploy: (projectContext as SBuildProject).deploy || { method: "dry-run", webRoot: "" },
+          pages: Array.isArray((projectContext as SBuildProject).pages) ? (projectContext as SBuildProject).pages : []
+        } as SBuildProject)
+      : null;
+    const brain = buildBrainContext({
+      project: brainProject,
+      selectedBlockId: selectedBlockId || null,
+      selectedPageId: selectedPageId || null,
+      build: getBuildInfo()
+    });
+    if (!brainProject) {
+      res.json({
+        ok: true,
+        kind: "no-project",
+        suggestion: "Open or load a project in the editor so the sBuild Brain can read its pages and blocks.",
+        provider: "local",
+        model: "sbuild-brain",
+        source: "brain",
+        brainLoaded: true,
+        brainContext: formatBrainContextForPrompt(brain)
+      });
+      return;
+    }
+    const answer = answerBrainQuestion(prompt, brain);
+    if (answer && answer.kind === "answered") {
+      res.json({
+        ok: true,
+        kind: "answered",
+        suggestion: answer.text,
+        provider: "local",
+        model: "sbuild-brain",
+        source: "brain",
+        brainSource: answer.source,
+        brainScope: answer.scope || "site",
+        brainLoaded: true,
+        brainContext: formatBrainContextForPrompt(brain)
+      });
+      return;
+    }
+    if (answer && answer.kind === "needs-llm") {
+      res.json({
+        ok: true,
+        kind: "needs-llm",
+        suggestion: answer.text,
+        provider: "none",
+        model: "sbuild-brain",
+        source: "brain",
+        brainSource: answer.source,
+        brainScope: "app",
+        brainLoaded: true,
+        brainContext: formatBrainContextForPrompt(brain)
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      kind: "no-match",
+      suggestion: "The sBuild Brain did not have a deterministic answer for this prompt. The language model will be used.",
+      provider: "none",
+      model: "sbuild-brain",
+      source: "brain",
+      brainLoaded: true,
+      brainContext: formatBrainContextForPrompt(brain)
+    });
+  });
+
+  app.get("/api/ai/brain/health", (_req, res) => {
+    const info = getBuildInfo();
+    res.json({
+      ok: true,
+      brain: "sbuild-brain",
+      version: info.displayVersion,
+      capabilities: [
+        "version-and-build-qa",
+        "ui-state-qa",
+        "page-list-qa",
+        "site-card-titles-and-details",
+        "site-pickup-hours",
+        "site-contact-info",
+        "selected-block-title-description",
+        "general-knowledge-routing",
+        "app-capability-summary"
+      ]
     });
   });
 

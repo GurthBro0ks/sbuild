@@ -3069,3 +3069,80 @@ test("ChatItem type includes retryPrompt optional field", () => {
   );
   assert.match(typeBlock, /retryPrompt\?:\s*string/, "ChatItem must have retryPrompt field");
 });
+
+test("AI Chat scope buttons are labelled Focus: Selected Block / Page / Site", () => {
+  const block = appSource.substring(
+    appSource.indexOf("ai-chat-target-buttons"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(block, /Focus: Selected Block/);
+  assert.match(block, /Focus: Page/);
+  assert.match(block, /Focus: Site/);
+  assert.doesNotMatch(block, />Selected Block</, "old 'Selected Block' label must be replaced");
+  assert.doesNotMatch(block, />Current Page</, "old 'Current Page' label must be replaced");
+  assert.doesNotMatch(block, />Whole Site</, "old 'Whole Site' label must be replaced");
+});
+
+test("AI Chat shows 'Answering from' status line that reflects the brain source", () => {
+  const toolbar = appSource.substring(
+    appSource.indexOf("ai-chat-toolbar"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(toolbar, /Answering from:/, "must show Answering from status line");
+  assert.match(toolbar, /Selected block \+ whole-site context/, "default block scope must include site context");
+  assert.match(toolbar, /Current page \+ whole-site context/, "page scope must include site context");
+  assert.match(toolbar, /Whole site context/, "site scope must state whole site");
+  assert.match(toolbar, /brain-block/, "must reflect brain-block source label");
+  assert.match(toolbar, /brain-site/, "must reflect brain-site source label");
+  assert.match(toolbar, /brain-version/, "must reflect brain-version source label");
+});
+
+test("AI Chat does not auto-load chat history on panel open", () => {
+  const toggleFn = appSource.substring(
+    appSource.indexOf("function toggleAiTopMenu"),
+    appSource.indexOf("function aiChatTargetLabel")
+  );
+  assert.doesNotMatch(toggleFn, /loadChatHistory\(\)/, "toggleAiTopMenu must NOT call loadChatHistory on open");
+  const restoreFn = appSource.substring(
+    appSource.indexOf("function restoreChat"),
+    appSource.indexOf("function viewHistory")
+  );
+  assert.match(restoreFn, /loadChatHistory|history/);
+  const viewFn = appSource.substring(
+    appSource.indexOf("function viewHistory"),
+    appSource.indexOf("function stripRawProposalJson")
+  );
+  assert.match(viewFn, /history/);
+});
+
+test("aiAskSuggest sends projectContext and selectedBlockId to /api/ai/suggest for sBuild Brain", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /projectContext:\s*project/, "must send projectContext");
+  assert.match(fn, /selectedBlockId:/, "must send selectedBlockId");
+  assert.match(fn, /selectedPageId:/, "must send selectedPageId");
+});
+
+test("aiAskSuggest captures brainSource and brainScope from /api/ai/suggest response", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /setLastBrainSource/, "must capture brainSource into state");
+  assert.match(fn, /setLastBrainScope/, "must capture brainScope into state");
+});
+
+test("clearAiChat clears in-memory chat history without calling any endpoint", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("function clearAiChat"),
+    appSource.indexOf("async function loadChatHistory")
+  );
+  assert.match(fn, /setChatHistory\(\[\]\)/, "must clear chat history state");
+  assert.doesNotMatch(fn, /fetchJson/, "clearAiChat must not call any fetch endpoint");
+});
+
+test("ai-chat-scope-status CSS class is defined in styles.css", () => {
+  assert.match(cssSource, /\.ai-chat-scope-status/);
+});
