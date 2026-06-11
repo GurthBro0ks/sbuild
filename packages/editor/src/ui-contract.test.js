@@ -3092,10 +3092,12 @@ test("AI Chat engine status line distinguishes sbuild-brain, local-ollama, opena
     appSource.indexOf("ai-markup-attach-btn")
   );
   // Each label must be reachable from the engine state branch.
-  assert.match(toolbar, /sBuild Brain \(deterministic/);
-  assert.match(toolbar, /local Ollama model/);
-  assert.match(toolbar, /API model/);
-  assert.match(toolbar, /Local model timed out/);
+  // The footer now includes engine latency in ms (per the AI Brain
+  // provider-truth spec).
+  assert.match(toolbar, /Answered by sBuild Brain context/);
+  assert.match(toolbar, /Answered by local Ollama [^`]*ms/);
+  assert.match(toolbar, /Answered by API model [^`]*ms/);
+  assert.match(toolbar, /timed out after/);
   assert.match(toolbar, /No engine available/);
   assert.match(toolbar, /Default: focus on selected block, full site context in LLM prompt/);
   assert.match(toolbar, /Default: focus on current page, full site context in LLM prompt/);
@@ -3194,4 +3196,79 @@ test("clearAiChat clears in-memory chat history without calling any endpoint", (
 
 test("ai-chat-scope-status CSS class is defined in styles.css", () => {
   assert.match(cssSource, /\.ai-chat-scope-status/);
+});
+
+// =========================================================
+// sBuild AI Brain — UI contract for the new latency footer
+// and provider status truth.
+// =========================================================
+
+test("AI chat footer surfaces engine latency for sbuild-brain deterministic answer", () => {
+  // The footer must include the engine label AND the latency in ms.
+  const footer = appSource.substring(
+    appSource.indexOf("ai-chat-scope-status"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(footer, /Answered by sBuild Brain context/);
+  // The latency is rendered via `${lastEngineLatencyMs ?? 0}ms`; check
+  // for the ms suffix after the engine label.
+  assert.match(footer, /sBuild Brain context[^`]*ms/);
+});
+
+test("AI chat footer surfaces engine latency for local Ollama answer", () => {
+  const footer = appSource.substring(
+    appSource.indexOf("ai-chat-scope-status"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(footer, /Answered by local Ollama [^`]*ms/);
+});
+
+test("AI chat footer surfaces API model latency", () => {
+  const footer = appSource.substring(
+    appSource.indexOf("ai-chat-scope-status"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(footer, /Answered by API model [^`]*ms/);
+});
+
+test("AI chat footer surfaces timeout with the model's actual timeout window", () => {
+  const footer = appSource.substring(
+    appSource.indexOf("ai-chat-scope-status"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(footer, /timed out after/);
+  // lastEngineTimeoutMs / 1000.toFixed(0) + "s"
+  assert.match(footer, /lastEngineTimeoutMs[\s\S]{0,40}1000/);
+});
+
+test("AI chat footer 'No engine available' message exists for unavailable engine", () => {
+  const footer = appSource.substring(
+    appSource.indexOf("ai-chat-scope-status"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(footer, /No engine available/);
+});
+
+test("Settings → AI Chat section exposes a 'Test Chat Model' button that calls /api/ai/providers/test provider=chat", () => {
+  // The button text + the call site must both exist.
+  assert.match(appSource, /Test Chat Model|>Test chat model</);
+  // Call site with provider=chat
+  const idx = appSource.indexOf('testProvider("chat")');
+  assert.ok(idx > 0, "Test Chat Model button must call testProvider(\"chat\")");
+});
+
+test("Clear Chat stamps chatClearedAt so a subsequent auto-restore cannot resurrect cleared history", () => {
+  // 1) clearAiChat must setChatClearedAt(Date.now())
+  const clearIdx = appSource.indexOf("function clearAiChat");
+  const nextFn = appSource.indexOf("function ", clearIdx + 10);
+  const clearBody = appSource.substring(clearIdx, nextFn > 0 ? nextFn : clearIdx + 1200);
+  assert.match(clearBody, /setChatClearedAt/);
+});
+
+test("editor state tracks lastEngineLatencyMs and lastEngineTimeoutMs for the footer", () => {
+  // Both pieces of state must exist (so the footer can show "Xms" / "Xs").
+  assert.match(appSource, /setLastEngineLatencyMs/);
+  assert.match(appSource, /setLastEngineTimeoutMs/);
+  assert.match(appSource, /lastEngineLatencyMs/);
+  assert.match(appSource, /lastEngineTimeoutMs/);
 });

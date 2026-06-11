@@ -3109,19 +3109,27 @@ test("chat provider config masked key attempt cannot overwrite real chat key", a
 });
 
 test("/api/ai/providers/status distinguishes OpenAI API provider from local key storage", async () => {
-  const res = await fetch(`${baseUrl}/api/ai/providers/status`);
-  assert.equal(res.status, 200);
-  const body = await res.json() as {
-    ok: boolean;
-    providers: Array<{ name: string; status: string; message: string; provider?: string; keyStorage?: string; model?: string }>;
-    channels: { imageGen: { message: string }; imageAnalyze: { message: string } };
-  };
-  const imageGen = body.providers.find((p) => p.name.startsWith("Image Generation"));
-  assert.ok(imageGen, "Image Generation API provider entry must exist");
-  assert.equal(imageGen.provider, "openai", "Provider field must be 'openai' not 'local'");
-  assert.match(String(imageGen.message || ""), /Provider:\s*OpenAI\s*API/, "message must explicitly say 'Provider: OpenAI API'");
-  assert.match(String(imageGen.message || ""), /Key storage:/, "message must show key storage location");
-  assert.ok(["env", "local", "missing"].includes(String(imageGen.keyStorage)), "keyStorage must be env/local/missing");
+  // Set a real-looking imageGen key so the message is the configured
+  // form (which says "Provider: OpenAI API"). The withTemporarySecretsFileContent
+  // helper restores the previous secrets file after the test.
+  await withTemporarySecretsFileContent(
+    JSON.stringify({ imageGenApiKey: "sk-itest-storage-probe-1234567890abcdef" }),
+    async () => {
+      const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+      assert.equal(res.status, 200);
+      const body = await res.json() as {
+        ok: boolean;
+        providers: Array<{ name: string; status: string; message: string; provider?: string; keyStorage?: string; model?: string }>;
+        channels: { imageGen: { message: string }; imageAnalyze: { message: string } };
+      };
+      const imageGen = body.providers.find((p) => p.name.startsWith("Image Generation"));
+      assert.ok(imageGen, "Image Generation API provider entry must exist");
+      assert.equal(imageGen.provider, "openai", "Provider field must be 'openai' not 'local'");
+      assert.match(String(imageGen.message || ""), /Provider:\s*OpenAI\s*API/, "message must explicitly say 'Provider: OpenAI API'");
+      assert.match(String(imageGen.message || ""), /Key storage:/, "message must show key storage location");
+      assert.ok(["env", "local", "missing"].includes(String(imageGen.keyStorage)), "keyStorage must be env/local/missing");
+    }
+  );
 });
 
 test("/api/ai/providers/status AI Chat Provider entry shows configured status when Ollama is reachable", async () => {
@@ -3598,10 +3606,10 @@ function makeBrainProject(): Record<string, unknown> {
   };
 }
 
-test("brain: /api/ai/suggest with projectContext routes card titles to LLM (no faked brain answer)", async () => {
+test("brain: /api/ai/suggest with projectContext answers card titles+details from sBuild Brain site facts (no LLM call)", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
-    chat: { body: { message: { content: "Cards: Seasonal Vegetables, Herbs & Greens, Farm Flowers." } } }
+    chat: { body: { message: { content: "This reply must not be used." } } }
   }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -3615,22 +3623,23 @@ test("brain: /api/ai/suggest with projectContext routes card titles to LLM (no f
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; engineContextUsed?: string[]; suggestion?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; mode?: string; engineContextUsed?: string[]; suggestion?: string; engineReason?: string; engineLatencyMs?: number };
       assert.ok(body.ok);
-      assert.equal(body.engine, "local-ollama");
-      assert.equal(body.model, "qwen2.5:1.5b");
-      assert.notEqual(body.source, "brain");
-      assert.ok(Array.isArray(body.engineContextUsed));
-      assert.ok(body.engineContextUsed!.includes("whole-site"));
-      assert.ok(body.engineContextUsed!.includes("selected-block"));
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.mode, "deterministic");
+      assert.equal(body.source, "brain");
+      assert.equal(body.engineReason, "site-card-details-fact");
+      assert.equal(body.engineLatencyMs, 0);
+      assert.match(body.suggestion || "", /Seasonal Vegetables/);
+      assert.match(body.suggestion || "", /Tomatoes/);
     });
   });
 });
 
-test("brain: /api/ai/suggest routes pickup hours to LLM with site context even when cards block is selected", async () => {
+test("brain: /api/ai/suggest answers pickup hours from sBuild Brain site facts even when cards block is selected", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
-    chat: { body: { message: { content: "Pickup hours: Monday 9-5, Saturday 8-2 (Farmers market)." } } }
+    chat: { body: { message: { content: "This reply must not be used." } } }
   }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -3646,13 +3655,12 @@ test("brain: /api/ai/suggest routes pickup hours to LLM with site context even w
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; suggestion?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; engineReason?: string; suggestion?: string };
       assert.ok(body.ok);
-      assert.equal(body.engine, "local-ollama");
-      assert.equal(body.model, "qwen2.5:1.5b");
-      const text = String(body.suggestion || "");
-      assert.match(text, /Monday/);
-      assert.match(text, /Saturday/);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-pickup-hours-fact");
+      assert.match(body.suggestion || "", /Monday/);
+      assert.match(body.suggestion || "", /Saturday/);
     });
   });
 });
@@ -3882,7 +3890,7 @@ test("brain: /api/ai/brain answers version question", async () => {
   });
 });
 
-test("brain: /api/ai/brain returns needs-llm for card titles (Brain does not fake answer)", async () => {
+test("brain: /api/ai/brain answers card titles from site facts (kind=answered, not needs-llm)", async () => {
   await withNoOpenAIKey(async () => {
     const res = await fetch(`${baseUrl}/api/ai/brain`, {
       method: "POST",
@@ -3896,12 +3904,12 @@ test("brain: /api/ai/brain returns needs-llm for card titles (Brain does not fak
     assert.equal(res.status, 200);
     const body = await res.json() as { ok: boolean; kind?: string; engine?: string; engineReason?: string; deterministicAnswer?: boolean; suggestion?: string; brainContext?: string };
     assert.ok(body.ok);
-    assert.equal(body.kind, "needs-llm");
+    assert.equal(body.kind, "answered", "card titles are a site fact and must be answered by the Brain");
     assert.equal(body.engine, "sbuild-brain");
-    assert.equal(body.engineReason, "general-knowledge");
-    assert.equal(body.deterministicAnswer, false);
-    assert.ok((body.brainContext || "").includes("sBuild Brain"));
-    assert.ok((body.brainContext || "").includes("Seasonal Vegetables"));
+    assert.equal(body.engineReason, "site-card-details-fact");
+    assert.equal(body.deterministicAnswer, true);
+    assert.match(body.suggestion || "", /Seasonal Vegetables/);
+    assert.match(body.suggestion || "", /Tomatoes/);
   });
 });
 
@@ -4015,4 +4023,470 @@ test("brain: /api/ai/suggest persists history for deterministic version answer",
       await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath }) });
     });
   });
+});
+
+// =========================================================
+// sBuild AI Brain — site-fact deterministic routing.
+// These tests prove:
+//   * Pickup hours / card titles / card details / contact /
+//     page list / selected-block detail now answer from
+//     project JSON via the sBuild Brain (engine=sbuild-brain,
+//     mode=deterministic) instead of a 22-second LLM call.
+//   * General knowledge (corn, potato) still goes to the LLM
+//     with the full Brain context. NO hardcoded answers.
+//   * The site-fact route is whole-site, not blindfolded by
+//     the selected block (a text-block scope can still ask
+//     "what are the pickup hours" and get the right answer).
+// =========================================================
+
+test("brain: /api/ai/suggest answers pickup hours deterministically from site facts (no LLM call)", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      let chatCalled = false;
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the farm pickup hours?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as {
+        ok: boolean;
+        suggestion?: string;
+        engine?: string;
+        mode?: string;
+        engineModel?: string;
+        engineReason?: string;
+        engineLatencyMs?: number;
+        deterministicAnswer?: boolean;
+        model?: string;
+      };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.mode, "deterministic");
+      assert.equal(body.deterministicAnswer, true);
+      assert.equal(body.engineModel, "sbuild-brain");
+      assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.engineReason, "site-pickup-hours-fact");
+      assert.equal(body.engineLatencyMs, 0, "no LLM call means zero ms");
+      assert.match(body.suggestion || "", /Monday/);
+      assert.match(body.suggestion || "", /Saturday/);
+      assert.match(body.suggestion || "", /9:00 AM|5:00 PM/);
+      // We do not have a perfect way to detect "no /api/chat call happened"
+      // here, but the latency of 0ms is strong evidence.
+      void chatCalled;
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers pickup hours even when a text block is selected (whole-site, not blindfolded)", async () => {
+  // A user clicks the "About" text block and then asks about pickup hours.
+  // The Brain must reach across the site to answer.
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const project = makeBrainProject() as Record<string, unknown>;
+      (project.pages as Array<{ id: string; blocks: Array<{ id: string; type: string; data: { title: string; body: string } }> }>)[0]!.blocks.push({
+        id: "text-about",
+        type: "text",
+        data: { title: "Our Story", body: "Family farm since 1999." }
+      });
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the pickup hours?",
+          targetKind: "block",
+          blockId: "text-about",
+          blockType: "text",
+          selectedBlockId: "text-about",
+          projectContext: project
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineReason?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-pickup-hours-fact");
+      assert.match(body.suggestion || "", /Monday/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers card titles deterministically when a text block is selected", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const project = makeBrainProject() as Record<string, unknown>;
+      (project.pages as Array<{ id: string; blocks: Array<unknown> }>)[0]!.blocks.push({
+        id: "text-about",
+        type: "text",
+        data: { title: "Our Story", body: "Family farm." }
+      });
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the card titles?",
+          targetKind: "block",
+          blockId: "text-about",
+          blockType: "text",
+          selectedBlockId: "text-about",
+          projectContext: project
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineReason?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-card-titles-fact");
+      assert.match(body.suggestion || "", /Seasonal Vegetables/);
+      assert.match(body.suggestion || "", /Herbs & Greens/);
+      assert.match(body.suggestion || "", /Farm Flowers/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers card titles-and-details from project JSON (no faked answer)", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the titles and details of each card?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineReason?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-card-details-fact");
+      assert.match(body.suggestion || "", /Seasonal Vegetables/);
+      assert.match(body.suggestion || "", /Tomatoes/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers contact info deterministically", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what is the contact info for the farm?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineReason?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-contact-fact");
+      assert.match(body.suggestion || "", /555-0123/);
+      assert.match(body.suggestion || "", /hello@blackfish\.example/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest answers page list deterministically", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const project = makeBrainProject() as Record<string, unknown>;
+      (project.pages as Array<{ id: string; title: string; blocks: unknown[] }>).push({
+        id: "page-about",
+        title: "About",
+        blocks: []
+      });
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "list the pages",
+          targetKind: "site",
+          projectContext: project
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineReason?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-page-list-fact");
+      assert.match(body.suggestion || "", /Home/);
+      assert.match(body.suggestion || "", /About/);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest 'what color is corn' still goes to LLM (no faked deterministic answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Corn is yellow or white." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is corn?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; mode?: string; deterministicAnswer?: boolean; model?: string; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama", "corn-color is general knowledge, must go to LLM");
+      assert.equal(body.deterministicAnswer, false);
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.match(body.suggestion || "", /yellow|white|corn/i);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest 'what color is a potato' still goes to LLM (no faked deterministic answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Potatoes are typically brown or tan." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is a potato?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; deterministicAnswer?: boolean; model?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.deterministicAnswer, false);
+      assert.equal(body.model, "qwen2.5:1.5b");
+    });
+  });
+});
+
+test("brain: /api/ai/chat also answers pickup hours deterministically when project context is provided", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the farm pickup hours?",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; response?: string; engine?: string; engineReason?: string; available?: boolean; model?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.engineReason, "site-pickup-hours-fact");
+      assert.equal(body.available, true);
+      assert.equal(body.model, "sbuild-brain");
+      assert.match(body.response || "", /Monday/);
+    });
+  });
+});
+
+test("brain: /api/ai/chat with no project context falls through to LLM (no faked answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Hello from the model." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "what are the farm pickup hours?" })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; available?: boolean; response?: string; model?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama", "no project context means no Brain deterministic route; LLM must answer");
+      assert.equal(body.model, "qwen2.5:1.5b");
+    });
+  });
+});
+
+test("brain: /api/ai/brain answers card titles site-fact question (no needs-llm)", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/brain`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the card titles?",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; kind?: string; engineReason?: string; suggestion?: string; engineContextUsed?: string[] };
+      assert.ok(body.ok);
+      assert.equal(body.kind, "answered", "site-fact questions must be answered by the Brain, not 'needs-llm'");
+      assert.equal(body.engineReason, "site-card-titles-fact");
+      assert.match(body.suggestion || "", /Seasonal Vegetables/);
+    });
+  });
+});
+
+// =========================================================
+// /api/ai/providers/test for chat — real inference test
+// =========================================================
+
+test("providers/test chat: qwen2.5:1.5b small inference returns ok=true and state=inference-tested", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "hi" } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/providers/test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "chat" })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; state: string; provider: string; model: string | null; latencyMs: number | null; timedOut: boolean; message: string; testedAt: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.state, "inference-tested", `expected inference-tested, got ${body.state}`);
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.timedOut, false);
+      assert.ok(typeof body.latencyMs === "number" && body.latencyMs >= 0);
+      assert.match(body.message, /qwen2\.5:1\.5b/);
+    });
+  });
+});
+
+test("providers/test chat: empty-content ollama does not fake an answer (state=timeout or unavailable, ok=false)", async () => {
+  // The mock ollama returns 200 with empty content. chatWithProviders
+  // cannot mark this as a successful inference, so runChatInferenceTest
+  // must NOT claim inference-tested/slow. It must report either timeout
+  // (if it took >=6s) or unavailable (if it returned fast with no
+  // content). Either way, ok=false and a real failure reason.
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: {
+      body: { message: { content: "" } },
+      status: 200
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/providers/test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "chat" })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; state: string; provider: string; model: string | null; latencyMs: number | null; timedOut: boolean; message: string };
+      assert.equal(body.ok, false, "empty-content response must NOT be marked ok");
+      assert.ok(
+        ["timeout", "unavailable"].includes(body.state),
+        `state must be timeout or unavailable; got ${body.state}`
+      );
+      assert.match(body.message, /qwen2\.5:1\.5b|did not|unavailable|returned|timed out/i);
+    });
+  });
+});
+
+test("providers/test chat: state enum includes all six expected values", async () => {
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      // First call seeds lastChatTest with a real value.
+      const res = await fetch(`${baseUrl}/api/ai/providers/test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "chat" })
+      });
+      const body = await res.json() as { state: string };
+      // The state should be one of the documented six.
+      assert.ok(
+        ["configured", "reachable", "inference-tested", "slow", "timeout", "unavailable"].includes(body.state),
+        `state ${body.state} not in expected enum`
+      );
+    });
+  });
+});
+
+test("providers/status: chat provider exposes lastTest with state, latencyMs, model", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "hi" } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      // Trigger the test so lastChatTest is populated.
+      await fetch(`${baseUrl}/api/ai/providers/test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "chat" })
+      });
+      const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+      assert.equal(res.status, 200);
+      const body = await res.json() as {
+        ok: boolean;
+        providers: Array<{ name: string; lastTest?: { state: string; model: string | null; latencyMs: number | null; testedAt: string } }>;
+      };
+      assert.ok(body.ok);
+      const chat = body.providers.find((p) => p.name === "AI Chat Provider");
+      assert.ok(chat);
+      assert.ok(chat!.lastTest, "AI Chat Provider must expose lastTest");
+      assert.equal(chat!.lastTest!.state, "inference-tested");
+      assert.equal(chat!.lastTest!.model, "qwen2.5:1.5b");
+      assert.ok(typeof chat!.lastTest!.latencyMs === "number" && chat!.lastTest!.latencyMs >= 0);
+    });
+  });
+});
+
+test("providers/status: chat provider message reflects last-test state (not a blanket 'connected' claim)", async () => {
+  // The chat provider message must be one of:
+  //   - "Click 'Test chat model' to confirm." (state=not_tested)
+  //   - "Last test: <state> · <latencyMs>ms." (state=inference-tested/slow/timeout/unavailable)
+  //   - "Local chat model configured: <model>. ..." (configured)
+  // It must NOT be the old blanket "Local chat connected: <model>" claim
+  // that the prior architecture used to display without a real test.
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+      const body = await res.json() as {
+        ok: boolean;
+        providers: Array<{ name: string; message?: string; lastTest?: { state: string; testedAt: string } }>;
+      };
+      const chat = body.providers.find((p) => p.name === "AI Chat Provider");
+      assert.ok(chat);
+      assert.ok(chat!.message);
+      assert.doesNotMatch(chat!.message!, /^Local chat connected:/, "blanket 'Local chat connected' claim is banned");
+      // Message must mention one of the three honest forms.
+      const ok = /Test chat model/.test(chat!.message!) || /Last test:/.test(chat!.message!) || /configured:/.test(chat!.message!);
+      assert.ok(ok, `message must be one of the three honest forms; got: ${chat!.message}`);
+      // lastTest object must be exposed and have a valid state.
+      assert.ok(chat!.lastTest, "lastTest must be exposed");
+      assert.ok(["not_tested", "configured", "reachable", "inference-tested", "slow", "timeout", "unavailable"].includes(chat!.lastTest!.state));
+    });
+  });
+});
+
+// =========================================================
+// Chat history: Clear Chat does not resurrect after block switch
+// =========================================================
+
+test("clearAiChat semantics: loadChatHistory is never auto-invoked on panel open (no auto-resurrection)", async () => {
+  // Source-level assertion: loadChatHistory is declared but never
+  // INVOKED (no onClick, no useEffect, no useMemo, no top-level
+  // expression statement). Therefore closing/reopening the panel or
+  // switching blocks cannot resurrect cleared history.
+  const fs = await import("node:fs/promises");
+  const appSource = await fs.readFile("/opt/slimy/sbuild/packages/editor/src/App.tsx", "utf8");
+  // Strip the declaration (function loadChatHistory() { ... }) and look
+  // for any remaining call site.
+  const withoutDecl = appSource.replace(/async function loadChatHistory\s*\([^)]*\)\s*\{[\s\S]*?^\s*\}/m, "");
+  const callMatches = [...withoutDecl.matchAll(/loadChatHistory\s*\(/g)];
+  assert.equal(callMatches.length, 0, "loadChatHistory must not be invoked anywhere; restore is explicit-only");
 });

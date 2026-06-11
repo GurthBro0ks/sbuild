@@ -1329,6 +1329,10 @@ export function App() {
   const [lastEngine, setLastEngine] = useState<string>("");
   const [lastEngineMode, setLastEngineMode] = useState<string>("");
   const [lastEngineReason, setLastEngineReason] = useState<string>("");
+  const [lastEngineModel, setLastEngineModel] = useState<string>("");
+  const [lastEngineLatencyMs, setLastEngineLatencyMs] = useState<number | null>(null);
+  const [lastEngineTimeoutMs, setLastEngineTimeoutMs] = useState<number | null>(null);
+  const [chatClearedAt, setChatClearedAt] = useState<number | null>(null);
   const [lastDeterministic, setLastDeterministic] = useState<boolean>(false);
   const [aiProposal, setAiProposal] = useState("");
   const [aiStructuredProposal, setAiStructuredProposal] = useState<StructuredSuggestionProposal | null>(null);
@@ -2781,16 +2785,19 @@ export function App() {
         setLastEngine(data.engine || "");
         setLastEngineMode(data.mode || "");
         setLastEngineReason(data.engineReason || "");
+        setLastEngineModel(data.engineModel || data.model || "");
+        setLastEngineLatencyMs(typeof data.engineLatencyMs === "number" ? data.engineLatencyMs : (data.latencyMs ?? Date.now() - startedAt));
+        setLastEngineTimeoutMs(typeof data.engineTimeoutMs === "number" ? data.engineTimeoutMs : null);
         setLastDeterministic(data.deterministicAnswer === true);
         // Honest status line: which engine actually answered.
         if (data.engine === "sbuild-brain" && data.mode === "deterministic") {
-          setProviderCheckMessage(`Answered by sBuild Brain — deterministic site/app fact (${data.engineReason || "fact"})`);
+          setProviderCheckMessage(`Answered by sBuild Brain context — ${data.engineReason || "deterministic site/app fact"} (${data.engineLatencyMs ?? 0}ms)`);
         } else if (data.engine === "local-ollama" && data.mode === "llm") {
-          setProviderCheckMessage(`Answered by local Ollama — ${data.engineModel || data.model || "model"}`);
+          setProviderCheckMessage(`Answered by local Ollama ${data.engineModel || data.model || "model"} (${(data.engineLatencyMs ?? 0)}ms)`);
         } else if (data.engine === "openai-api" && data.mode === "llm") {
-          setProviderCheckMessage(`Answered by API model — ${data.engineModel || data.model || "model"}`);
+          setProviderCheckMessage(`Answered by API model ${data.engineModel || data.model || ""} (${(data.engineLatencyMs ?? 0)}ms)`);
         } else if (data.mode === "error" && data.engineReason === "llm-timeout") {
-          setProviderCheckMessage("Local model timed out. Click Retry to try again.");
+          setProviderCheckMessage(`Local model timed out after ${(data.engineTimeoutMs ?? 22000) / 1000}s. Click Retry to try again.`);
         } else if (data.mode === "error") {
           setProviderCheckMessage("Local model error. Click Retry or check Settings for an API fallback.");
         } else {
@@ -2899,6 +2906,7 @@ export function App() {
     setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
+    setChatClearedAt(Date.now());
     setAiUndoSnapshot(null);
   }
 
@@ -3603,16 +3611,15 @@ export function App() {
     setChatInput("");
     const startedAt = Date.now();
     try {
-      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })) }) });
+      const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineReason?: string; deterministicAnswer?: boolean }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })), projectContext: project, selectedBlockId: selectedBlockId || undefined, selectedPageId: selectedPageId || undefined }) });
       const isTimeoutMsg = typeof data.response === "string" && /timed out/i.test(data.response);
-      const engine = data.provider === "ollama"
+      const engine = data.engine || (data.provider === "ollama"
         ? "local-ollama"
         : data.provider === "openai" || data.provider === "openai-compatible" || data.provider === "openrouter"
           ? "openai-api"
-          : data.provider === "none" || data.provider === "disabled"
-            ? "unavailable"
-            : "unavailable";
-      const mode = isTimeoutMsg ? "error" : "llm";
+          : "unavailable");
+      const mode = data.mode || (isTimeoutMsg ? "error" : "llm");
+      const latency = data.engineLatencyMs ?? data.latencyMs ?? (Date.now() - startedAt);
       pushChatMessage({
         role: "assistant",
         text: data.response,
@@ -3621,20 +3628,25 @@ export function App() {
         source: data.source,
         engine,
         mode,
-        engineModel: data.model,
-        engineReason: isTimeoutMsg ? "llm-timeout" : "llm-ok",
-        latencyMs: data.latencyMs ?? (Date.now() - startedAt)
+        engineModel: data.engineModel || data.model,
+        engineReason: data.engineReason || (isTimeoutMsg ? "llm-timeout" : "llm-ok"),
+        latencyMs: latency
       });
       setLastEngine(engine);
       setLastEngineMode(mode);
-      setLastEngineReason(isTimeoutMsg ? "llm-timeout" : "llm-ok");
-      setLastDeterministic(false);
-      if (engine === "local-ollama" && data.model && !isTimeoutMsg) {
-        setProviderCheckMessage(`Answered by local Ollama — ${data.model}`);
+      setLastEngineReason(data.engineReason || (isTimeoutMsg ? "llm-timeout" : "llm-ok"));
+      setLastEngineModel(data.engineModel || data.model || "");
+      setLastEngineLatencyMs(latency);
+      setLastEngineTimeoutMs(data.engineTimeoutMs ?? null);
+      setLastDeterministic(data.deterministicAnswer === true);
+      if (engine === "sbuild-brain" && mode === "deterministic") {
+        setProviderCheckMessage(`Answered by sBuild Brain context — ${data.engineReason || "site/app fact"} (${latency}ms)`);
+      } else if (engine === "local-ollama" && data.model && !isTimeoutMsg) {
+        setProviderCheckMessage(`Answered by local Ollama ${data.model} (${latency}ms)`);
       } else if (engine === "openai-api" && data.model && !isTimeoutMsg) {
-        setProviderCheckMessage(`Answered by API model — ${data.model}`);
+        setProviderCheckMessage(`Answered by API model ${data.model} (${latency}ms)`);
       } else if (isTimeoutMsg) {
-        setProviderCheckMessage("Local model timed out. Click Retry to try again.");
+        setProviderCheckMessage(`Local model timed out after ${((data.engineTimeoutMs ?? 22000) / 1000).toFixed(0)}s. Click Retry to try again.`);
       } else if (data.message) {
         setProviderCheckMessage(data.message);
       }
@@ -6114,13 +6126,15 @@ export function App() {
                     <div className="ai-chat-scope-status" data-testid="ai-chat-engine-status">
                       {lastEngine
                         ? lastEngine === "sbuild-brain" && lastEngineMode === "deterministic"
-                          ? "Last answer: sBuild Brain (deterministic site/app fact)"
+                          ? `Answered by sBuild Brain context · ${lastEngineLatencyMs ?? 0}ms (${lastEngineReason || "deterministic"})`
                           : lastEngine === "local-ollama" && lastEngineMode === "llm"
-                            ? "Last answer: local Ollama model"
+                            ? `Answered by local Ollama ${lastEngineModel || "model"} · ${lastEngineLatencyMs ?? "?"}ms`
                             : lastEngine === "openai-api" && lastEngineMode === "llm"
-                              ? "Last answer: API model"
+                              ? `Answered by API model ${lastEngineModel || ""} · ${lastEngineLatencyMs ?? "?"}ms`
                               : lastEngine === "unavailable" || lastEngineMode === "error"
-                                ? `Last answer: ${lastEngineReason === "llm-timeout" ? "Local model timed out" : "No engine available"}`
+                                ? lastEngineReason === "llm-timeout"
+                                  ? `Local model ${lastEngineModel || ""} timed out after ${((lastEngineTimeoutMs ?? 22000) / 1000).toFixed(0)}s`
+                                  : "No engine available"
                                 : `Last answer: ${lastEngine} (${lastEngineMode || "?"})`
                         : aiChatTarget === "block"
                           ? "Default: focus on selected block, full site context in LLM prompt"
@@ -6968,6 +6982,7 @@ export function App() {
               <div className="button-row">
                 <button onClick={() => void saveProviderConfig()}>{providerConfigSaved ? "Saved!" : "Save Provider Config"}</button>
                 <button onClick={() => void discoverLocalModels()}>Refresh Local Models</button>
+                <button onClick={() => void testProvider("chat")}>Test Chat Model</button>
               </div>
               {chatProviderStatus && <p className="panel-status">{chatProviderStatus.message}</p>}
               <hr style={{ margin: "16px 0" }} />

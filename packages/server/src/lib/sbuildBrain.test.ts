@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildBrainContext,
   formatBrainContextForPrompt,
-  tryDeterministicFact
+  tryDeterministicFact,
+  trySiteFact
 } from "./sbuildBrain.js";
 import type { SBuildProject, SBuildBuildInfo } from "@sbuild/shared";
 
@@ -307,4 +308,134 @@ test("buildBrainContext: site facts include gallery counts when present", () => 
   assert.equal(brain.siteFacts.totalGalleryBlocks, 1);
   assert.equal(brain.siteFacts.totalGalleryImages, 2);
   assert.equal(brain.siteFacts.galleryCounts[0]!.count, 2);
+});
+
+// =========================================================
+// trySiteFact — positive-shape site facts (pickup hours,
+// card titles, card details, contact, page list, image alt).
+// Only exact field-name questions match. General knowledge
+// (corn, potato, sky) must always return null.
+// =========================================================
+
+test("trySiteFact: 'what are the farm pickup hours' returns site-pickup-hours-fact with project hours", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what are the farm pickup hours?", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.equal(d!.mode, "deterministic");
+  assert.equal(d!.reason, "site-pickup-hours-fact");
+  assert.match(d!.text, /Monday/);
+  assert.match(d!.text, /Saturday/);
+  assert.match(d!.text, /9:00 AM|5:00 PM/);
+});
+
+test("trySiteFact: pickup-hours answer is whole-site, not blindfolded by selected block", () => {
+  // Even with a TEXT block selected (not the hours block), the
+  // pickup-hours question must answer from siteFacts (whole site).
+  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "text-about", build });
+  const d = trySiteFact("what are the pickup hours for the farm?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-pickup-hours-fact");
+  assert.match(d!.text, /Monday/);
+});
+
+test("trySiteFact: card titles question returns site-card-titles-fact", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what are the card titles?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-card-titles-fact");
+  assert.match(d!.text, /Seasonal Vegetables/);
+  assert.match(d!.text, /Herbs & Greens/);
+  assert.match(d!.text, /Farm Flowers/);
+});
+
+test("trySiteFact: card-titles question answered from whole site even when text block is selected", () => {
+  // Critical: even when a NON-cards block is selected, the user can
+  // ask about card titles and the Brain must reach across the site.
+  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "text-about", build });
+  const d = trySiteFact("what are the card titles?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-card-titles-fact");
+  assert.match(d!.text, /Seasonal Vegetables/);
+});
+
+test("trySiteFact: 'titles and details' returns site-card-details-fact with both title and body", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what are the titles and details of each card?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-card-details-fact");
+  assert.match(d!.text, /Seasonal Vegetables/);
+  assert.match(d!.text, /Tomatoes/);
+});
+
+test("trySiteFact: 'what is the contact info' returns site-contact-fact", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what is the contact info for the farm?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-contact-fact");
+  assert.match(d!.text, /555-0123/);
+  assert.match(d!.text, /hello@blackfish\.example/);
+});
+
+test("trySiteFact: 'list the pages' returns site-page-list-fact", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("list the pages", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "site-page-list-fact");
+  assert.match(d!.text, /Home/);
+  assert.match(d!.text, /About/);
+});
+
+test("trySiteFact: 'what is the selected block' returns selected-block-detail-fact", () => {
+  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "hero-1", build });
+  const d = trySiteFact("what is the selected block?", brain);
+  assert.ok(d);
+  assert.equal(d!.reason, "selected-block-detail-fact");
+  assert.match(d!.text, /hero/);
+  assert.match(d!.text, /Fresh from the farm/);
+});
+
+// --- Anti-hardcode: these MUST return null so the LLM handles them.
+
+test("trySiteFact: 'what color is corn' returns null (general knowledge, not a site fact)", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what color is corn?", brain);
+  assert.equal(d, null, "corn-color is general knowledge; must NOT be answered by the Brain");
+});
+
+test("trySiteFact: 'what color is a potato' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what color is a potato?", brain);
+  assert.equal(d, null);
+});
+
+test("trySiteFact: 'what color is the sky' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what color is the sky?", brain);
+  assert.equal(d, null);
+});
+
+test("trySiteFact: 'tell me a joke' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("tell me a joke", brain);
+  assert.equal(d, null);
+});
+
+test("trySiteFact: 'what is the weather' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = trySiteFact("what is the weather in Paris?", brain);
+  assert.equal(d, null);
+});
+
+test("trySiteFact: empty project returns null (no site facts to answer with)", () => {
+  const brain = buildBrainContext({ project: null, build });
+  assert.equal(trySiteFact("what are the pickup hours?", brain), null);
+  assert.equal(trySiteFact("what are the card titles?", brain), null);
+  assert.equal(trySiteFact("list the pages", brain), null);
+  assert.equal(trySiteFact("what is the contact info?", brain), null);
+});
+
+test("trySiteFact: empty prompt returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  assert.equal(trySiteFact("", brain), null);
 });

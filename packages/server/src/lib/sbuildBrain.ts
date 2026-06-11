@@ -106,6 +106,13 @@ export type BrainEngine = "sbuild-brain" | "local-ollama" | "openai-api" | "unav
 export type BrainMode = "deterministic" | "llm" | "fallback" | "error";
 export type BrainReason =
   | "site-app-version-fact"
+  | "site-pickup-hours-fact"
+  | "site-card-titles-fact"
+  | "site-card-details-fact"
+  | "site-contact-fact"
+  | "site-page-list-fact"
+  | "site-image-alt-fact"
+  | "selected-block-detail-fact"
   | "no-prompt"
   | "no-project-context"
   | "no-llm-available"
@@ -443,6 +450,176 @@ export function tryDeterministicFact(prompt: string, brain: SBuildBrainContext):
     };
   }
 
+  return null;
+}
+
+/**
+ * Positive-shape site-fact extractor.
+ *
+ * Fire ONLY when the question names an exact field whose value exists in
+ * the project JSON:
+ *   - "pickup hours" / "open hours" / "opening hours" / "schedule" / "open time"
+ *     → siteFacts.pickupHours (engine=sbuild-brain, mode=deterministic)
+ *   - "card titles" / "list the cards" / "what are the cards"
+ *     → siteFacts.cardTitles (titles only)
+ *   - "card details" / "card descriptions" / "details of each card" /
+ *     "titles and details" / "what does each card say"
+ *     → siteFacts.cardTitles with body
+ *   - "contact info" / "phone number" / "email" / "address" / "how to contact"
+ *     → siteFacts.contact
+ *   - "page list" / "what pages" / "site pages"
+ *     → siteFacts.pageList
+ *   - "image description" / "image alt" / "what does the image show"
+ *     → selected block (image) alt/caption
+ *   - "selected block title" / "selected block description" / "what is this block"
+ *     → selected block summary
+ *
+ * Hard guards: we never fire on:
+ *   - "what color is X"
+ *   - "what is X" (general noun) unless X is a field name
+ *   - jokes, weather, sky, ocean, animals, countries, food
+ *   - questions that have no site-fact answer
+ *
+ * If the question doesn't positively name one of the above fields, the
+ * function returns null and the LLM is called with the full Brain context.
+ */
+export function trySiteFact(prompt: string, brain: SBuildBrainContext): BrainDecision | null {
+  const trimmed = String(prompt || "").trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+
+  // No-project guard: every site fact must come from the project JSON.
+  if (brain.project.pageCount === 0) return null;
+
+  // Field-1: pickup hours
+  if (/\b(pickup\s+hours?|open(?:ing)?\s+hours?|open\s+times?|business\s+hours?|store\s+hours?|farm\s+hours?|hours?\s+of\s+operation|operating\s+hours?)\b/i.test(lower)) {
+    if (brain.siteFacts.totalHours === 0) return null;
+    const lines = ["Pickup hours:"];
+    for (const h of brain.siteFacts.pickupHours) {
+      const row = h.note ? ` — ${h.day} ${h.open}–${h.close} (${h.note})` : ` — ${h.day} ${h.open}–${h.close}`;
+      lines.push(row);
+    }
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["site-facts", "pickup-hours"],
+      reason: "site-pickup-hours-fact",
+      deterministicAnswer: true,
+      text: lines.join("\n")
+    };
+  }
+
+  // Field-2a: card titles only
+  if (/\b(card\s+titles?|list\s+(?:the|all)?\s*cards?|what\s+(?:are|is)\s+the\s+cards?|name\s+(?:the|all)?\s*cards?)\b/i.test(lower)
+      && !/\bdetail|description|body|say|read|content\b/i.test(lower)) {
+    if (brain.siteFacts.totalCards === 0) return null;
+    const titles = brain.siteFacts.cardTitles.map((c) => c.title);
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["site-facts", "card-titles"],
+      reason: "site-card-titles-fact",
+      deterministicAnswer: true,
+      text: `Card titles: ${titles.join("; ")}.`
+    };
+  }
+
+  // Field-2b: card details / titles + bodies
+  if (/\b(card\s+(?:details|descriptions|content|bodies|text)|what\s+(?:does|do)\s+each\s+card\s+(?:say|have|show)|titles\s+and\s+(?:details|descriptions|bodies)|details\s+of\s+(?:each|the)\s+card)\b/i.test(lower)) {
+    if (brain.siteFacts.totalCards === 0) return null;
+    const lines = brain.siteFacts.cardTitles.map((c) => {
+      return c.body ? `${c.title} — ${c.body}` : c.title;
+    });
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["site-facts", "card-details"],
+      reason: "site-card-details-fact",
+      deterministicAnswer: true,
+      text: `Card details: ${lines.join("; ")}.`
+    };
+  }
+
+  // Field-3: contact info
+  if (/\b(contact\s+(?:info|details|information)|how\s+to\s+(?:contact|reach)|phone\s+number|email\s+address|street\s+address|mailing\s+address)\b/i.test(lower)) {
+    if (brain.siteFacts.totalContactBlocks === 0) return null;
+    const c = brain.siteFacts.contact[0];
+    const pieces = [c.phone && `phone ${c.phone}`, c.email && `email ${c.email}`, c.address && `address ${c.address}`].filter(Boolean);
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["site-facts", "contact"],
+      reason: "site-contact-fact",
+      deterministicAnswer: true,
+      text: `Contact: ${pieces.join("; ")}.`
+    };
+  }
+
+  // Field-4: page list
+  if (/\b(page\s+list|list\s+(?:the|all)?\s*pages?|what\s+pages?\s+(?:do\s+we|are\s+there)|site\s+pages?|all\s+pages?)\b/i.test(lower)) {
+    if (brain.siteFacts.pageList.length === 0) return null;
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["site-facts", "page-list"],
+      reason: "site-page-list-fact",
+      deterministicAnswer: true,
+      text: `Pages: ${brain.siteFacts.pageList.join("; ")}.`
+    };
+  }
+
+  // Field-5: selected block detail (image alt or text body)
+  if (brain.selectedBlock) {
+    if (/\b(selected\s+block\s+(?:title|description|detail|info)|what\s+is\s+(?:this|the)\s+(?:selected\s+)?block|describe\s+(?:this|the)\s+(?:selected\s+)?block)\b/i.test(lower)) {
+      const sb = brain.selectedBlock;
+      const lines = [`Selected block: ${sb.type} on page "${sb.pageTitle}".`];
+      if (sb.title) lines.push(`Title: ${sb.title}`);
+      if (sb.description) lines.push(`Description: ${sb.description}`);
+      if (sb.body) lines.push(`Body: ${sb.body.slice(0, 200)}`);
+      return {
+        engine: "sbuild-brain",
+        mode: "deterministic",
+        model: "sbuild-brain",
+        latencyMs: 0,
+        timeoutMs: null,
+        contextUsed: ["selected-block"],
+        reason: "selected-block-detail-fact",
+        deterministicAnswer: true,
+        text: lines.join("\n")
+      };
+    }
+    if (/\b(image\s+(?:alt|alt\s+text|description|caption)|what\s+does\s+the\s+image\s+(?:show|say))\b/i.test(lower) && brain.selectedBlock.type === "image") {
+      const sb = brain.selectedBlock;
+      return {
+        engine: "sbuild-brain",
+        mode: "deterministic",
+        model: "sbuild-brain",
+        latencyMs: 0,
+        timeoutMs: null,
+        contextUsed: ["selected-block"],
+        reason: "site-image-alt-fact",
+        deterministicAnswer: true,
+        text: sb.title || sb.description || "(image block has no alt text)"
+      };
+    }
+  }
+
+  // No site-fact match → LLM.
   return null;
 }
 

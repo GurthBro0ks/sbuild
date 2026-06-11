@@ -113,7 +113,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
 import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
 import { getChatHistory, appendChatHistory, clearChatHistory, replaceChatHistory, sanitizeChatText as sanitizeChatTextImported } from "./lib/chatHistoryStore.js";
-import { buildBrainContext, formatBrainContextForPrompt, tryDeterministicFact } from "./lib/sbuildBrain.js";
+import { buildBrainContext, formatBrainContextForPrompt, tryDeterministicFact, trySiteFact } from "./lib/sbuildBrain.js";
 import type { PersistedChatItem } from "./lib/chatHistoryStore.js";
 import {
   backupsDir,
@@ -1242,9 +1242,73 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   app.post("/api/ai/chat", async (req, res) => {
     const prompt = String(req.body?.prompt || "").trim();
     const chatHistory = Array.isArray(req.body?.chatHistory) ? req.body.chatHistory as Array<{ role: string; text: string }> : [];
+    const projectContext = (req.body?.projectContext && typeof req.body.projectContext === "object")
+      ? req.body.projectContext as Partial<SBuildProject>
+      : null;
+    const selectedBlockId = req.body?.selectedBlockId ? String(req.body.selectedBlockId) : "";
+    const selectedPageId = req.body?.selectedPageId ? String(req.body.selectedPageId) : "";
     if (!prompt) {
       res.status(400).json({ ok: false, error: "prompt is required" });
       return;
+    }
+    // Build the Brain from project context, if any, so deterministic
+    // site-fact and build-identity questions are answered without an
+    // LLM call.
+    const brainProject = projectContext
+      ? ({
+          version: (projectContext as SBuildProject).version || "1",
+          updatedAt: (projectContext as SBuildProject).updatedAt || new Date().toISOString(),
+          site: (projectContext as SBuildProject).site || { siteName: "Untitled site", title: "Untitled", description: "", nav: [] },
+          globalStyles: (projectContext as SBuildProject).globalStyles || { headingFont: "", bodyFont: "", colors: { bg: "#fff", surface: "#fff", text: "#000", accent: "#000", muted: "#666" } },
+          ai: (projectContext as SBuildProject).ai || { provider: "ollama", model: "" },
+          deploy: (projectContext as SBuildProject).deploy || { method: "dry-run", webRoot: "" },
+          pages: Array.isArray((projectContext as SBuildProject).pages) ? (projectContext as SBuildProject).pages : []
+        } as SBuildProject)
+      : null;
+    const brain = brainProject
+      ? buildBrainContext({
+          project: brainProject,
+          selectedBlockId: selectedBlockId || null,
+          selectedPageId: selectedPageId || null,
+          build: getBuildInfo()
+        })
+      : null;
+    if (brain) {
+      const det = tryDeterministicFact(prompt, brain) || trySiteFact(prompt, brain);
+      if (det) {
+        const username = auth.enabled ? (() => {
+          const session = getSession(req);
+          return session ? session.u : null;
+        })() : "dev";
+        if (username) {
+          const persistedItems: PersistedChatItem[] = [
+            { role: "user", text: prompt, timestamp: Date.now() },
+            { role: "assistant", text: det.text, timestamp: Date.now(), provider: "local", model: "sbuild-brain", source: "brain", latencyMs: 0 }
+          ];
+          appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
+        }
+        res.json({
+          ok: true,
+          response: det.text,
+          provider: "local",
+          model: "sbuild-brain",
+          source: "brain",
+          message: `sBuild Brain: deterministic ${det.reason}`,
+          latencyMs: 0,
+          isLocal: true,
+          available: true,
+          // Engine decision proof
+          engine: "sbuild-brain",
+          mode: "deterministic",
+          engineModel: "sbuild-brain",
+          engineLatencyMs: 0,
+          engineTimeoutMs: null,
+          engineContextUsed: det.contextUsed,
+          engineReason: det.reason,
+          deterministicAnswer: true
+        });
+        return;
+      }
     }
     const result = await chatWithProviders(prompt, chatHistory);
     const username = auth.enabled ? (() => {
@@ -1258,7 +1322,32 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ];
       appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
     }
-    res.json({ ok: true, ...result });
+    // Surface engine decision proof for the chat lane.
+    const chatEngine = result.provider === "ollama"
+      ? "local-ollama"
+      : result.provider === "openai" || result.provider === "openai-compatible" || result.provider === "openrouter"
+        ? "openai-api"
+        : "unavailable";
+    const chatMode = !result.available
+      ? (typeof result.response === "string" && /timed out/i.test(result.response) ? "error" : "error")
+      : "llm";
+    const chatEngineReason = !result.available
+      ? (typeof result.response === "string" && /timed out/i.test(result.response) ? "llm-timeout" : "llm-error")
+      : "llm-ok";
+    const chatEngineTimeoutMs = result.provider === "ollama"
+      ? (isSmallLocalModel(result.model) ? 22000 : 30000)
+      : null;
+    res.json({
+      ok: true,
+      ...result,
+      engine: chatEngine,
+      mode: chatMode,
+      engineModel: result.model || null,
+      engineLatencyMs: result.latencyMs ?? 0,
+      engineTimeoutMs: chatEngineTimeoutMs,
+      engineReason: chatEngineReason,
+      deterministicAnswer: false
+    });
   });
 
   app.post("/api/ai/suggest", async (req, res) => {
@@ -1297,13 +1386,21 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       build: getBuildInfo()
     });
 
-    // The ONLY deterministic path: app version/build identity.
-    // For everything else (UI state, page list, cards, hours, contact,
-    // selected-block detail, capabilities, general knowledge, casual
-    // chitchat) the LLM is called with the full Brain context in its
-    // system prompt. The LLM does the understanding.
-    const deterministicDecision = tryDeterministicFact(prompt, brain);
-    if (deterministicDecision && deterministicDecision.reason === "site-app-version-fact") {
+    // The Brain handles two families of deterministic questions:
+    //   1. App version/build identity (tryDeterministicFact).
+    //   2. Exact site facts present in project JSON — pickup hours,
+    //      card titles, card details, contact info, page list, and
+    //      selected-block image alt (trySiteFact). These are positive-
+    //      field-lookup tests keyed on the field name, not the user
+    //      phrase. General knowledge (corn, potato, sky, jokes) is NOT
+    //      matched and falls through to the LLM.
+    // Everything else (UI state, chitchat, general knowledge, copy
+    // generation, image prompting) goes to the LLM with the full Brain
+    // context in its system prompt.
+    const deterministicDecision =
+      tryDeterministicFact(prompt, brain) ||
+      (brainProject ? trySiteFact(prompt, brain) : null);
+    if (deterministicDecision) {
       const detUsername = auth.enabled ? (() => {
         const session = getSession(req);
         return session ? session.u : null;
@@ -1321,7 +1418,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         provider: "local",
         model: "sbuild-brain",
         source: "brain",
-        message: "sBuild Brain: deterministic app build fact",
+        message: `sBuild Brain: deterministic ${deterministicDecision.reason}`,
         latencyMs: 0,
         isLocal: true,
         proposal: null,
@@ -1335,7 +1432,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         engineModel: "sbuild-brain",
         engineLatencyMs: 0,
         engineTimeoutMs: null,
-        engineContextUsed: ["app-build"],
+        engineContextUsed: deterministicDecision.contextUsed,
         engineReason: deterministicDecision.reason,
         deterministicAnswer: true
       });
@@ -1497,14 +1594,15 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       });
       return;
     }
-    const deterministic = tryDeterministicFact(prompt, brain);
-    if (deterministic && deterministic.reason === "site-app-version-fact") {
+    const deterministic = tryDeterministicFact(prompt, brain) || trySiteFact(prompt, brain);
+    if (deterministic) {
       res.json({
         ok: true,
         kind: "answered",
         engine: "sbuild-brain",
         mode: "deterministic",
         engineReason: deterministic.reason,
+        engineContextUsed: deterministic.contextUsed,
         deterministicAnswer: true,
         suggestion: deterministic.text,
         provider: "local",
@@ -2641,7 +2739,120 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     };
   }
 
-  async function getChatProviderStatus(): Promise<{ status: "connected" | "not_configured"; source: "local" | "env" | "missing"; provider: string; model?: string; message: string; configuredProvider?: string; localModels?: Array<{ name: string }> }> {
+  // In-memory cache of the last chat inference test. The UI and the
+  // /api/ai/providers/status endpoint both read this so the user sees
+  // "inference-tested" / "slow" / "timeout" / "unavailable" / "configured"
+  // honestly. The cache is process-local; a service restart drops it.
+  type LastChatTest = {
+    state: "configured" | "reachable" | "inference-tested" | "slow" | "timeout" | "unavailable" | "not_tested";
+    provider: string;
+    model: string | null;
+    latencyMs: number | null;
+    timedOut: boolean;
+    testedAt: string;
+    message: string;
+  };
+  let lastChatTest: LastChatTest = {
+    state: "not_tested",
+    provider: "unknown",
+    model: null,
+    latencyMs: null,
+    timedOut: false,
+    testedAt: new Date(0).toISOString(),
+    message: "Click 'Test chat model' to run a small inference."
+  };
+
+  /**
+   * runChatInferenceTest — runs a tiny "say hi" prompt against the active
+   * chat provider and records latency, timeout, and reachability in
+   * lastChatTest. Returns a JSON-friendly summary. Times out at 6s so the
+   * UI can show a real result even on slow models.
+   */
+  async function runChatInferenceTest(): Promise<{
+    ok: boolean;
+    state: LastChatTest["state"];
+    provider: string;
+    model: string | null;
+    latencyMs: number | null;
+    timedOut: boolean;
+    message: string;
+    testedAt: string;
+  }> {
+    const config = await getChatProviderConfig();
+    const provider = config.provider || "auto";
+    if (provider === "disabled") {
+      lastChatTest = {
+        state: "unavailable",
+        provider: "disabled",
+        model: null,
+        latencyMs: null,
+        timedOut: false,
+        testedAt: new Date().toISOString(),
+        message: "AI chat is disabled in settings."
+      };
+      return { ok: false, ...lastChatTest };
+    }
+    // Reuse chatWithProviders for the real model lane; the tiny prompt
+    // "hi" is short enough that a healthy model returns in <1s and a
+    // slow one will exceed 6s and be marked slow/timeout.
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await chatWithProviders("Reply with the single word: hi");
+    } catch (e) {
+      lastChatTest = {
+        state: "unavailable",
+        provider,
+        model: config.model || null,
+        latencyMs: Date.now() - t0,
+        timedOut: false,
+        testedAt: new Date().toISOString(),
+        message: `Provider error: ${e instanceof Error ? e.message : String(e)}`
+      };
+      return { ok: false, ...lastChatTest };
+    }
+    const latencyMs = Date.now() - t0;
+    const timedOut = latencyMs >= 6000 || /timed out/i.test(r.response || "");
+    const model = r.model || config.model || null;
+    if (!r.available) {
+      const state: LastChatTest["state"] = timedOut ? "timeout" : "unavailable";
+      lastChatTest = {
+        state,
+        provider: r.provider,
+        model,
+        latencyMs,
+        timedOut,
+        testedAt: new Date().toISOString(),
+        message: timedOut
+          ? `Model ${model || "(unknown)"} did not respond within 6s.`
+          : r.message || r.response || "Provider unavailable."
+      };
+      return { ok: false, ...lastChatTest };
+    }
+    // Successful response. Mark "slow" if >3s, otherwise "inference-tested".
+    const state: LastChatTest["state"] = latencyMs > 3000 ? "slow" : "inference-tested";
+    lastChatTest = {
+      state,
+      provider: r.provider,
+      model,
+      latencyMs,
+      timedOut: false,
+      testedAt: new Date().toISOString(),
+      message: `Model ${model || "(unknown)"} answered in ${latencyMs}ms.`
+    };
+    return { ok: true, ...lastChatTest };
+  }
+
+  async function getChatProviderStatus(): Promise<{
+    status: "connected" | "not_configured";
+    source: "local" | "env" | "missing";
+    provider: string;
+    model?: string;
+    message: string;
+    configuredProvider?: string;
+    localModels?: Array<{ name: string }>;
+    lastTest?: LastChatTest;
+  }> {
     const config = await getChatProviderConfig();
     const ollama = await getOllamaStatus();
     const localModels = ollama.models.map((model) => ({ name: model.name }));
@@ -2653,21 +2864,26 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         provider: "disabled",
         message: "AI chat is disabled in settings.",
         configuredProvider: "disabled",
-        localModels
+        localModels,
+        lastTest: lastChatTest
       };
     }
 
     if (config.provider === "ollama" || config.provider === "auto") {
       if (ollama.reachable && ollama.model) {
         const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
+        const lastTestLabel = lastChatTest.state === "not_tested"
+          ? "Click 'Test chat model' to confirm."
+          : `Last test: ${lastChatTest.state} · ${lastChatTest.latencyMs ?? "?"}ms.`;
         return {
           status: "connected",
           source: "local",
           provider: "ollama",
           model: modelToUse,
-          message: `Local chat connected: ${modelToUse}`,
+          message: `Local chat model configured: ${modelToUse}. ${lastTestLabel}`,
           configuredProvider: config.provider,
-          localModels
+          localModels,
+          lastTest: lastChatTest
         };
       }
       if (config.provider === "ollama") {
@@ -2677,21 +2893,26 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
           provider: "ollama",
           message: "Ollama selected but not reachable. Install Ollama or switch provider.",
           configuredProvider: "ollama",
-          localModels
+          localModels,
+          lastTest: lastChatTest
         };
       }
     }
 
     if (config.apiKey) {
       const chatKeyStatus = await getChatApiKeyStatus();
+      const lastTestLabel = lastChatTest.state === "not_tested"
+        ? "Click 'Test chat model' to confirm."
+        : `Last test: ${lastChatTest.state} · ${lastChatTest.latencyMs ?? "?"}ms.`;
       return {
         status: "connected",
         source: chatKeyStatus.chatSource,
         provider: config.provider === "openrouter" ? "openrouter" : "openai-compatible",
         model: config.model || process.env.SBUILD_CHAT_MODEL || "gpt-4o-mini",
-        message: `Chat configured via ${config.provider} (${config.baseUrl || "default endpoint"})`,
+        message: `Chat configured via ${config.provider} (${config.baseUrl || "default endpoint"}). ${lastTestLabel}`,
         configuredProvider: config.provider,
-        localModels
+        localModels,
+        lastTest: lastChatTest
       };
     }
 
@@ -2701,9 +2922,10 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         source: "local",
         provider: "ollama",
         model: ollama.model,
-        message: `Local chat connected: ${ollama.model}`,
+        message: `Local chat model reachable: ${ollama.model}. Click 'Test chat model' to confirm.`,
         configuredProvider: "auto",
-        localModels
+        localModels,
+        lastTest: lastChatTest
       };
     }
 
@@ -2713,7 +2935,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       provider: "none",
       message: ollama.reachable ? "Ollama reachable but no model loaded." : "No chat provider configured.",
       configuredProvider: config.provider,
-      localModels
+      localModels,
+      lastTest: lastChatTest
     };
   }
 
@@ -2808,7 +3031,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         model: chatStatus.model || "unknown",
         status: chatStatus.status,
         source: chatStatus.source,
-        message: chatStatus.message
+        message: chatStatus.message,
+        lastTest: chatStatus.lastTest
       }
     ];
     res.json({ ok: true, providers, channels });
@@ -2837,6 +3061,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     if (provider === "opencode") {
       const openCode = detectOpenCode();
       res.json({ ok: openCode.detected, status: openCode.detected ? "connected" : "not_configured", message: openCode.message });
+      return;
+    }
+    if (provider === "chat") {
+      const result = await runChatInferenceTest();
+      res.json(result);
       return;
     }
     res.json({ ok: false, status: "unknown", message: `Unknown provider: ${provider}` });
