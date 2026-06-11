@@ -489,8 +489,11 @@ test("builder UI theme save uses PUT /api/account/preferences and persists acros
   assert.match(appSource, /localStorage\.setItem\("sbuild_editor_theme"/);
 });
 
-test("AI chat surfaces safe success and error provider states", () => {
-  assert.match(appSource, /Local chat connected:/);
+test("AI chat surfaces honest success and error provider states (no blanket 'Local chat connected')", () => {
+  assert.match(appSource, /Answered by local Ollama/);
+  assert.match(appSource, /Answered by API model/);
+  assert.match(appSource, /Answered by sBuild Brain/);
+  assert.match(appSource, /Local model timed out/);
   assert.match(appSource, /AI chat unavailable:/);
   assert.match(appSource, /chatProviderStatus/);
 });
@@ -3083,18 +3086,62 @@ test("AI Chat scope buttons are labelled Focus: Selected Block / Page / Site", (
   assert.doesNotMatch(block, />Whole Site</, "old 'Whole Site' label must be replaced");
 });
 
-test("AI Chat shows 'Answering from' status line that reflects the brain source", () => {
+test("AI Chat engine status line distinguishes sbuild-brain, local-ollama, openai-api, timeout", () => {
   const toolbar = appSource.substring(
     appSource.indexOf("ai-chat-toolbar"),
     appSource.indexOf("ai-markup-attach-btn")
   );
-  assert.match(toolbar, /Answering from:/, "must show Answering from status line");
-  assert.match(toolbar, /Selected block \+ whole-site context/, "default block scope must include site context");
-  assert.match(toolbar, /Current page \+ whole-site context/, "page scope must include site context");
-  assert.match(toolbar, /Whole site context/, "site scope must state whole site");
-  assert.match(toolbar, /brain-block/, "must reflect brain-block source label");
-  assert.match(toolbar, /brain-site/, "must reflect brain-site source label");
-  assert.match(toolbar, /brain-version/, "must reflect brain-version source label");
+  // Each label must be reachable from the engine state branch.
+  assert.match(toolbar, /sBuild Brain \(deterministic/);
+  assert.match(toolbar, /local Ollama model/);
+  assert.match(toolbar, /API model/);
+  assert.match(toolbar, /Local model timed out/);
+  assert.match(toolbar, /No engine available/);
+  assert.match(toolbar, /Default: focus on selected block, full site context in LLM prompt/);
+  assert.match(toolbar, /Default: focus on current page, full site context in LLM prompt/);
+  assert.match(toolbar, /Default: whole-site context in LLM prompt/);
+});
+
+test("AI Chat engine status testid is exposed for QA", () => {
+  const toolbar = appSource.substring(
+    appSource.indexOf("ai-chat-toolbar"),
+    appSource.indexOf("ai-markup-attach-btn")
+  );
+  assert.match(toolbar, /data-testid="ai-chat-engine-status"/);
+});
+
+test("AI Chat does NOT show blanket 'Local chat connected' as if all responses come from local model", () => {
+  const setProv = appSource.match(/setProviderCheckMessage\([^)]*\)/g) || [];
+  for (const m of setProv) {
+    assert.doesNotMatch(m, /Local chat connected/, `must not say 'Local chat connected' as a blanket label: ${m}`);
+  }
+});
+
+test("aiAskSuggest reads engine, mode, engineModel, engineReason, deterministicAnswer from response", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /data\.engine/);
+  assert.match(fn, /data\.mode/);
+  assert.match(fn, /data\.engineModel/);
+  assert.match(fn, /data\.engineReason/);
+  assert.match(fn, /data\.deterministicAnswer/);
+  assert.match(fn, /setLastEngine/);
+  assert.match(fn, /setLastEngineMode/);
+  assert.match(fn, /setLastEngineReason/);
+  assert.match(fn, /setLastDeterministic/);
+});
+
+test("aiAskSuggest sets honest status messages by engine (sbuild-brain/local-ollama/openai-api/timeout)", () => {
+  const fn = appSource.substring(
+    appSource.indexOf("async function aiAskSuggest"),
+    appSource.indexOf("function applyAiProposal")
+  );
+  assert.match(fn, /Answered by sBuild Brain/);
+  assert.match(fn, /Answered by local Ollama/);
+  assert.match(fn, /Answered by API model/);
+  assert.match(fn, /Local model timed out/);
 });
 
 test("AI Chat does not auto-load chat history on panel open", () => {
@@ -3125,13 +3172,15 @@ test("aiAskSuggest sends projectContext and selectedBlockId to /api/ai/suggest f
   assert.match(fn, /selectedPageId:/, "must send selectedPageId");
 });
 
-test("aiAskSuggest captures brainSource and brainScope from /api/ai/suggest response", () => {
+test("aiAskSuggest captures lastEngine/lastEngineMode/lastEngineReason/lastDeterministic state", () => {
   const fn = appSource.substring(
     appSource.indexOf("async function aiAskSuggest"),
     appSource.indexOf("function applyAiProposal")
   );
-  assert.match(fn, /setLastBrainSource/, "must capture brainSource into state");
-  assert.match(fn, /setLastBrainScope/, "must capture brainScope into state");
+  assert.match(fn, /setLastEngine/, "must capture lastEngine");
+  assert.match(fn, /setLastEngineMode/, "must capture lastEngineMode");
+  assert.match(fn, /setLastEngineReason/, "must capture lastEngineReason");
+  assert.match(fn, /setLastDeterministic/, "must capture lastDeterministic");
 });
 
 test("clearAiChat clears in-memory chat history without calling any endpoint", () => {

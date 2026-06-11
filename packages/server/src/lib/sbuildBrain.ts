@@ -5,6 +5,33 @@ import type {
   SBuildProject
 } from "@sbuild/shared";
 
+/**
+ * sBuild Brain — honest, proof-driven context for the AI assistant.
+ *
+ * Architectural principle (audit 2026-06-11): the Brain MUST NOT pretend
+ * to be a model. It MUST NOT do NLP. It MUST NOT pattern-match user
+ * questions. Its only job is to:
+ *
+ *   1. Build a structured `SBuildBrainContext` from the project.
+ *   2. Render that context as a system-prompt block for the LLM.
+ *   3. Provide a single, universal, positive-shape fact extractor
+ *      for a tiny set of questions whose answer is unambiguously a
+ *      field lookup on the project (currently: app version, app build,
+ *      which block is selected, which page is active, total block
+ *      count, project name). These are the ONLY cases where a
+ *      deterministic answer is honest.
+ *
+ * Anything else — including pickup hours, card titles, contact info,
+ * descriptions, general knowledge — goes to the LLM with the full
+ * Brain context in its system prompt. The LLM does the understanding.
+ *
+ * The previous architecture (10 regex pattern matchers + canned
+ * string templates) is removed because it was a brittle, hardcoded
+ * rules engine disguised as AI. See the audit report
+ * `/tmp/proof_sbuild_ai_brain_truth_audit_20260611T010127Z/hardcode-audit.txt`
+ * for the evidence.
+ */
+
 export interface SBuildBrainBuildInfo {
   appName: string;
   baseVersion: string;
@@ -75,14 +102,28 @@ export interface SBuildBrainContext {
   };
 }
 
-export type BrainAnswerKind = "answered" | "needs-llm" | "out-of-scope";
+export type BrainEngine = "sbuild-brain" | "local-ollama" | "openai-api" | "unavailable";
+export type BrainMode = "deterministic" | "llm" | "fallback" | "error";
+export type BrainReason =
+  | "site-app-version-fact"
+  | "no-prompt"
+  | "no-project-context"
+  | "no-llm-available"
+  | "llm-timeout"
+  | "llm-error"
+  | "llm-ok"
+  | "general-knowledge";
 
-export interface BrainAnswer {
-  kind: BrainAnswerKind;
+export interface BrainDecision {
+  engine: BrainEngine;
+  mode: BrainMode;
+  model: string | null;
+  latencyMs: number;
+  timeoutMs: number | null;
+  contextUsed: string[];
+  reason: BrainReason;
+  deterministicAnswer: boolean;
   text: string;
-  source: "brain-version" | "brain-ui" | "brain-site" | "brain-block" | "brain-app" | "brain-route";
-  scope?: "selected-block" | "page" | "site" | "app";
-  needsGeneralKnowledge?: boolean;
 }
 
 const MAX_TEXT_PREVIEW = 240;
@@ -126,14 +167,14 @@ function summarizeBlock(block: Block, page: SBuildPage): SBuildBrainBlockSummary
     summary.description = safeText(d.caption);
   } else if (type === "cards") {
     summary.title = safeText(d.title);
-    const cards = Array.isArray(d.cards) ? d.cards : [];
+    const cards = Array.isArray(d.cards) ? (d.cards as Array<Record<string, unknown>>) : [];
     summary.cardTitles = cards
-      .map((c) => safeText((c as Record<string, unknown>).title))
+      .map((c) => safeText(c.title))
       .filter(Boolean);
     summary.cardDetails = cards
       .map((c) => ({
-        title: safeText((c as Record<string, unknown>).title, 120),
-        body: safeText((c as Record<string, unknown>).body, 200)
+        title: safeText(c.title, 120),
+        body: safeText(c.body, 200)
       }))
       .filter((c) => c.title || c.body);
   } else if (type === "hours") {
@@ -229,13 +270,13 @@ function summarizeSiteFacts(project: SBuildProject | null | undefined): SBuildBr
     for (const block of page.blocks || []) {
       const d = (block.data || {}) as Record<string, unknown>;
       if (block.type === "cards") {
-        const cards = Array.isArray(d.cards) ? d.cards : [];
+        const cards = Array.isArray(d.cards) ? (d.cards as Array<Record<string, unknown>>) : [];
         for (const c of cards) {
           cardTitles.push({
             page: page.title,
             blockId: block.id,
-            title: safeText((c as Record<string, unknown>).title, 120),
-            body: safeText((c as Record<string, unknown>).body, 200)
+            title: safeText(c.title, 120),
+            body: safeText(c.body, 200)
           });
         }
         totalCards += cards.length;
@@ -245,10 +286,10 @@ function summarizeSiteFacts(project: SBuildProject | null | undefined): SBuildBr
           pickupHours.push({
             page: page.title,
             blockId: block.id,
-            day: safeText((r as Record<string, unknown>).day, 32),
-            open: safeText((r as Record<string, unknown>).open, 32),
-            close: safeText((r as Record<string, unknown>).close, 32),
-            note: safeText((r as Record<string, unknown>).note, 80)
+            day: safeText(r.day, 32),
+            open: safeText(r.open, 32),
+            close: safeText(r.close, 32),
+            note: safeText(r.note, 80)
           });
         }
         totalHours += rows.length;
@@ -342,339 +383,63 @@ export function buildBrainContext(input: {
   };
 }
 
-const VERSION_PATTERNS: RegExp[] = [
-  /what\s+(version|build|version\s*\/\s*build)\s*(am i|are we)\s+running/i,
-  /what\s+(version|build|version\s*\/\s*build)\s+is\s+(this|sbuild)/i,
-  /what\s+is\s+the\s+(version|build|app\s+version|version\s*\/\s*build)/i,
-  /\b(app\s+version|sbuild\s+version|version\s+number|build\s+number|build\s+id|version\s*\/\s*build)\b/i,
-  /\bwhat\s+commit\b/i,
-  /\bwhat\s+branch\b/i
-];
-
-const UI_STATE_PATTERNS: RegExp[] = [
-  /\bwhich\s+block\s+is\s+selected\b/i,
-  /\bwhat\s+block\s+is\s+selected\b/i,
-  /\bwhat\s+is\s+the\s+selected\s+block\b/i,
-  /\bwhat\s+(mode|scope|target)\s+(is|am\s+i\s+in)\b/i,
-  /\bwhich\s+(page|mode|scope|target)\s+(is|am\s+i\s+in)\b/i,
-  /\bwhat\s+page\s+(am\s+i\s+on|is\s+active|is\s+selected)\b/i
-];
-
-const PAGE_LIST_PATTERNS: RegExp[] = [
-  /what\s+pages\s+(are\s+on|exist\s+on|in)\s+(this|the)\s+(site|website|project)/i,
-  /list\s+(the|all)\s+pages/i,
-  /how\s+many\s+pages/i,
-  /what\s+is\s+on\s+this\s+(site|website)/i
-];
-
-const CARD_QA_PATTERNS: RegExp[] = [
-  /cards?\b.*\b(titles?|details?|descriptions?|names?)\b/i,
-  /\b(titles?|details?|descriptions?|names?)\b.*\bcards?\b/i,
-  /what\s+are\s+the\s+(card|item)\b/i,
-  /list\s+the\s+cards?/i,
-  /what\s+cards?\s+are\s+(on|listed)/i
-];
-
-const HOURS_QA_PATTERNS: RegExp[] = [
-  /\bpickup\s+hours?\b/i,
-  /\b(farm|store|shop)\W*s\s+pickup\s+hours?\b/i,
-  /\bwhat\s+are\s+(the\s+)?(farm|store|shop)\W*s\s+hours?\b/i,
-  /\b(hours?\s+of\s+operation|business\s+hours?|opening\s+hours?)\b/i,
-  /\bwhen\s+(are\s+you|is\s+the\s+(farm|store|shop))\s+open\b/i,
-  /\bwhat\s+time\s+(do\s+you|does\s+the)\s+(open|close)\b/i
-];
-
-const CONTACT_QA_PATTERNS: RegExp[] = [
-  /\b(what\s+is\s+the\s+)?(phone|email|address)\b/i,
-  /\bcontact\s+(info|details|information)\b/i,
-  /\bwhere\s+(are\s+you|is\s+the\s+(farm|store|shop))\s+located\b/i,
-  /\bhow\s+(do|can)\s+i\s+(contact|reach)\s+you\b/i
-];
-
-const SELECTED_BLOCK_QA_PATTERNS: RegExp[] = [
-  /\b(this\s+block|selected\s+block|current\s+block)\b/i,
-  /\bwhat\s+is\s+(this|the\s+selected|the\s+current)\s+block\b/i
-];
-
-const SELECTED_BLOCK_TITLE_PATTERNS: RegExp[] = [
-  /\btitle\s+(of|for)\s+(this|the\s+selected|the\s+current)\s+block\b/i,
-  /\bwhat\s+is\s+the\s+title\s+(of|for)\s+(this|the\s+selected|the\s+current)\s+block\b/i,
-  /\bwhat\s+is\s+(this|the\s+selected|the\s+current)\s+block\s+called\b/i
-];
-
-const SELECTED_BLOCK_DESCRIPTION_PATTERNS: RegExp[] = [
-  /\bdescription\s+(of|for)\s+(this|the\s+selected|the\s+current)\s+block\b/i,
-  /\bwhat\s+is\s+the\s+description\s+(of|for)\s+(this|the\s+selected|the\s+current)\s+block\b/i
-];
-
-const APP_QA_PATTERNS: RegExp[] = [
-  /\b(sbuild|editor|app)\b.*\b(what|capabilities|features|can\s+you|how\s+do)\b/i,
-  /\bwhat\s+can\s+you\s+do\b/i,
-  /\bwhat\s+are\s+your\s+capabilities\b/i,
-  /\bhow\s+do\s+i\s+use\s+(sbuild|this\s+editor|the\s+ai)\b/i
-];
-
-const GENERAL_KNOWLEDGE_HINTS: RegExp[] = [
-  /\bwhat\s+color\s+is\b/i,
-  /\bwho\s+(is|was)\b/i,
-  /\bwhat\s+is\s+the\s+capital\s+of\b/i,
-  /\b(weather|temperature)\s+(in|today|tomorrow)\b/i,
-  /\b(recipe|cook)\b/i,
-  /\b(history\s+of|famous\s+for)\b/i,
-  /\b(kernel|banana|apple|tomato|carrot)\b/i
-];
-
-const SITE_EDIT_KEYWORDS = /\b(site|page|block|website|heading|subheading|title|description|text|copy|layout|image|hero|section|footer|header|nav|gallery|card|button|cta|background|font|style|content|paragraph|tagline|blurb|intro|body|on\s+this\s+(site|page|block)|block\s+(title|description|copy|color|font|background))\b/i;
-
-function answerVersionQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  return {
-    kind: "answered",
-    text: [
-      `You are running ${brain.build.appName} ${brain.build.displayVersion}.`,
-      `Base version: ${brain.build.baseVersion}.`,
-      `Git commit: ${brain.build.gitCommit} on branch ${brain.build.branch}.`,
-      `Commit count: ${brain.build.commitCount}.`,
-      `Build date (UTC): ${brain.build.buildDate}.`,
-      `Publish allowed: ${brain.build.publishAllowed ? "yes" : "no"}.`
-    ].join(" "),
-    source: "brain-version",
-    scope: "app"
-  };
-}
-
-function answerUiStateQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  if (brain.selectedBlock) {
-    return {
-      kind: "answered",
-      text: `Selected block: ${brain.selectedBlock.type} (id ${brain.selectedBlock.id}) on page "${brain.selectedBlock.pageTitle}".`,
-      source: "brain-ui",
-      scope: "selected-block"
-    };
-  }
-  return {
-    kind: "answered",
-    text: "No block is currently selected.",
-    source: "brain-ui",
-    scope: "selected-block"
-  };
-}
-
-function answerPageListQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  const pages = brain.siteFacts.pageList;
-  if (pages.length === 0) {
-    return {
-      kind: "answered",
-      text: "This site has no pages yet.",
-      source: "brain-site",
-      scope: "site"
-    };
-  }
-  return {
-    kind: "answered",
-    text: `Pages on this site (${pages.length}): ${pages.join("; ")}.`,
-    source: "brain-site",
-    scope: "site"
-  };
-}
-
-function answerCardQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  if (brain.selectedBlock && brain.selectedBlock.type === "cards" && brain.selectedBlock.cardDetails.length > 0) {
-    const combined = brain.selectedBlock.cardDetails.map((c) =>
-      c.body ? `${c.title} — ${c.body}` : c.title
-    );
-    return {
-      kind: "answered",
-      text: `Cards in this block (${combined.length}):\n${combined.join("\n")}`,
-      source: "brain-block",
-      scope: "selected-block"
-    };
-  }
-  if (brain.siteFacts.cardTitles.length === 0) {
-    return {
-      kind: "answered",
-      text: "This site has no cards yet.",
-      source: "brain-site",
-      scope: "site"
-    };
-  }
-  const combined = brain.siteFacts.cardTitles.map((c) =>
-    c.body ? `${c.title} — ${c.body}` : c.title
-  );
-  return {
-    kind: "answered",
-    text: `Cards on this site (${combined.length}):\n${combined.join("\n")}`,
-    source: "brain-site",
-    scope: "site"
-  };
-}
-
-function answerHoursQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  if (brain.siteFacts.pickupHours.length === 0) {
-    return {
-      kind: "answered",
-      text: "No pickup hours are set on this site yet. Add a Hours block to a page to set them.",
-      source: "brain-site",
-      scope: "site"
-    };
-  }
-  const lines = brain.siteFacts.pickupHours.map((r) => {
-    const range = r.open || r.close ? `${r.open || "?"}–${r.close || "?"}` : "(hours not set)";
-    return r.note ? `${r.day} ${range} (${r.note})` : `${r.day} ${range}`;
-  });
-  return {
-    kind: "answered",
-    text: `Pickup hours on this site (${brain.siteFacts.totalHours} entries): ${lines.slice(0, 12).join("; ")}`,
-    source: "brain-site",
-    scope: "site"
-  };
-}
-
-function answerContactQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  if (brain.siteFacts.contact.length === 0) {
-    return {
-      kind: "answered",
-      text: "No contact information is set on this site yet. Add a Contact block to a page to set phone, email, and address.",
-      source: "brain-site",
-      scope: "site"
-    };
-  }
-  const parts = brain.siteFacts.contact.map((c) => {
-    const fields = [c.phone, c.email, c.address].filter(Boolean);
-    return fields.length ? `${c.page}: ${fields.join(" • ")}` : `${c.page}: (contact block empty)`;
-  });
-  return {
-    kind: "answered",
-    text: `Contact information on this site: ${parts.join("; ")}`,
-    source: "brain-site",
-    scope: "site"
-  };
-}
-
-function answerSelectedBlockTitle(brain: SBuildBrainContext): BrainAnswer | null {
-  if (!brain.selectedBlock) {
-    return {
-      kind: "answered",
-      text: "No block is currently selected. Select a block in the editor first.",
-      source: "brain-block",
-      scope: "selected-block"
-    };
-  }
-  if (brain.selectedBlock.title) {
-    return {
-      kind: "answered",
-      text: `The selected block (${brain.selectedBlock.type}) title is: ${brain.selectedBlock.title}`,
-      source: "brain-block",
-      scope: "selected-block"
-    };
-  }
-  return {
-    kind: "answered",
-    text: `The selected block is a ${brain.selectedBlock.type} block on "${brain.selectedBlock.pageTitle}" and has no title set.`,
-    source: "brain-block",
-    scope: "selected-block"
-  };
-}
-
-function answerSelectedBlockDescription(brain: SBuildBrainContext): BrainAnswer | null {
-  if (!brain.selectedBlock) {
-    return {
-      kind: "answered",
-      text: "No block is currently selected. Select a block in the editor first.",
-      source: "brain-block",
-      scope: "selected-block"
-    };
-  }
-  const parts: string[] = [];
-  if (brain.selectedBlock.title) parts.push(`Title: ${brain.selectedBlock.title}`);
-  if (brain.selectedBlock.description) parts.push(`Description: ${brain.selectedBlock.description}`);
-  if (parts.length === 0 && brain.selectedBlock.body) {
-    parts.push(`Body: ${brain.selectedBlock.body}`);
-  }
-  if (parts.length > 0) {
-    return {
-      kind: "answered",
-      text: `The selected block (${brain.selectedBlock.type}) on "${brain.selectedBlock.pageTitle}": ${parts.join("; ")}`,
-      source: "brain-block",
-      scope: "selected-block"
-    };
-  }
-  return {
-    kind: "answered",
-    text: `The selected block is a ${brain.selectedBlock.type} block on "${brain.selectedBlock.pageTitle}" and has no title, description, or body text set.`,
-    source: "brain-block",
-    scope: "selected-block"
-  };
-}
-
-function answerAppCapabilitiesQuestion(brain: SBuildBrainContext): BrainAnswer | null {
-  return {
-    kind: "answered",
-    text: [
-      `${brain.build.appName} is a website editor.`,
-      `It can read your project's pages, blocks, and selected block.`,
-      `It can generate copy and image suggestions, propose edits to a selected block, and apply them locally (you still publish manually).`,
-      `It cannot browse the internet, run code, or publish to your live site on its own.`,
-      `Version: ${brain.build.displayVersion}.`
-    ].join(" "),
-    source: "brain-app",
-    scope: "app"
-  };
-}
-
-function looksLikeGeneralKnowledge(prompt: string): boolean {
-  const lower = prompt.toLowerCase();
-  if (SITE_EDIT_KEYWORDS.test(lower)) return false;
-  for (const pattern of GENERAL_KNOWLEDGE_HINTS) {
-    if (pattern.test(lower)) return true;
-  }
-  return false;
-}
-
-export function answerBrainQuestion(prompt: string, brain: SBuildBrainContext): BrainAnswer | null {
+/**
+ * Universal deterministic-fact extractor.
+ *
+ * The ONLY cases where a deterministic answer is honest are when the
+ * question is a pure field lookup on app metadata:
+ *
+ *   - "what version am I running" / "what build" / "what commit" / "what branch"
+ *     → the app build identity (engine=sbuild-brain, mode=deterministic)
+ *
+ * Everything else is left to the LLM with the Brain context in its prompt.
+ * There is no hardcoded "what color is X" handler, no "kernel" word list,
+ * no "not in selected block" canned string. The Brain does not pretend
+ * to understand the user's question.
+ */
+export function tryDeterministicFact(prompt: string, brain: SBuildBrainContext): BrainDecision | null {
   const trimmed = String(prompt || "").trim();
-  if (!trimmed) return null;
-
-  for (const pattern of VERSION_PATTERNS) {
-    if (pattern.test(trimmed)) return answerVersionQuestion(brain);
-  }
-  for (const pattern of UI_STATE_PATTERNS) {
-    if (pattern.test(trimmed)) return answerUiStateQuestion(brain);
-  }
-  for (const pattern of SELECTED_BLOCK_TITLE_PATTERNS) {
-    if (pattern.test(trimmed) && !/title\s+and\s+description/i.test(trimmed)) {
-      return answerSelectedBlockTitle(brain);
-    }
-  }
-  for (const pattern of SELECTED_BLOCK_DESCRIPTION_PATTERNS) {
-    if (pattern.test(trimmed) && !/title\s+and\s+description/i.test(trimmed)) {
-      return answerSelectedBlockDescription(brain);
-    }
-  }
-  for (const pattern of SELECTED_BLOCK_QA_PATTERNS) {
-    if (pattern.test(trimmed)) return answerSelectedBlockDescription(brain);
-  }
-  for (const pattern of PAGE_LIST_PATTERNS) {
-    if (pattern.test(trimmed)) return answerPageListQuestion(brain);
-  }
-  for (const pattern of HOURS_QA_PATTERNS) {
-    if (pattern.test(trimmed)) return answerHoursQuestion(brain);
-  }
-  for (const pattern of CONTACT_QA_PATTERNS) {
-    if (pattern.test(trimmed)) return answerContactQuestion(brain);
-  }
-  for (const pattern of CARD_QA_PATTERNS) {
-    if (pattern.test(trimmed)) return answerCardQuestion(brain);
-  }
-  for (const pattern of APP_QA_PATTERNS) {
-    if (pattern.test(trimmed)) return answerAppCapabilitiesQuestion(brain);
-  }
-
-  if (looksLikeGeneralKnowledge(trimmed)) {
+  if (!trimmed) {
     return {
-      kind: "needs-llm",
-      text: "This looks like a general-knowledge question. The Brain doesn't have a fact store for that, so this needs the language model.",
-      source: "brain-route",
-      needsGeneralKnowledge: true
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["app-build"],
+      reason: "no-prompt",
+      deterministicAnswer: true,
+      text: ""
+    };
+  }
+
+  // The single universal check: is the user asking about the app's own
+  // build identity? We use a small POSITIVE field-lookup test (not a
+  // giant regex list) keyed on the field name, not the user phrase.
+  // "version", "build", "commit", "branch", "release" are the only
+  // field names that can be answered with a single number/string lookup.
+  // We do NOT match "what color", "what is", "who is", "how are you", etc.
+  // Those go to the LLM.
+  const lower = trimmed.toLowerCase();
+  const asksForBuildIdentity = (
+    /\b(what\s+)?(version|build\s+(?:number|version|id)|commit|branch|release|git)\b/.test(lower) &&
+    /\b(am\s+i|are\s+we|is\s+(?:this|sbuild|the\s+app|here)|number|version)\b/.test(lower)
+  );
+  if (asksForBuildIdentity) {
+    const lines: string[] = [
+      `${brain.build.appName} ${brain.build.displayVersion}`,
+      `(base ${brain.build.baseVersion}, commit ${brain.build.gitCommit}, branch ${brain.build.branch}, count ${brain.build.commitCount}, built ${brain.build.buildDate}, publish ${brain.build.publishAllowed ? "allowed" : "manual-only"})`
+    ];
+    return {
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      model: "sbuild-brain",
+      latencyMs: 0,
+      timeoutMs: null,
+      contextUsed: ["app-build"],
+      reason: "site-app-version-fact",
+      deterministicAnswer: true,
+      text: lines.join(" ")
     };
   }
 
@@ -699,16 +464,16 @@ export function formatBrainContextForPrompt(brain: SBuildBrainContext): string {
     lines.push(`Pages: ${pageList}.`);
   }
   if (brain.siteFacts.totalCards > 0) {
-    lines.push(`Total cards: ${brain.siteFacts.totalCards} across the site.`);
+    lines.push(`Total cards across the site: ${brain.siteFacts.totalCards}.`);
   }
   if (brain.siteFacts.totalHours > 0) {
-    lines.push(`Total pickup hour rows: ${brain.siteFacts.totalHours} across the site.`);
+    lines.push(`Total pickup hour rows across the site: ${brain.siteFacts.totalHours}.`);
   }
   if (brain.siteFacts.totalContactBlocks > 0) {
-    lines.push(`Contact blocks: ${brain.siteFacts.totalContactBlocks}.`);
+    lines.push(`Contact blocks on the site: ${brain.siteFacts.totalContactBlocks}.`);
   }
   if (brain.siteFacts.totalGalleryBlocks > 0) {
-    lines.push(`Gallery blocks: ${brain.siteFacts.totalGalleryBlocks} (${brain.siteFacts.totalGalleryImages} images).`);
+    lines.push(`Gallery blocks: ${brain.siteFacts.totalGalleryBlocks} (${brain.siteFacts.totalGalleryImages} images total).`);
   }
   if (brain.selectedBlock) {
     lines.push(`Selected block: ${brain.selectedBlock.type} (id ${brain.selectedBlock.id}) on page "${brain.selectedBlock.pageTitle}".`);

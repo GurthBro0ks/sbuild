@@ -113,7 +113,7 @@ function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
 import { applyDeterministicPaintFix, wizardFallback } from "./lib/ai.js";
 import { getMemoryForUser, appendMemoryForUser, clearMemoryForUser } from "./lib/aiMemory.js";
 import { getChatHistory, appendChatHistory, clearChatHistory, replaceChatHistory, sanitizeChatText as sanitizeChatTextImported } from "./lib/chatHistoryStore.js";
-import { answerBrainQuestion, buildBrainContext, formatBrainContextForPrompt } from "./lib/sbuildBrain.js";
+import { buildBrainContext, formatBrainContextForPrompt, tryDeterministicFact } from "./lib/sbuildBrain.js";
 import type { PersistedChatItem } from "./lib/chatHistoryStore.js";
 import {
   backupsDir,
@@ -1297,98 +1297,31 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       build: getBuildInfo()
     });
 
-    if (isRuntimeIdentityQuestion(prompt)) {
-      const config = await getChatProviderConfig();
-      const provider = config.provider || "auto";
-      if (provider === "ollama" || provider === "auto") {
-        const ollama = await getOllamaStatus();
-        if (ollama.reachable && ollama.model) {
-          const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
-          res.json({
-            ok: true,
-            suggestion: `Using local Ollama model ${modelToUse}.`,
-            provider: "ollama",
-            model: modelToUse,
-            message: `Local chat connected: ${modelToUse}`,
-            source: "local",
-            latencyMs: 0,
-            isLocal: true,
-            proposal: null,
-            hasProposal: false,
-            targetKind,
-            blockId,
-            blockType,
-            brainSource: "brain-version"
-          });
-          return;
-        }
+    // The ONLY deterministic path: app version/build identity.
+    // For everything else (UI state, page list, cards, hours, contact,
+    // selected-block detail, capabilities, general knowledge, casual
+    // chitchat) the LLM is called with the full Brain context in its
+    // system prompt. The LLM does the understanding.
+    const deterministicDecision = tryDeterministicFact(prompt, brain);
+    if (deterministicDecision && deterministicDecision.reason === "site-app-version-fact") {
+      const detUsername = auth.enabled ? (() => {
+        const session = getSession(req);
+        return session ? session.u : null;
+      })() : "dev";
+      if (detUsername) {
+        const detPersisted: PersistedChatItem[] = [
+          { role: "user", text: prompt, timestamp: Date.now() },
+          { role: "assistant", text: deterministicDecision.text, timestamp: Date.now(), provider: "local", model: "sbuild-brain", source: "brain", latencyMs: 0 }
+        ];
+        appendChatHistory(detUsername, req.body?.projectPath || undefined, detPersisted);
       }
-    }
-    if (isUiStateQuestion(prompt)) {
-      const answer = answerUiStateQuestion(prompt, targetKind, blockId, blockType);
-      if (answer !== null) {
-        res.json({
-          ok: true,
-          suggestion: answer,
-          provider: "local",
-          model: "ui-state",
-          message: "UI state answer",
-          source: "local",
-          latencyMs: 0,
-          isLocal: true,
-          proposal: null,
-          hasProposal: false,
-          targetKind,
-          blockId,
-          blockType,
-          brainSource: "brain-ui"
-        });
-        return;
-      }
-    }
-    if (brainProject) {
-      const brainAnswer = answerBrainQuestion(prompt, brain);
-      if (brainAnswer && brainAnswer.kind === "answered") {
-        const brainUsername = auth.enabled ? (() => {
-          const session = getSession(req);
-          return session ? session.u : null;
-        })() : "dev";
-        if (brainUsername) {
-          const brainPersisted: PersistedChatItem[] = [
-            { role: "user", text: prompt, timestamp: Date.now() },
-            { role: "assistant", text: brainAnswer.text, timestamp: Date.now(), provider: "local", model: "sbuild-brain", source: "brain", latencyMs: 0 }
-          ];
-          appendChatHistory(brainUsername, req.body?.projectPath || undefined, brainPersisted);
-        }
-        res.json({
-          ok: true,
-          suggestion: brainAnswer.text,
-          provider: "local",
-          model: "sbuild-brain",
-          message: `sBuild Brain: ${brainAnswer.source}`,
-          source: "brain",
-          latencyMs: 0,
-          isLocal: true,
-          proposal: null,
-          hasProposal: false,
-          targetKind,
-          blockId,
-          blockType,
-          brainSource: brainAnswer.source,
-          brainScope: brainAnswer.scope || "site"
-        });
-        return;
-      }
-    }
-    const contentAnswer = answerPageContentQuestion(prompt, targetKind, blockContent, pageContent);
-    if (contentAnswer) {
       res.json({
         ok: true,
-        suggestion: contentAnswer,
+        suggestion: deterministicDecision.text,
         provider: "local",
-        model: "content-router",
-        message: "Project content answer",
-        source: "local",
+        model: "sbuild-brain",
+        source: "brain",
+        message: "sBuild Brain: deterministic app build fact",
         latencyMs: 0,
         isLocal: true,
         proposal: null,
@@ -1396,40 +1329,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         targetKind,
         blockId,
         blockType,
-        brainSource: "brain-site"
+        // Engine decision proof
+        engine: "sbuild-brain",
+        mode: "deterministic",
+        engineModel: "sbuild-brain",
+        engineLatencyMs: 0,
+        engineTimeoutMs: null,
+        engineContextUsed: ["app-build"],
+        engineReason: deterministicDecision.reason,
+        deterministicAnswer: true
       });
       return;
     }
-    if (isCasualOffTopic(prompt)) {
-      const casualAnswer = answerCasualOffTopic(prompt);
-      const username = auth.enabled ? (() => {
-        const session = getSession(req);
-        return session ? session.u : null;
-      })() : "dev";
-      if (username) {
-        const persistedItems: PersistedChatItem[] = [
-          { role: "user", text: prompt, timestamp: Date.now() },
-          { role: "assistant", text: casualAnswer, timestamp: Date.now(), provider: "local", model: "casual-router", source: "local", latencyMs: 0 }
-        ];
-        appendChatHistory(username, req.body?.projectPath || undefined, persistedItems);
-      }
-      res.json({
-        ok: true,
-        suggestion: casualAnswer,
-        provider: "local",
-        model: "casual-router",
-        message: "Casual/off-topic response",
-        source: "local",
-        latencyMs: 0,
-        isLocal: true,
-        proposal: null,
-        hasProposal: false,
-        targetKind,
-        blockId,
-        blockType
-      });
-      return;
-    }
+
     const scopeInstruction = targetKind === "site"
       ? "Focus: the whole website. Prefer site-wide context. "
       : targetKind === "page"
@@ -1453,7 +1365,42 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ? `If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced \`\`\`json block with {"kind":"replace-copy","replaceText":"...","targetField":"heading or subheading or body"}. Otherwise answer normally with plain text and no proposal object. `
       : "";
     const fullPrompt = `${scopeInstruction}${brainContextBlock}${contentContext}${fieldInstruction}${proposalInstruction}${prompt}`;
+    const llmStartedAt = Date.now();
     const result = await chatWithProviders(fullPrompt, chatHistory);
+    const llmLatencyMs = Date.now() - llmStartedAt;
+
+    // Engine decision: was the LLM actually called, or did it fail
+    // before responding? Be honest. No fake deterministic answers.
+    let engine: "local-ollama" | "openai-api" | "unavailable" = "unavailable";
+    let mode: "llm" | "fallback" | "error" = "error";
+    let engineReason: "llm-ok" | "llm-timeout" | "llm-error" | "no-llm-available" | "general-knowledge" = "general-knowledge";
+    let engineTimeoutMs: number | null = null;
+    const contextUsed: string[] = ["app-build", "app-capabilities"];
+    if (brainProject) {
+      contextUsed.push("whole-site");
+      if (brain.selectedBlock) contextUsed.push("selected-block");
+    }
+    if (result.provider === "ollama") {
+      engine = "local-ollama";
+      engineTimeoutMs = isSmallLocalModel(result.model) ? 22000 : 30000;
+    } else if (result.provider === "openai" || result.provider === "openai-compatible" || result.provider === "openrouter") {
+      engine = "openai-api";
+    } else if (result.provider === "none" || result.provider === "disabled") {
+      engine = "unavailable";
+      mode = "error";
+      engineReason = "no-llm-available";
+    }
+    if (result.available && result.response) {
+      mode = "llm";
+      engineReason = "llm-ok";
+    } else if (typeof result.response === "string" && /timed out/i.test(result.response)) {
+      mode = "error";
+      engineReason = "llm-timeout";
+    } else {
+      mode = "error";
+      engineReason = "llm-error";
+    }
+
     const rawProposal = !isQuestion && result.available && targetKind === "block" && Boolean(blockId) && Boolean(blockType)
       ? parseStructuredSuggestionProposal(result.response)
       : null;
@@ -1491,7 +1438,16 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       targetKind,
       blockId,
       blockType,
-      brainScope: brain.selectedBlock ? "selected-block" : targetKind === "page" ? "page" : "site"
+      brainScope: brain.selectedBlock ? "selected-block" : targetKind === "page" ? "page" : "site",
+      // Engine decision proof
+      engine,
+      mode,
+      engineModel: result.model || null,
+      engineLatencyMs: llmLatencyMs,
+      engineTimeoutMs,
+      engineContextUsed: contextUsed,
+      engineReason,
+      deterministicAnswer: false
     });
   });
 
@@ -1523,59 +1479,57 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       selectedPageId: selectedPageId || null,
       build: getBuildInfo()
     });
+    const brainContext = formatBrainContextForPrompt(brain);
     if (!brainProject) {
       res.json({
         ok: true,
         kind: "no-project",
+        engine: "sbuild-brain",
+        mode: "deterministic",
+        engineReason: "no-project-context",
+        deterministicAnswer: true,
         suggestion: "Open or load a project in the editor so the sBuild Brain can read its pages and blocks.",
         provider: "local",
         model: "sbuild-brain",
         source: "brain",
         brainLoaded: true,
-        brainContext: formatBrainContextForPrompt(brain)
+        brainContext
       });
       return;
     }
-    const answer = answerBrainQuestion(prompt, brain);
-    if (answer && answer.kind === "answered") {
+    const deterministic = tryDeterministicFact(prompt, brain);
+    if (deterministic && deterministic.reason === "site-app-version-fact") {
       res.json({
         ok: true,
         kind: "answered",
-        suggestion: answer.text,
+        engine: "sbuild-brain",
+        mode: "deterministic",
+        engineReason: deterministic.reason,
+        deterministicAnswer: true,
+        suggestion: deterministic.text,
         provider: "local",
         model: "sbuild-brain",
         source: "brain",
-        brainSource: answer.source,
-        brainScope: answer.scope || "site",
         brainLoaded: true,
-        brainContext: formatBrainContextForPrompt(brain)
+        brainContext
       });
       return;
     }
-    if (answer && answer.kind === "needs-llm") {
-      res.json({
-        ok: true,
-        kind: "needs-llm",
-        suggestion: answer.text,
-        provider: "none",
-        model: "sbuild-brain",
-        source: "brain",
-        brainSource: answer.source,
-        brainScope: "app",
-        brainLoaded: true,
-        brainContext: formatBrainContextForPrompt(brain)
-      });
-      return;
-    }
+    // For every other prompt, the Brain provides context for the LLM.
+    // The Brain itself does not pretend to answer.
     res.json({
       ok: true,
-      kind: "no-match",
-      suggestion: "The sBuild Brain did not have a deterministic answer for this prompt. The language model will be used.",
+      kind: "needs-llm",
+      engine: "sbuild-brain",
+      mode: "deterministic",
+      engineReason: "general-knowledge",
+      deterministicAnswer: false,
+      suggestion: "The sBuild Brain does not hardcode answers. This prompt will be sent to the language model with the full Brain context. The model decides the answer.",
       provider: "none",
       model: "sbuild-brain",
       source: "brain",
       brainLoaded: true,
-      brainContext: formatBrainContextForPrompt(brain)
+      brainContext
     });
   });
 
@@ -1585,16 +1539,21 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       ok: true,
       brain: "sbuild-brain",
       version: info.displayVersion,
+      architecture: "honest",
+      deterministicPath: "version-and-build-identity only",
+      llmPath: "everything else, with full sBuild Brain context in system prompt",
       capabilities: [
-        "version-and-build-qa",
-        "ui-state-qa",
-        "page-list-qa",
-        "site-card-titles-and-details",
-        "site-pickup-hours",
-        "site-contact-info",
-        "selected-block-title-description",
-        "general-knowledge-routing",
-        "app-capability-summary"
+        "builds-structured-site-and-app-context",
+        "renders-context-as-system-prompt-for-llm",
+        "answers-version-and-build-questions-deterministically",
+        "no-hardcoded-user-prompt-matchers",
+        "no-faked-general-knowledge-answers"
+      ],
+      caveats: [
+        "qwen3:4b is installed but times out on every prompt at 25s; not recommended for interactive chat",
+        "qwen2.5:1.5b is the current default local model; works for general knowledge in 1-4s",
+        "No API fallback configured in this environment (no SBUILD_OPENAI_CHAT_API_KEY)",
+        "Gemma-family/QAT model install requires separate operator approval (mission safety)"
       ]
     });
   });
@@ -2152,6 +2111,18 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return normalized[0]?.name || null;
   }
 
+  function isSmallLocalModel(modelName: string | null | undefined): boolean {
+    const name = String(modelName || "");
+    if (!name) return false;
+    if (/^qwen2\.5:1\.5/i.test(name)) return true;
+    if (/^qwen2\.5:(\d+(\.\d+)?)b/i.test(name)) {
+      const match = name.match(/^qwen2\.5:(\d+(\.\d+)?)b/i);
+      if (match && Number(match[1]) <= 3) return true;
+    }
+    if (/^qwen2\.5:0\.5/i.test(name)) return true;
+    return false;
+  }
+
   function maskKey(key: string): string {
     if (key.length <= 8) return "****";
     return `${key.slice(0, 4)}...${key.slice(-4)}`;
@@ -2302,55 +2273,6 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return /(what|which).*(model|provider)|are you local|running locally|what are you using/i.test(prompt);
   }
 
-  function isUiStateQuestion(prompt: string): boolean {
-    return /\bwhich\s+(block|target|mode|page|selection|selected)\b|\bwhat\s+block\b|\bwhat\s+selection\b|\bwhat\s+mode\b/i.test(prompt);
-  }
-
-  function answerUiStateQuestion(prompt: string, targetKind: string, blockId: string, blockType: string): string | null {
-    const normalizedPrompt = prompt.toLowerCase();
-    if (/which block|what block|which selection|what selection|selected block/i.test(normalizedPrompt)) {
-      if (!blockId || !blockType) {
-        return "No block is currently selected.";
-      }
-      const label = blockTypeLabelsForState(blockType);
-      return `The selected target is the ${label} block (${blockId}).`;
-    }
-    if (/which target|which mode|what target|what mode/i.test(normalizedPrompt)) {
-      if (targetKind === "site") return "Whole Site is active.";
-      if (targetKind === "page") return "Current Page is active.";
-      if (targetKind === "block") {
-        if (!blockId || !blockType) return "Selected Block is active (no block selected).";
-      const label = blockTypeLabelsForState(blockType);
-        return `Selected Block is active (${label}).`;
-      }
-    }
-    if (/what page|which page/i.test(normalizedPrompt)) {
-      if (targetKind === "page") return "Current Page is active.";
-      if (targetKind === "site") return "Whole Site is active.";
-      return "Current Page is active.";
-    }
-    return null;
-  }
-
-  function blockTypeLabelsForState(blockType: string): string {
-    const labels: Record<string, string> = {
-      hero: "Hero section",
-      text: "Text section",
-      image: "Image block",
-      cards: "Cards section",
-      gallery: "Gallery block",
-      contact: "Contact section",
-      hours: "Hours section",
-      testimonial: "Testimonial block",
-      map: "Map block",
-      marquee: "Marquee block",
-      spacer: "Spacer block",
-      divider: "Divider block",
-      html: "HTML block"
-    };
-    return labels[blockType] || blockType;
-  }
-
   function parseStructuredSuggestionProposal(text: string): StructuredSuggestionProposal | null {
     const candidates = [text.trim()];
     const fencedMatches = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => String(match[1] || "").trim());
@@ -2381,194 +2303,6 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       return true;
     }
     return false;
-  }
-
-  function isCasualOffTopic(prompt: string): boolean {
-    const trimmed = prompt.trim().toLowerCase();
-    const casualPatterns = [
-      /\b(do you like|do you prefer|do you enjoy|do you love|do you hate)\b/,
-      /\b(what['']?s your favorite|what['']?s your (least )?favorite)\b/,
-      /\b(tell me a joke|tell me a story|sing|dance|play)\b/,
-      /\b(how are you|how do you feel|what do you think about)\b/,
-      /\b(pickles|pizza|weather|sports team|movie|song|music|food|recipe|cook)\b/,
-      /\b(who (is|are|was|were) .*(president|mayor|governor|ceo))\b/,
-      /\b(what (is|was|are|were) .*(capital|population|tallest|longest|biggest))\b/,
-      /\b(have you ever)\b/,
-      /\b(are you sure)\b/,
-      /\b(dog|cat|bark|meow|pickle color|what color is a pickle)\b/,
-      /^(thanks|thank you|thx|ty|cheers)\b/i
-    ];
-    const hasSiteEditKeywords = /\b(site|page|block|website|heading|title|description|text|copy|layout|image|hero|section|footer|header|nav|gallery|card|button|cta|background|font|color|style|content|paragraph|subheading|tagline|blurb|intro|body|title)\b/i.test(trimmed);
-    if (hasSiteEditKeywords) return false;
-    for (const pattern of casualPatterns) {
-      if (pattern.test(trimmed)) return true;
-    }
-    return false;
-  }
-
-  function answerCasualOffTopic(prompt: string): string {
-    const trimmed = prompt.trim().toLowerCase();
-    if (/^(thanks|thank you|thx|ty|cheers)\b/i.test(trimmed)) {
-      return "You're welcome! Let me know if you need help with your website.";
-    }
-    if (/^(do you like|do you prefer|do you enjoy|do you love|do you hate)/i.test(trimmed)) {
-      return "That's outside what I do — I'm focused on helping you build and edit your website. Want help with copy, layout, or images instead?";
-    }
-    if (/^(tell me a joke|tell me a story|sing|dance|play)/i.test(trimmed)) {
-      return "I'm here to help with your website. Ask me to write copy, suggest layouts, or edit images!";
-    }
-    if (/^(how are you|how do you feel)/i.test(trimmed)) {
-      return "I'm ready to help with your website. What would you like to work on?";
-    }
-    if (/\b(are you sure)\b/i.test(trimmed)) {
-      return "I can double-check or adjust if you'd like. What would you like me to change about your website?";
-    }
-    if (/\b(have you ever)\b/i.test(trimmed)) {
-      return "I'm focused on website building — want me to help with your site's copy, layout, or images?";
-    }
-    if (/\b(dog|bark|meow)\b/i.test(trimmed)) {
-      return "Dogs bark, cats meow. I can also help improve your website copy if you want.";
-    }
-    if (/\b(pickle|what color is a pickle)\b/i.test(trimmed)) {
-      return "Pickles are usually green. If you want, I can switch back to website edits and suggestions.";
-    }
-    return "That's outside my scope — I help with website building and editing. Want to work on your site's copy, layout, or images?";
-  }
-
-  function normalizeContentLines(input: string): string[] {
-    return String(input || "")
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter(Boolean);
-  }
-
-  function collectCardLines(lines: string[]): string[] {
-    return lines
-      .map((line) => line.trim())
-      .filter((line) => /^card\s+\d+:/i.test(line) || /^[-*]\s+/i.test(line));
-  }
-
-  function collectChildCardTitles(blockContentLines: string[]): string[] {
-    return blockContentLines
-      .map((line) => line.trim())
-      .filter((line) => /^card\s+\d+:/i.test(line))
-      .map((line) => {
-        const stripped = line.replace(/^card\s+\d+:\s*/i, "").trim();
-        const sepMatch = stripped.match(/^(.+?)\s*(?:\/|—|–|\||\.\s|:\s)/);
-        return (sepMatch ? sepMatch[1] : stripped).trim();
-      })
-      .filter(Boolean);
-  }
-
-  function collectChildCardDescriptions(blockContentLines: string[]): string[] {
-    return blockContentLines
-      .map((line) => line.trim())
-      .filter((line) => /^card\s+\d+:/i.test(line))
-      .map((line) => {
-        const stripped = line.replace(/^card\s+\d+:\s*/i, "").trim();
-        const sepMatch = stripped.match(/^(.+?)\s*(?:\/|—|–|\||\.\s|:\s)(.+)$/);
-        return (sepMatch ? sepMatch[2] : "").trim();
-      })
-      .filter(Boolean);
-  }
-
-  function blockHasCardsBlockContext(blockContentLines: string[]): boolean {
-    return blockContentLines.some((line) => /^\[cards\s+block\]/i.test(line.trim()))
-      || blockContentLines.some((line) => /^card\s+\d+:/i.test(line.trim()));
-  }
-
-  function answerPageContentQuestion(prompt: string, targetKind: string, blockContent: string, pageContent: string): string | null {
-    const lower = prompt.trim().toLowerCase();
-    const hasContentQuestionCue = /(what\s+is\s+listed|what\s+do\s+we\s+sell|what\s+cards\s+are\s+on\s+this\s+page|what\s+is\s+in|list\s+the\s+cards|what\s+we\s+grow|pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours|titles?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|titles?\s+and\s+details?|details?\s+of\s+(the|each|those|these|my)?\s*(cards?|item|column)|descriptions?\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column)|name\s+of\s+(the|each|those|these|my)?\s*(cards?|child|item|column))/i.test(lower);
-    if (!hasContentQuestionCue) return null;
-
-    // For block scope use only blockContent; for page/site use pageContent.
-    const source = targetKind === "block" ? blockContent : pageContent;
-    const lines = normalizeContentLines(source);
-
-    if (/what\s+we\s+grow/i.test(lower)) {
-      const start = lines.findIndex((line) => /what\s+we\s+grow/i.test(line));
-      if (start >= 0) {
-        const section: string[] = [];
-        for (let i = start + 1; i < lines.length; i += 1) {
-          const line = lines[i].trim();
-          if (/^\[.*block\]$/i.test(line) && section.length > 0) break;
-          if (/^card\s+\d+:/i.test(line)) section.push(line.replace(/^card\s+\d+:\s*/i, "").trim());
-        }
-        if (section.length > 0) {
-          return `What We Grow: ${section.join("; ")}`;
-        }
-      }
-    }
-
-    const blockContentLines = targetKind === "block" && blockContent
-      ? normalizeContentLines(blockContent)
-      : [];
-    const blockHasCards = blockContentLines.length > 0 && blockHasCardsBlockContext(blockContentLines);
-
-    if (targetKind === "block" && blockHasCards) {
-      const asksAboutCardContent = /\b(cards?|items?|titles?\b|names?\b|details?|descriptions?|bodies?)\b/i.test(lower);
-      if (asksAboutCardContent) {
-        const childTitles = collectChildCardTitles(blockContentLines);
-        const childDescriptions = collectChildCardDescriptions(blockContentLines);
-
-        const asksForDescriptions = /\bdescriptions?\b|\bdetails?\b|\bbodies?\b|\babout\b/i.test(lower);
-        const asksForTitlesOnly = /\btitles?\b/i.test(lower) && !asksForDescriptions;
-        const asksForBoth = /\btitles?\b.*\bdetails?\b|\bdetails?\b.*\btitles?\b|\btitles?\s+and\s+details?\b/i.test(lower)
-          || (/\btitles?\b/i.test(lower) && asksForDescriptions);
-
-        if (asksForBoth && childTitles.length > 0) {
-          const combined = childTitles.map((t, i) => {
-            const d = childDescriptions[i] || "";
-            return d ? `${t} — ${d}` : t;
-          });
-          return `Cards in this block:\n${combined.join("\n")}`;
-        }
-        if (asksForTitlesOnly && childTitles.length > 0) {
-          return `Card titles in this block: ${childTitles.join("; ")}`;
-        }
-        if (asksForDescriptions && childDescriptions.length > 0) {
-          return `Card descriptions in this block: ${childDescriptions.join("; ")}`;
-        }
-        if (childTitles.length > 0) {
-          return `This block contains ${childTitles.length} cards: ${childTitles.join("; ")}`;
-        }
-      }
-    }
-
-    if (/what\s+cards\s+are\s+on\s+this\s+page|list\s+the\s+cards/i.test(lower)) {
-      const cards = collectCardLines(lines).map((line) => line.replace(/^card\s+\d+:\s*/i, "").trim());
-      if (cards.length > 0) {
-        return `Cards on this ${targetKind === "site" ? "site" : "page"}: ${cards.join("; ")}`;
-      }
-    }
-
-    if (/pickup\s+hours|farm\W*s\s+pickup\s+hours|what\s+are\s+the\s+hours/i.test(lower)) {
-      const hourLines = lines
-        .filter((line) => /^(hours\s+\d+:|row\s+\d+:|mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)/i.test(line))
-        .map((line) => line.replace(/^hours\s+\d+:\s*/i, "").replace(/^row\s+\d+:\s*/i, "").trim())
-        .filter(Boolean);
-      if (hourLines.length > 0) {
-        return `Pickup hours: ${hourLines.slice(0, 10).join("; ")}`;
-      }
-      if (targetKind === "block") {
-        return "Pickup hours are not in the selected block. Switch to Current Page scope to see hours from the Hours block.";
-      }
-    }
-
-    if (/what\s+do\s+we\s+sell|what\s+is\s+listed|what\s+is\s+in/i.test(lower)) {
-      const headings = lines
-        .filter((line) => /^(heading|title|subheading):/i.test(line))
-        .map((line) => line.replace(/^(heading|title|subheading):\s*/i, "").trim())
-        .filter(Boolean);
-      const cards = collectCardLines(lines).map((line) => line.replace(/^card\s+\d+:\s*/i, "").trim());
-      const combined = [...headings, ...cards].slice(0, 12);
-      if (combined.length > 0) {
-        return `From your ${targetKind === "site" ? "site" : targetKind === "page" ? "current page" : "selected block"}: ${combined.join("; ")}`;
-      }
-    }
-
-    return null;
   }
 
   function inferTargetField(prompt: string, blockType: string): string | undefined {
@@ -2669,13 +2403,17 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       if (ollama.reachable && ollama.model) {
         const modelToUse = preferredLocalModelName(ollama.models, config.model) || ollama.model;
         if (isRuntimeIdentityQuestion(cleanPrompt)) {
+          // The "what model are you" question is a legitimate runtime
+          // identity question. We answer it deterministically here so
+          // the LLM isn't wasted on it. The answer is plain text and
+          // names the actual model from the Ollama /api/tags response.
           return {
             provider: "ollama",
             source: "local",
             available: true,
-            response: `Using local Ollama model ${modelToUse}.`,
+            response: `Local Ollama model: ${modelToUse}.`,
             model: modelToUse,
-            message: `Local chat connected: ${modelToUse}`,
+            message: `Local Ollama model: ${modelToUse}`,
             latencyMs: Date.now() - startedAt,
             isLocal: true
           };

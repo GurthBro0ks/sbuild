@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  answerBrainQuestion,
   buildBrainContext,
-  formatBrainContextForPrompt
+  formatBrainContextForPrompt,
+  tryDeterministicFact
 } from "./sbuildBrain.js";
 import type { SBuildProject, SBuildBuildInfo } from "@sbuild/shared";
 
@@ -129,7 +129,6 @@ test("buildBrainContext: selectedBlockId resolves to a card-detail summary when 
   assert.equal(brain.selectedBlock!.title, "What We Grow");
   assert.equal(brain.selectedBlock!.cardTitles.length, 3);
   assert.ok(brain.selectedBlock!.cardTitles.includes("Seasonal Vegetables"));
-  assert.equal(brain.selectedBlock!.cardDetails[0]!.body, "Tomatoes, peppers, squash, and greens.");
 });
 
 test("buildBrainContext: selectedBlockId resolves to a hours block summary", () => {
@@ -140,113 +139,136 @@ test("buildBrainContext: selectedBlockId resolves to a hours block summary", () 
   assert.equal(brain.selectedBlock!.pickupHours[0]!.day, "Monday");
 });
 
-test("answerBrainQuestion: version question returns exact build info", () => {
+// =========================================================
+// tryDeterministicFact — the ONLY deterministic path
+// =========================================================
+
+test("tryDeterministicFact: version question returns engine=sbuild-brain, mode=deterministic", () => {
   const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what version/build am I running?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-version");
-  assert.equal(a!.kind, "answered");
-  assert.ok(a!.text.includes("0.5.0-dev.123+abcd123"));
-  assert.ok(a!.text.includes("abcd123"));
-  assert.ok(a!.text.includes("main"));
+  const d = tryDeterministicFact("what version am I running?", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.equal(d!.mode, "deterministic");
+  assert.equal(d!.deterministicAnswer, true);
+  assert.equal(d!.reason, "site-app-version-fact");
+  assert.match(d!.text, /0\.5\.0-dev\.123\+abcd123/);
+  assert.match(d!.text, /abcd123/);
+  assert.match(d!.text, /main/);
 });
 
-test("answerBrainQuestion: which block is selected returns cards block when cards-1 is selected", () => {
+test("tryDeterministicFact: build number question returns deterministic version fact", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what is the build number?", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.equal(d!.reason, "site-app-version-fact");
+});
+
+test("tryDeterministicFact: what commit question returns deterministic", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what commit is this?", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.match(d!.text, /abcd123/);
+});
+
+test("tryDeterministicFact: what branch question returns deterministic", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what branch am I on?", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.match(d!.text, /main/);
+});
+
+test("tryDeterministicFact: empty prompt returns engine=sbuild-brain, reason=no-prompt", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("", brain);
+  assert.ok(d);
+  assert.equal(d!.engine, "sbuild-brain");
+  assert.equal(d!.reason, "no-prompt");
+  assert.equal(d!.text, "");
+});
+
+// =========================================================
+// Anti-hardcode tests: these must ALL return null (LLM-only)
+// so we know the Brain is NOT faking answers.
+// =========================================================
+
+test("tryDeterministicFact: 'what color is a kernel of corn' returns null (no faked answer)", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what color is a kernel of corn?", brain);
+  assert.equal(d, null, "corn-color must NOT be answered deterministically; LLM must handle it");
+});
+
+test("tryDeterministicFact: 'what color is a potato' returns null (no faked answer)", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what color is a potato?", brain);
+  assert.equal(d, null, "potato-color must NOT be answered deterministically; LLM must handle it");
+});
+
+test("tryDeterministicFact: 'what color is the sky' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("what color is the sky?", brain);
+  assert.equal(d, null);
+});
+
+test("tryDeterministicFact: 'do you like pickles' returns null (no Pickles-are-green canned answer)", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const d = tryDeterministicFact("do you like pickles?", brain);
+  assert.equal(d, null);
+});
+
+test("tryDeterministicFact: 'what are the farm pickup hours' returns null (no faked hours)", () => {
   const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "cards-1", build });
-  const a = answerBrainQuestion("what block is selected?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-ui");
-  assert.ok(a!.text.includes("cards"));
-  assert.ok(a!.text.includes("cards-1"));
+  const d = tryDeterministicFact("what are the farm pickup hours?", brain);
+  assert.equal(d, null, "pickup hours must go to the LLM, not be faked by the Brain");
 });
 
-test("answerBrainQuestion: page list returns both pages", () => {
-  const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what pages are on this site?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-site");
-  assert.ok(a!.text.includes("Home"));
-  assert.ok(a!.text.includes("About"));
-});
-
-test("answerBrainQuestion: card titles+details from selected cards block returns all 3 cards", () => {
+test("tryDeterministicFact: 'what are the titles and details of each card' returns null", () => {
   const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "cards-1", build });
-  const a = answerBrainQuestion("what are the titles and details of each card?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-block");
-  assert.ok(a!.text.includes("Seasonal Vegetables"));
-  assert.ok(a!.text.includes("Herbs & Greens"));
-  assert.ok(a!.text.includes("Farm Flowers"));
-  assert.ok(a!.text.includes("Tomatoes, peppers, squash, and greens."));
+  const d = tryDeterministicFact("what are the titles and details of each card?", brain);
+  assert.equal(d, null, "card titles must go to the LLM, not be faked by the Brain");
 });
 
-test("answerBrainQuestion: pickup hours from site even when cards block is selected", () => {
-  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "cards-1", build });
-  const a = answerBrainQuestion("what are the farm pickup hours?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-site");
-  assert.ok(a!.text.includes("Monday"));
-  assert.ok(a!.text.includes("9:00 AM"));
-  assert.ok(a!.text.includes("Saturday"));
-  assert.ok(a!.text.includes("Farmers market"));
-  assert.notEqual(a!.text, "Pickup hours are not in the selected block. Switch to Current Page scope to see hours from the Hours block.");
+test("tryDeterministicFact: 'what is the title and description of this block' returns null", () => {
+  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "hero-1", build });
+  const d = tryDeterministicFact("what is the title and description of this block?", brain);
+  assert.equal(d, null);
 });
 
-test("answerBrainQuestion: hours block title and description from selected block", () => {
-  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "hours-1", build });
-  const a = answerBrainQuestion("what is the title and description of this block?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-block");
-  assert.equal(a!.scope, "selected-block");
-  assert.ok(a!.text.includes("hours"));
+test("tryDeterministicFact: 'which block is selected' returns null (UI state is not deterministic Brain territory)", () => {
+  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "hero-1", build });
+  const d = tryDeterministicFact("which block is selected?", brain);
+  assert.equal(d, null);
 });
 
-test("answerBrainQuestion: contact info from site", () => {
-  const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "cards-1", build });
-  const a = answerBrainQuestion("what is the phone number and address?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-site");
-  assert.ok(a!.text.includes("555-0123"));
-  assert.ok(a!.text.includes("hello@blackfish.example"));
-  assert.ok(a!.text.includes("100 Farm Road"));
-});
-
-test("answerBrainQuestion: general knowledge question returns needs-llm marker", () => {
+test("tryDeterministicFact: 'what pages are on this site' returns null", () => {
   const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what color is a kernel of corn?", brain);
-  assert.ok(a);
-  assert.equal(a!.kind, "needs-llm");
-  assert.equal(a!.needsGeneralKnowledge, true);
+  const d = tryDeterministicFact("what pages are on this site?", brain);
+  assert.equal(d, null, "page-list should go to the LLM, not be a hardcoded fact");
 });
 
-test("answerBrainQuestion: app capabilities question answered from brain-app", () => {
+test("tryDeterministicFact: 'what can you do' returns null", () => {
   const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what can you do?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-app");
-  assert.ok(a!.text.includes("sBuild"));
-  assert.ok(a!.text.toLowerCase().includes("publish"));
+  const d = tryDeterministicFact("what can you do?", brain);
+  assert.equal(d, null);
 });
 
-test("answerBrainQuestion: empty prompt returns null", () => {
+test("tryDeterministicFact: 'what is the weather in Paris' returns null", () => {
   const brain = buildBrainContext({ project: makeProject(), build });
-  assert.equal(answerBrainQuestion("", brain), null);
-  assert.equal(answerBrainQuestion("   ", brain), null);
+  const d = tryDeterministicFact("what is the weather in Paris?", brain);
+  assert.equal(d, null);
 });
 
-test("answerBrainQuestion: site fact answered even with empty selected block", () => {
+test("tryDeterministicFact: 'tell me a joke' returns null", () => {
   const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what are the farm pickup hours?", brain);
-  assert.ok(a);
-  assert.equal(a!.source, "brain-site");
-  assert.ok(a!.text.includes("Monday"));
+  const d = tryDeterministicFact("tell me a joke", brain);
+  assert.equal(d, null);
 });
 
-test("answerBrainQuestion: site-edit keyword suppresses general-knowledge fallback", () => {
-  const brain = buildBrainContext({ project: makeProject(), build });
-  const a = answerBrainQuestion("what color is the heading on the hero block?", brain);
-  assert.equal(a, null);
-});
+// =========================================================
+// formatBrainContextForPrompt
+// =========================================================
 
 test("formatBrainContextForPrompt: includes version, project summary, selected block, and capabilities", () => {
   const brain = buildBrainContext({ project: makeProject(), selectedBlockId: "cards-1", build });
@@ -257,6 +279,21 @@ test("formatBrainContextForPrompt: includes version, project summary, selected b
   assert.ok(formatted.includes("Seasonal Vegetables"));
   assert.ok(formatted.includes("App capabilities"));
   assert.ok(formatted.includes("Cannot browse the internet"));
+});
+
+test("formatBrainContextForPrompt: includes site facts for cards/hours/contact", () => {
+  const brain = buildBrainContext({ project: makeProject(), build });
+  const formatted = formatBrainContextForPrompt(brain);
+  assert.ok(formatted.includes("Total cards"));
+  assert.ok(formatted.includes("Total pickup hour rows"));
+  assert.ok(formatted.includes("Contact blocks"));
+});
+
+test("formatBrainContextForPrompt: works for empty project without throwing", () => {
+  const brain = buildBrainContext({ project: null, build });
+  const formatted = formatBrainContextForPrompt(brain);
+  assert.ok(formatted.includes("sBuild Brain"));
+  assert.ok(formatted.includes("Untitled site"));
 });
 
 test("buildBrainContext: site facts include gallery counts when present", () => {

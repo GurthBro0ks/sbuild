@@ -65,6 +65,11 @@ type ChatItem = {
   source?: string;
   latencyMs?: number;
   retryPrompt?: string;
+  engine?: string;
+  mode?: string;
+  engineModel?: string;
+  engineReason?: string;
+  deterministicAnswer?: boolean;
 };
 type StructuredSuggestionProposal = {
   kind: "replace-copy";
@@ -182,8 +187,22 @@ function formatChatTimestamp(timestamp: number): string {
 function chatFooterText(item: ChatItem): string {
   const parts = [formatChatTimestamp(item.timestamp)];
   if (item.role === "assistant") {
-    if (item.source) parts.push(item.source);
-    if (item.model) parts.push(item.model);
+    if (item.engine) {
+      const label = item.engine === "sbuild-brain"
+        ? "sBuild Brain"
+        : item.engine === "local-ollama"
+          ? `local Ollama${item.engineModel ? ` (${item.engineModel})` : ""}`
+          : item.engine === "openai-api"
+            ? `API${item.engineModel ? ` (${item.engineModel})` : ""}`
+            : item.engine === "unavailable"
+              ? "no engine"
+              : item.engine;
+      parts.push(label);
+      if (item.mode) parts.push(item.mode);
+    } else {
+      if (item.source) parts.push(item.source);
+      if (item.model) parts.push(item.model);
+    }
     if (typeof item.latencyMs === "number" && Number.isFinite(item.latencyMs)) {
       parts.push(`${(item.latencyMs / 1000).toFixed(1)}s`);
     }
@@ -1307,6 +1326,10 @@ export function App() {
   const [aiChatTarget, setAiChatTarget] = useState<AiChatTarget>("block");
   const [lastBrainSource, setLastBrainSource] = useState<string>("");
   const [lastBrainScope, setLastBrainScope] = useState<string>("");
+  const [lastEngine, setLastEngine] = useState<string>("");
+  const [lastEngineMode, setLastEngineMode] = useState<string>("");
+  const [lastEngineReason, setLastEngineReason] = useState<string>("");
+  const [lastDeterministic, setLastDeterministic] = useState<boolean>(false);
   const [aiProposal, setAiProposal] = useState("");
   const [aiStructuredProposal, setAiStructuredProposal] = useState<StructuredSuggestionProposal | null>(null);
   const [aiProposalBlockId, setAiProposalBlockId] = useState("");
@@ -2718,7 +2741,7 @@ export function App() {
     const startedAt = Date.now();
     try {
       const target = computeAiTarget();
-      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null; brainSource?: string; brainScope?: string }>("/api/ai/suggest", {
+      const data = await fetchJson<{ ok: boolean; suggestion?: string; error?: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number; hasProposal?: boolean; proposal?: StructuredSuggestionProposal | null; engine?: string; mode?: string; engineModel?: string; engineLatencyMs?: number; engineTimeoutMs?: number | null; engineContextUsed?: string[]; engineReason?: string; deterministicAnswer?: boolean }>("/api/ai/suggest", {
         method: "POST",
         body: JSON.stringify({
           prompt,
@@ -2747,15 +2770,31 @@ export function App() {
           provider: data.provider,
           model: data.model,
           source: data.source,
+          engine: data.engine,
+          mode: data.mode,
+          engineModel: data.engineModel,
+          engineReason: data.engineReason,
+          deterministicAnswer: data.deterministicAnswer,
           latencyMs: data.latencyMs ?? (Date.now() - startedAt),
           retryPrompt: isTimeoutMsg ? prompt : undefined
         });
-        setLastBrainSource(data.brainSource || "");
-        setLastBrainScope(data.brainScope || "");
-        if (data.provider === "ollama" && data.model) {
-          setProviderCheckMessage(`Local chat connected: ${data.model}`);
-        } else if (data.message) {
-          setProviderCheckMessage(data.message);
+        setLastEngine(data.engine || "");
+        setLastEngineMode(data.mode || "");
+        setLastEngineReason(data.engineReason || "");
+        setLastDeterministic(data.deterministicAnswer === true);
+        // Honest status line: which engine actually answered.
+        if (data.engine === "sbuild-brain" && data.mode === "deterministic") {
+          setProviderCheckMessage(`Answered by sBuild Brain — deterministic site/app fact (${data.engineReason || "fact"})`);
+        } else if (data.engine === "local-ollama" && data.mode === "llm") {
+          setProviderCheckMessage(`Answered by local Ollama — ${data.engineModel || data.model || "model"}`);
+        } else if (data.engine === "openai-api" && data.mode === "llm") {
+          setProviderCheckMessage(`Answered by API model — ${data.engineModel || data.model || "model"}`);
+        } else if (data.mode === "error" && data.engineReason === "llm-timeout") {
+          setProviderCheckMessage("Local model timed out. Click Retry to try again.");
+        } else if (data.mode === "error") {
+          setProviderCheckMessage("Local model error. Click Retry or check Settings for an API fallback.");
+        } else {
+          setProviderCheckMessage(`Engine: ${data.engine || "unknown"} · mode: ${data.mode || "unknown"}`);
         }
       } else {
         const rawMsg = data.error || "Provider not configured.";
@@ -3565,16 +3604,37 @@ export function App() {
     const startedAt = Date.now();
     try {
       const data = await fetchJson<{ response: string; provider?: string; model?: string; source?: string; message?: string; latencyMs?: number }>("/api/ai/chat", { method: "POST", body: JSON.stringify({ prompt, chatHistory: chatHistory.slice(-10).map((m) => ({ role: m.role, text: m.text })) }) });
+      const isTimeoutMsg = typeof data.response === "string" && /timed out/i.test(data.response);
+      const engine = data.provider === "ollama"
+        ? "local-ollama"
+        : data.provider === "openai" || data.provider === "openai-compatible" || data.provider === "openrouter"
+          ? "openai-api"
+          : data.provider === "none" || data.provider === "disabled"
+            ? "unavailable"
+            : "unavailable";
+      const mode = isTimeoutMsg ? "error" : "llm";
       pushChatMessage({
         role: "assistant",
         text: data.response,
         provider: data.provider,
         model: data.model,
         source: data.source,
+        engine,
+        mode,
+        engineModel: data.model,
+        engineReason: isTimeoutMsg ? "llm-timeout" : "llm-ok",
         latencyMs: data.latencyMs ?? (Date.now() - startedAt)
       });
-      if (data.provider === "ollama" && data.model) {
-        setProviderCheckMessage(`Local chat connected: ${data.model}`);
+      setLastEngine(engine);
+      setLastEngineMode(mode);
+      setLastEngineReason(isTimeoutMsg ? "llm-timeout" : "llm-ok");
+      setLastDeterministic(false);
+      if (engine === "local-ollama" && data.model && !isTimeoutMsg) {
+        setProviderCheckMessage(`Answered by local Ollama — ${data.model}`);
+      } else if (engine === "openai-api" && data.model && !isTimeoutMsg) {
+        setProviderCheckMessage(`Answered by API model — ${data.model}`);
+      } else if (isTimeoutMsg) {
+        setProviderCheckMessage("Local model timed out. Click Retry to try again.");
       } else if (data.message) {
         setProviderCheckMessage(data.message);
       }
@@ -6051,26 +6111,22 @@ export function App() {
                       <button onClick={() => setAiChatTarget("page")} className={aiChatTarget === "page" ? "selected" : ""} title="Prefer the current page">Focus: Page</button>
                       <button onClick={() => setAiChatTarget("site")} className={aiChatTarget === "site" ? "selected" : ""} title="Whole site context">Focus: Site</button>
                     </div>
-                    <div className="ai-chat-scope-status">
-                      {lastBrainSource
-                        ? lastBrainSource === "brain-version"
-                          ? "Answering from: Version/Build info"
-                          : lastBrainSource === "brain-ui"
-                            ? "Answering from: Selected block focus"
-                            : lastBrainSource === "brain-block"
-                              ? "Answering from: Selected block focus (deterministic)"
-                              : lastBrainSource === "brain-site"
-                                ? "Answering from: Whole site (deterministic)"
-                                : lastBrainSource === "brain-app"
-                                  ? "Answering from: sBuild app knowledge"
-                                  : lastBrainSource === "brain-route"
-                                    ? "Answering from: Language model (general knowledge)"
-                                    : `Answering from: ${lastBrainSource}`
+                    <div className="ai-chat-scope-status" data-testid="ai-chat-engine-status">
+                      {lastEngine
+                        ? lastEngine === "sbuild-brain" && lastEngineMode === "deterministic"
+                          ? "Last answer: sBuild Brain (deterministic site/app fact)"
+                          : lastEngine === "local-ollama" && lastEngineMode === "llm"
+                            ? "Last answer: local Ollama model"
+                            : lastEngine === "openai-api" && lastEngineMode === "llm"
+                              ? "Last answer: API model"
+                              : lastEngine === "unavailable" || lastEngineMode === "error"
+                                ? `Last answer: ${lastEngineReason === "llm-timeout" ? "Local model timed out" : "No engine available"}`
+                                : `Last answer: ${lastEngine} (${lastEngineMode || "?"})`
                         : aiChatTarget === "block"
-                          ? "Answering from: Selected block + whole-site context"
+                          ? "Default: focus on selected block, full site context in LLM prompt"
                           : aiChatTarget === "page"
-                            ? "Answering from: Current page + whole-site context"
-                            : "Answering from: Whole site context"}
+                            ? "Default: focus on current page, full site context in LLM prompt"
+                            : "Default: whole-site context in LLM prompt"}
                     </div>
                     {paintAppliedStrokes.length > 0 && (
                       <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length})</button>

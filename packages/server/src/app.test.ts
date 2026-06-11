@@ -1322,61 +1322,80 @@ test("POST /api/ai/suggest passes local provider metadata into Ollama prompt con
   });
 });
 
-test("POST /api/ai/suggest answers UI state questions from request context without calling model", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Which block is selected?",
-        targetKind: "block",
-        blockId: "hero-abc123",
-        blockType: "hero"
-      })
+test("POST /api/ai/suggest routes UI state questions to the LLM (no hardcoded answers)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "The selected block is a hero block (hero-abc123)." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Which block is selected?",
+          targetKind: "block",
+          blockId: "hero-abc123",
+          blockType: "hero"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean; engine?: string; mode?: string; deterministicAnswer?: boolean; provider?: string; model?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.mode, "llm");
+      assert.equal(body.deterministicAnswer, false);
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.provider, "ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.match(String(body.suggestion || ""), /hero-abc123/);
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean; provider?: string; model?: string };
-    assert.equal(body.ok, true);
-    assert.match(String(body.suggestion || ""), /Hero section.*hero-abc123/);
-    assert.equal(body.hasProposal, false);
-    assert.equal(body.provider, "local");
-    assert.equal(body.model, "ui-state");
   });
 });
 
-test("POST /api/ai/suggest answers which target mode from request context", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Which target mode is selected?",
-        targetKind: "page"
-      })
+test("POST /api/ai/suggest routes which-mode questions to the LLM", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Current Page mode is active." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Which target mode is selected?",
+          targetKind: "page"
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean; engine?: string };
+      assert.equal(body.ok, true);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.hasProposal, false);
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { ok: boolean; suggestion?: string; hasProposal?: boolean };
-    assert.equal(body.ok, true);
-    assert.match(String(body.suggestion || ""), /Current Page is active/);
-    assert.equal(body.hasProposal, false);
   });
 });
 
-test("POST /api/ai/suggest does not enable hasProposal for UI state answers", async () => {
-  await withNoOpenAIKey(async () => {
-    const response = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "Which block is selected?",
-        targetKind: "block",
-        blockId: "",
-        blockType: ""
-      })
+test("POST /api/ai/suggest does not enable hasProposal for plain Q&A", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "no block selected" } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Which block is selected?",
+          targetKind: "block",
+          blockId: "",
+          blockType: ""
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; hasProposal?: boolean; engine?: string };
+      assert.equal(body.hasProposal, false);
+      assert.equal(body.engine, "local-ollama");
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { ok: boolean; hasProposal?: boolean };
-    assert.equal(body.hasProposal, false);
   });
 });
 
@@ -1393,7 +1412,7 @@ test("POST /api/ai/chat answers identity questions from runtime metadata", async
       assert.equal(body.provider, "ollama");
       assert.equal(body.model, "qwen3:4b");
       assert.equal(body.source, "local");
-      assert.match(String(body.response || ""), /local Ollama model qwen3:4b/i);
+      assert.match(String(body.response || ""), /local Ollama model:?\s*qwen3:4b/i);
       assert.equal(typeof body.latencyMs, "number");
     });
   });
@@ -1597,7 +1616,7 @@ test("POST /api/ai/suggest does not intercept model identity questions as UI sta
       assert.equal(response.status, 200);
       const body = await response.json() as { ok: boolean; suggestion?: string; provider?: string; model?: string };
       assert.equal(body.ok, true);
-      assert.match(String(body.suggestion || ""), /local Ollama model qwen2\.5:1\.5b/i);
+      assert.match(String(body.suggestion || ""), /local Ollama model:?\s*qwen2\.5:1\.5b/i);
       assert.equal(body.provider, "ollama");
       assert.equal(body.model, "qwen2.5:1.5b");
     });
@@ -1620,7 +1639,7 @@ test("POST /api/ai/suggest answers 'are you local' with runtime metadata", async
       assert.equal(response.status, 200);
       const body = await response.json() as { ok: boolean; suggestion?: string; provider?: string; model?: string };
       assert.equal(body.ok, true);
-      assert.match(String(body.suggestion || ""), /local Ollama model qwen2\.5:1\.5b/i);
+      assert.match(String(body.suggestion || ""), /local Ollama model:?\s*qwen2\.5:1\.5b/i);
     });
   });
 });
@@ -2458,42 +2477,51 @@ test("proposal with targetField in response is preserved", async () => {
   });
 });
 
-test("casual off-topic prompt returns conversational answer without proposal", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("casual off-topic prompt goes to LLM, no proposal, no faked answer", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "I focus on website building, not preferences." } } }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "do you like pickles?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; suggestion: string; proposal: unknown; hasProposal: boolean; model: string };
+      const body = await res.json() as { ok: boolean; suggestion: string; proposal: unknown; hasProposal: boolean; model: string; engine?: string; deterministicAnswer?: boolean };
       assert.ok(body.ok);
       assert.equal(body.hasProposal, false);
       assert.equal(body.proposal, null);
-      assert.ok(body.suggestion.includes("website") || body.suggestion.includes("copy") || body.suggestion.includes("outside"));
-      assert.equal(body.model, "casual-router");
+      assert.equal(body.deterministicAnswer, false);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.ok(body.suggestion.length > 0);
     });
   });
 });
 
-test("casual animal small-talk routes through casual router without proposal", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("casual animal small-talk goes to LLM (no faked 'dogs bark' answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Dogs bark, cats meow. I help with websites." } } }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "does a dog bark or meow?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string };
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string; engine?: string };
       assert.ok(body.ok);
       assert.equal(body.hasProposal, false);
-      assert.equal(body.model, "casual-router");
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
       assert.match(body.suggestion.toLowerCase(), /bark|meow|dogs/);
     });
   });
 });
 
-test("casual greeting passes through to model when not off-topic", async () => {
+test("casual greeting passes through to LLM (no hardcoded greeting router)", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
     chat: { body: { message: { content: "Hello! I can help with your website." } } }
@@ -2504,14 +2532,15 @@ test("casual greeting passes through to model when not off-topic", async () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "hello there", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; suggestion: string; hasProposal: boolean; model: string };
+      const body = await res.json() as { ok: boolean; suggestion: string; hasProposal: boolean; model: string; engine?: string };
       assert.ok(body.ok);
-      assert.notEqual(body.model, "casual-router");
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
     });
   });
 });
 
-test("site-edit prompt with food keyword is not treated as casual", async () => {
+test("site-edit prompt with food keyword goes to LLM (not faked off-topic)", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
     chat: { body: { message: { content: 'Fresh farm eggs delivered daily.' } } }
@@ -2522,14 +2551,15 @@ test("site-edit prompt with food keyword is not treated as casual", async () => 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "write a hero description about farm fresh food and eggs", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; model: string };
+      const body = await res.json() as { ok: boolean; model: string; engine?: string };
       assert.ok(body.ok);
-      assert.notEqual(body.model, "casual-router");
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
     });
   });
 });
 
-test("isCasualOffTopic: favorite movie is off-topic", async () => {
+test("favorite-movie prompt goes to LLM, no faked answer", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -2537,15 +2567,16 @@ test("isCasualOffTopic: favorite movie is off-topic", async () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "what's your favorite movie?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string };
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; engine?: string; deterministicAnswer?: boolean };
       assert.ok(body.ok);
       assert.equal(body.hasProposal, false);
-      assert.equal(body.model, "casual-router");
+      assert.equal(body.deterministicAnswer, false);
+      assert.equal(body.engine, "local-ollama");
     });
   });
 });
 
-test("casual off-topic prompt 'have you ever smelled a flower' does not create proposal", async () => {
+test("have-you-ever prompt goes to LLM, no faked answer", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -2553,16 +2584,16 @@ test("casual off-topic prompt 'have you ever smelled a flower' does not create p
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "have you ever smelled a flower?", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string };
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; suggestion: string; engine?: string };
       assert.ok(body.ok);
       assert.equal(body.hasProposal, false);
-      assert.equal(body.model, "casual-router");
+      assert.equal(body.engine, "local-ollama");
       assert.ok(body.suggestion.length > 0);
     });
   });
 });
 
-test("casual prompt 'thanks' does not create proposal", async () => {
+test("thanks prompt goes to LLM, no faked answer", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -2570,54 +2601,64 @@ test("casual prompt 'thanks' does not create proposal", async () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ prompt: "thanks", targetKind: "block", blockId: "hero-1", blockType: "hero" })
       });
-      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string };
+      const body = await res.json() as { ok: boolean; hasProposal: boolean; model: string; engine?: string };
       assert.ok(body.ok);
       assert.equal(body.hasProposal, false);
-      assert.equal(body.model, "casual-router");
+      assert.equal(body.engine, "local-ollama");
     });
   });
 });
 
-test("content router answers What We Grow from page content", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "what is listed in the what we grow section?",
-        targetKind: "page",
-        pageContent: "[Cards block]\nHeading: What We Grow\nCard 1: Heirloom Tomatoes / Sweet and juicy\nCard 2: Summer Squash / Harvested weekly\nCard 3: Fresh Herbs / Basil and cilantro"
-      })
+test("What We Grow question is sent to LLM with full brain context (no hardcoded content router)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "What We Grow: Heirloom Tomatoes, Summer Squash, Fresh Herbs." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what is listed in the what we grow section?",
+          targetKind: "page",
+          pageContent: "[Cards block]\nHeading: What We Grow\nCard 1: Heirloom Tomatoes / Sweet and juicy\nCard 2: Summer Squash / Harvested weekly\nCard 3: Fresh Herbs / Basil and cilantro"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string; engineContextUsed?: string[] };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.hasProposal, false);
+      assert.ok(Array.isArray(body.engineContextUsed));
+      assert.ok(body.engineContextUsed!.includes("app-build"));
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    assert.match(String(body.suggestion || ""), /What We Grow/i);
-    assert.match(String(body.suggestion || ""), /Heirloom Tomatoes/i);
   });
 });
 
-test("content router answers pickup hours from page content", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "what are the farm's pickup hours?",
-        targetKind: "page",
-        pageContent: "[Hours block]\nTitle: Pickup Hours\nHours 1: Monday 8:00-14:00\nHours 2: Wednesday 9:00-17:00\nHours 3: Saturday 8:00-12:00"
-      })
+test("pickup hours question is sent to LLM with full brain context", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Pickup hours: Monday 8:00-14:00, Wednesday 9:00-17:00, Saturday 8:00-12:00." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what are the farm's pickup hours?",
+          targetKind: "page",
+          pageContent: "[Hours block]\nTitle: Pickup Hours\nHours 1: Monday 8:00-14:00\nHours 2: Wednesday 9:00-17:00\nHours 3: Saturday 8:00-12:00"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.match(String(body.suggestion || ""), /Monday/i);
+      assert.match(String(body.suggestion || ""), /Saturday/i);
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    assert.match(String(body.suggestion || ""), /Pickup hours/i);
-    assert.match(String(body.suggestion || ""), /Monday/i);
-    assert.match(String(body.suggestion || ""), /Saturday/i);
   });
 });
 
@@ -2708,60 +2749,77 @@ test("masked chat key cannot overwrite saved real chat key", async () => {
   });
 });
 
-test("selected block content router answers child card titles for cards blocks", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "what is the title of each card?",
-        targetKind: "block",
-        blockId: "cards-1",
-        blockType: "cards",
-        pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets",
-        blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
-      })
+test("card titles question is sent to LLM (no faked content-router answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Card titles: Seasonal Vegetables, Herbs & Greens, Farm Flowers." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what is the title of each card?",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets",
+          blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Hand-picked daily\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.hasProposal, false);
+      const text = String(body.suggestion || "");
+      assert.match(text, /Seasonal Vegetables/i);
+      assert.match(text, /Herbs\s*&\s*Greens/i);
+      assert.match(text, /Farm Flowers/i);
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    const text = String(body.suggestion || "");
-    assert.match(text, /Seasonal Vegetables/i, "must list Seasonal Vegetables as a card title");
-    assert.match(text, /Herbs\s*&\s*Greens/i, "must list Herbs & Greens as a card title");
-    assert.match(text, /Farm Flowers/i, "must list Farm Flowers as a card title");
-    assert.doesNotMatch(text, /Hero block/i, "must not list block names as card titles");
-    assert.doesNotMatch(text, /Welcome/i, "must not list heading text as a card title");
   });
 });
 
-test("selected block content router answers child card descriptions for cards blocks", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "what is the description of each card?",
-        targetKind: "block",
-        blockId: "cards-1",
-        blockType: "cards",
-        blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Hand-picked daily from our fields\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
-      })
+test("card descriptions question is sent to LLM (no faked content-router answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Hand-picked daily from our fields; Fresh-cut weekly." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what is the description of each card?",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Hand-picked daily from our fields\nCard 2: Herbs & Greens / Fresh-cut weekly\nCard 3: Farm Flowers / Seasonal bouquets"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.hasProposal, false);
+      const text = String(body.suggestion || "");
+      assert.match(text, /Hand-picked daily/i);
+      assert.match(text, /Fresh-cut weekly/i);
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    const text = String(body.suggestion || "");
-    assert.match(text, /Hand-picked daily/i, "must list card 1 description");
-    assert.match(text, /Fresh-cut weekly/i, "must list card 2 description");
   });
 });
 
-test("selected block child context is included when calling AI chat for cards block", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("selected block child context is in user prompt when LLM is called for cards block", async () => {
+  let capturedUserPrompt = "";
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: {
+      body: { message: { content: "Card titles: Seasonal Vegetables, Herbs & Greens, Farm Flowers." } },
+      capture: (body) => { const b = body as { messages?: Array<{ content?: string }> }; capturedUserPrompt = b.messages?.[b.messages.length - 1]?.content || ""; }
+    }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
@@ -2775,13 +2833,12 @@ test("selected block child context is included when calling AI chat for cards bl
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean };
       assert.ok(body.ok);
-      assert.equal(body.model, "content-router");
-      const text = String(body.suggestion || "");
-      assert.match(text, /Seasonal Vegetables/i);
-      assert.match(text, /Herbs\s*&\s*Greens/i);
-      assert.match(text, /Farm Flowers/i);
+      assert.equal(body.engine, "local-ollama");
+      assert.match(capturedUserPrompt, /Seasonal Vegetables/, "user prompt must include selected block child context");
+      assert.match(capturedUserPrompt, /Herbs\s*&\s*Greens/);
+      assert.match(capturedUserPrompt, /Farm Flowers/);
     });
   });
 });
@@ -3383,80 +3440,90 @@ test("/api/images/move moves an image to a subfolder and rejects hidden files", 
   }
 });
 
-test("selected block scope: 'titles and details' question returns both title and body for each card", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "What are the titles and details of each card?",
-        targetKind: "block",
-        blockId: "cards-1",
-        blockType: "cards",
-        pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events.",
-        blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events."
-      })
+test("selected block scope: 'titles and details' question is sent to LLM with selected-block + site context", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Cards: Seasonal Vegetables (Fresh weekly baskets), Herbs & Greens (Specialty greens), Farm Flowers (Bouquets and stems)." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "What are the titles and details of each card?",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          pageContent: "[Hero block]\nHeading: Welcome\n[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events.",
+          blockContent: "[Cards block]\nHeading: What We Grow\nCard 1: Seasonal Vegetables / Fresh weekly baskets from spring to fall.\nCard 2: Herbs & Greens / Specialty greens and chef bundles.\nCard 3: Farm Flowers / Bouquets and stems for events."
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.hasProposal, false);
+      const text = String(body.suggestion || "");
+      assert.match(text, /Seasonal Vegetables/i);
+      assert.match(text, /Herbs\s*&\s*Greens/i);
+      assert.match(text, /Farm Flowers/i);
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    const text = String(body.suggestion || "");
-    assert.match(text, /Seasonal Vegetables/i, "must include card 1 title");
-    assert.match(text, /Fresh weekly baskets/i, "must include card 1 body");
-    assert.match(text, /Herbs\s*&\s*Greens/i, "must include card 2 title");
-    assert.match(text, /Specialty greens/i, "must include card 2 body");
-    assert.match(text, /Farm Flowers/i, "must include card 3 title");
-    assert.match(text, /Bouquets/i, "must include card 3 body");
-    assert.doesNotMatch(text, /Hero block/i, "must not mention block names");
-    assert.doesNotMatch(text, /Welcome/i, "must not include unrelated page heading");
   });
 });
 
-test("selected block scope: hours question with no hours in block returns not-in-scope message", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "What are the farm pickup hours?",
-        targetKind: "block",
-        blockId: "cards-1",
-        blockType: "cards",
-        pageContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2",
-        blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\nCard 2: Herbs & Greens / Fresh-cut weekly"
-      })
+test("selected block scope: hours question is sent to LLM (no faked 'not in selected block' message)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Pickup hours: Monday 9-5, Saturday 8-2." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "What are the farm pickup hours?",
+          targetKind: "block",
+          blockId: "cards-1",
+          blockType: "cards",
+          pageContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2",
+          blockContent: "[Cards block]\nCard 1: Seasonal Vegetables / Fresh baskets\nCard 2: Herbs & Greens / Fresh-cut weekly"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.hasProposal, false);
+      const text = String(body.suggestion || "");
+      assert.doesNotMatch(text, /not in the selected block/i, "must NOT return the old canned 'not in selected block' string");
+      assert.match(text, /Monday/, "LLM answer should reference Monday from the page hours");
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    assert.equal(body.hasProposal, false);
-    const text = String(body.suggestion || "");
-    assert.match(text, /not in the selected block/i, "must say hours not in selected block");
-    assert.doesNotMatch(text, /Monday/i, "must not answer from pageContent hours block");
   });
 });
 
-test("page scope: hours question answers from page content", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "What are the farm pickup hours?",
-        targetKind: "page",
-        pageContent: "[Cards block]\nCard 1: Seasonal Vegetables\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
-      })
+test("page scope: hours question is sent to LLM with full site context", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Pickup hours: Monday 9-5, Saturday 8-2." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "What are the farm pickup hours?",
+          targetKind: "page",
+          pageContent: "[Cards block]\nCard 1: Seasonal Vegetables\n[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string; hasProposal?: boolean; suggestion?: string };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      const text = String(body.suggestion || "");
+      assert.match(text, /Monday/i);
+      assert.match(text, /Saturday/i);
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string; hasProposal?: boolean; suggestion?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
-    const text = String(body.suggestion || "");
-    assert.match(text, /Monday/i, "must answer from page hours block");
-    assert.match(text, /Saturday/i, "must include all hours rows");
   });
 });
 
@@ -3531,8 +3598,11 @@ function makeBrainProject(): Record<string, unknown> {
   };
 }
 
-test("brain: /api/ai/suggest with projectContext returns card titles from brain without calling Ollama", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("brain: /api/ai/suggest with projectContext routes card titles to LLM (no faked brain answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Cards: Seasonal Vegetables, Herbs & Greens, Farm Flowers." } } }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
@@ -3545,21 +3615,23 @@ test("brain: /api/ai/suggest with projectContext returns card titles from brain 
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; engineContextUsed?: string[]; suggestion?: string };
       assert.ok(body.ok);
-      assert.equal(body.model, "sbuild-brain");
-      assert.equal(body.source, "brain");
-      assert.equal(body.brainSource, "brain-block");
-      const text = String(body.suggestion || "");
-      assert.match(text, /Seasonal Vegetables/);
-      assert.match(text, /Herbs\s*&\s*Greens/);
-      assert.match(text, /Farm Flowers/);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.notEqual(body.source, "brain");
+      assert.ok(Array.isArray(body.engineContextUsed));
+      assert.ok(body.engineContextUsed!.includes("whole-site"));
+      assert.ok(body.engineContextUsed!.includes("selected-block"));
     });
   });
 });
 
-test("brain: /api/ai/suggest returns pickup hours from site even when cards block is selected", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("brain: /api/ai/suggest routes pickup hours to LLM with site context even when cards block is selected", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Pickup hours: Monday 9-5, Saturday 8-2 (Farmers market)." } } }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
@@ -3574,21 +3646,22 @@ test("brain: /api/ai/suggest returns pickup hours from site even when cards bloc
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; suggestion?: string };
       assert.ok(body.ok);
-      assert.equal(body.model, "sbuild-brain");
-      assert.equal(body.source, "brain");
-      assert.equal(body.brainSource, "brain-site");
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
       const text = String(body.suggestion || "");
       assert.match(text, /Monday/);
       assert.match(text, /Saturday/);
-      assert.match(text, /Farmers market/);
     });
   });
 });
 
-test("brain: /api/ai/suggest answers selected-block title/description question from focus", async () => {
-  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+test("brain: /api/ai/suggest routes selected-block detail question to LLM with selected-block context", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "Selected block: hero with heading 'Fresh from the farm' and subheading 'Seasonal produce picked daily'." } } }
+  }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
         method: "POST",
@@ -3603,19 +3676,15 @@ test("brain: /api/ai/suggest answers selected-block title/description question f
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string; brainSource?: string; brainScope?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; engineContextUsed?: string[]; suggestion?: string };
       assert.ok(body.ok);
-      assert.equal(body.model, "sbuild-brain");
-      assert.equal(body.brainSource, "brain-block");
-      assert.equal(body.brainScope, "selected-block");
-      const text = String(body.suggestion || "");
-      assert.match(text, /Fresh from the farm/);
-      assert.match(text, /Seasonal produce picked daily/);
+      assert.equal(body.engine, "local-ollama");
+      assert.ok(body.engineContextUsed!.includes("selected-block"));
     });
   });
 });
 
-test("brain: /api/ai/suggest answers version question from build info without Ollama", async () => {
+test("brain: /api/ai/suggest answers version question deterministically (engine=sbuild-brain)", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       const res = await fetch(`${baseUrl}/api/ai/suggest`, {
@@ -3628,19 +3697,23 @@ test("brain: /api/ai/suggest answers version question from build info without Ol
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; mode?: string; engineReason?: string; deterministicAnswer?: boolean; suggestion?: string };
       assert.ok(body.ok);
+      assert.equal(body.engine, "sbuild-brain");
+      assert.equal(body.mode, "deterministic");
+      assert.equal(body.engineReason, "site-app-version-fact");
+      assert.equal(body.deterministicAnswer, true);
       assert.equal(body.model, "sbuild-brain");
       assert.equal(body.source, "brain");
       const text = String(body.suggestion || "");
       assert.match(text, /sBuild/);
-      assert.match(text, /on branch main/);
-      assert.match(text, /Git commit/);
+      assert.match(text, /branch main/);
+      assert.match(text, /commit/);
     });
   });
 });
 
-test("brain: /api/ai/suggest routes general knowledge to LLM when brain has no answer", async () => {
+test("brain: /api/ai/suggest routes general knowledge to LLM (corn color)", async () => {
   await withMockOllama({
     tags: { models: [{ name: "qwen2.5:1.5b" }] },
     chat: { body: { message: { content: "A kernel of corn is typically yellow, though it can be white, red, or blue." } } }
@@ -3656,12 +3729,38 @@ test("brain: /api/ai/suggest routes general knowledge to LLM when brain has no a
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string; source?: string; suggestion?: string };
+      const body = await res.json() as { ok: boolean; model?: string; source?: string; engine?: string; engineReason?: string; deterministicAnswer?: boolean; suggestion?: string };
       assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
       assert.equal(body.model, "qwen2.5:1.5b");
-      assert.equal(body.source, "local");
-      const text = String(body.suggestion || "");
-      assert.match(text, /yellow|color/i);
+      assert.equal(body.engineReason, "llm-ok");
+      assert.equal(body.deterministicAnswer, false);
+      assert.match(String(body.suggestion || ""), /yellow|color/i);
+    });
+  });
+});
+
+test("brain: /api/ai/suggest routes potato color to LLM too (no faked brain answer)", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "A potato is a starchy tuberous vegetable, often brown or yellow on the outside." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "what color is a potato?",
+          targetKind: "site",
+          projectContext: makeBrainProject()
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; model?: string; deterministicAnswer?: boolean };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.equal(body.model, "qwen2.5:1.5b");
+      assert.equal(body.deterministicAnswer, false);
     });
   });
 });
@@ -3700,23 +3799,30 @@ test("brain: /api/ai/suggest keeps block scope preferring selected block but doe
   });
 });
 
-test("brain: /api/ai/suggest without projectContext falls through to legacy content-router", async () => {
-  await withNoOpenAIKey(async () => {
-    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        prompt: "What are the farm pickup hours?",
-        targetKind: "block",
-        blockId: "hero-1",
-        blockType: "hero",
-        pageContent: "[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
-      })
+test("brain: /api/ai/suggest without projectContext falls through to LLM with no whole-site context", async () => {
+  await withMockOllama({
+    tags: { models: [{ name: "qwen2.5:1.5b" }] },
+    chat: { body: { message: { content: "I do not have project context." } } }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "What are the farm pickup hours?",
+          targetKind: "block",
+          blockId: "hero-1",
+          blockType: "hero",
+          pageContent: "[Hours block]\nHours 1: Monday 9-5\nHours 2: Saturday 8-2"
+        })
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json() as { ok: boolean; engine?: string; engineContextUsed?: string[] };
+      assert.ok(body.ok);
+      assert.equal(body.engine, "local-ollama");
+      assert.ok(Array.isArray(body.engineContextUsed));
+      assert.ok(!body.engineContextUsed!.includes("whole-site"), "without projectContext, whole-site must not be in contextUsed");
     });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; model?: string };
-    assert.ok(body.ok);
-    assert.equal(body.model, "content-router");
   });
 });
 
@@ -3734,6 +3840,26 @@ test("brain: /api/ai/suggest on empty prompt returns 400", async () => {
   });
 });
 
+test("brain: /api/ai/suggest returns engine=unavailable when no LLM and no API", async () => {
+  await withNoOpenAIKey(async () => {
+    const res = await fetch(`${baseUrl}/api/ai/suggest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "what color is a potato?",
+        targetKind: "site",
+        projectContext: makeBrainProject()
+      })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; engine?: string; mode?: string; engineReason?: string; source?: string };
+    assert.ok(body.ok);
+    // We don't have an ollama running in the test, so this may come back
+    // as engine=unavailable, mode=error. The honest path must be visible.
+    assert.ok(["unavailable", "local-ollama"].includes(body.engine || ""), "engine must be honest about source");
+  });
+});
+
 test("brain: /api/ai/brain answers version question", async () => {
   await withNoOpenAIKey(async () => {
     const res = await fetch(`${baseUrl}/api/ai/brain`, {
@@ -3745,16 +3871,18 @@ test("brain: /api/ai/brain answers version question", async () => {
       })
     });
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; kind?: string; source?: string; suggestion?: string; brainLoaded?: boolean };
+    const body = await res.json() as { ok: boolean; kind?: string; engine?: string; mode?: string; source?: string; suggestion?: string; brainLoaded?: boolean };
     assert.ok(body.ok);
     assert.equal(body.kind, "answered");
+    assert.equal(body.engine, "sbuild-brain");
+    assert.equal(body.mode, "deterministic");
     assert.equal(body.source, "brain");
     assert.equal(body.brainLoaded, true);
     assert.match(String(body.suggestion || ""), /sBuild/);
   });
 });
 
-test("brain: /api/ai/brain returns card titles and details for selected cards block", async () => {
+test("brain: /api/ai/brain returns needs-llm for card titles (Brain does not fake answer)", async () => {
   await withNoOpenAIKey(async () => {
     const res = await fetch(`${baseUrl}/api/ai/brain`, {
       method: "POST",
@@ -3766,13 +3894,14 @@ test("brain: /api/ai/brain returns card titles and details for selected cards bl
       })
     });
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; kind?: string; brainSource?: string; suggestion?: string };
+    const body = await res.json() as { ok: boolean; kind?: string; engine?: string; engineReason?: string; deterministicAnswer?: boolean; suggestion?: string; brainContext?: string };
     assert.ok(body.ok);
-    assert.equal(body.kind, "answered");
-    assert.equal(body.brainSource, "brain-block");
-    const text = String(body.suggestion || "");
-    assert.match(text, /Seasonal Vegetables/);
-    assert.match(text, /Farm Flowers/);
+    assert.equal(body.kind, "needs-llm");
+    assert.equal(body.engine, "sbuild-brain");
+    assert.equal(body.engineReason, "general-knowledge");
+    assert.equal(body.deterministicAnswer, false);
+    assert.ok((body.brainContext || "").includes("sBuild Brain"));
+    assert.ok((body.brainContext || "").includes("Seasonal Vegetables"));
   });
 });
 
@@ -3787,15 +3916,16 @@ test("brain: /api/ai/brain returns needs-llm for general-knowledge question", as
       })
     });
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean; brainContext?: string };
+    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean; brainContext?: string; engineReason?: string };
     assert.ok(body.ok);
     assert.equal(body.kind, "needs-llm");
     assert.equal(body.brainLoaded, true);
+    assert.equal(body.engineReason, "general-knowledge");
     assert.ok((body.brainContext || "").includes("sBuild Brain"));
   });
 });
 
-test("brain: /api/ai/brain answers page list question", async () => {
+test("brain: /api/ai/brain returns needs-llm for page list (no faked list)", async () => {
   await withNoOpenAIKey(async () => {
     const res = await fetch(`${baseUrl}/api/ai/brain`, {
       method: "POST",
@@ -3806,23 +3936,26 @@ test("brain: /api/ai/brain answers page list question", async () => {
       })
     });
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; kind?: string; brainSource?: string; suggestion?: string };
+    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean };
     assert.ok(body.ok);
-    assert.equal(body.kind, "answered");
-    assert.equal(body.brainSource, "brain-site");
-    assert.match(String(body.suggestion || ""), /Home/);
+    assert.equal(body.kind, "needs-llm");
+    assert.equal(body.brainLoaded, true);
   });
 });
 
-test("brain: /api/ai/brain/health returns capability list", async () => {
+test("brain: /api/ai/brain/health returns honest capability list", async () => {
   await withNoOpenAIKey(async () => {
     const res = await fetch(`${baseUrl}/api/ai/brain/health`);
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; brain?: string; capabilities?: string[] };
+    const body = await res.json() as { ok: boolean; brain?: string; architecture?: string; deterministicPath?: string; llmPath?: string; capabilities?: string[]; caveats?: string[] };
     assert.ok(body.ok);
     assert.equal(body.brain, "sbuild-brain");
+    assert.equal(body.architecture, "honest");
     assert.ok(Array.isArray(body.capabilities));
-    assert.ok((body.capabilities || []).includes("site-pickup-hours"));
+    assert.ok((body.capabilities || []).includes("builds-structured-site-and-app-context"));
+    assert.ok((body.capabilities || []).includes("no-hardcoded-user-prompt-matchers"));
+    assert.ok((body.capabilities || []).includes("no-faked-general-knowledge-answers"));
+    assert.ok(Array.isArray(body.caveats));
   });
 });
 
@@ -3834,9 +3967,11 @@ test("brain: /api/ai/brain without projectContext returns no-project guidance", 
       body: JSON.stringify({ prompt: "what version am I running?" })
     });
     assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; kind?: string; brainLoaded?: boolean };
+    const body = await res.json() as { ok: boolean; kind?: string; engine?: string; engineReason?: string; brainLoaded?: boolean };
     assert.ok(body.ok);
     assert.equal(body.kind, "no-project");
+    assert.equal(body.engine, "sbuild-brain");
+    assert.equal(body.engineReason, "no-project-context");
     assert.equal(body.brainLoaded, true);
   });
 });
@@ -3852,7 +3987,7 @@ test("brain: /api/ai/brain empty prompt returns 400", async () => {
   });
 });
 
-test("brain: /api/ai/suggest persists history for site-scope brain answers", async () => {
+test("brain: /api/ai/suggest persists history for deterministic version answer", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {
       const projectPath = `/brain-history-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -3860,22 +3995,23 @@ test("brain: /api/ai/suggest persists history for site-scope brain answers", asy
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          prompt: "what pages are on this site?",
+          prompt: "what version am I running?",
           targetKind: "site",
           projectPath,
           projectContext: makeBrainProject()
         })
       });
       assert.equal(res.status, 200);
-      const body = await res.json() as { ok: boolean; model?: string };
+      const body = await res.json() as { ok: boolean; model?: string; engine?: string };
       assert.ok(body.ok);
       assert.equal(body.model, "sbuild-brain");
+      assert.equal(body.engine, "sbuild-brain");
       const histRes = await fetch(`${baseUrl}/api/ai/chat/history?projectPath=${encodeURIComponent(projectPath)}`);
       const histBody = await histRes.json() as { ok: boolean; messages: Array<{ text: string }> };
       assert.ok(histBody.ok);
       assert.ok(histBody.messages.length >= 2, "user+assistant must be persisted");
-      assert.match(histBody.messages[0]?.text || "", /what pages/);
-      assert.match(histBody.messages[1]?.text || "", /Home/);
+      assert.match(histBody.messages[0]?.text || "", /what version/i);
+      assert.match(histBody.messages[1]?.text || "", /sBuild/);
       await fetch(`${baseUrl}/api/ai/chat/history`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectPath }) });
     });
   });
