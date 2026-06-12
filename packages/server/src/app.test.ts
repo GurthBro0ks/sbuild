@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
-import { projectFile, secretsFile } from "./lib/paths.js";
+import { backupsDir, projectFile, secretsFile } from "./lib/paths.js";
 import {
   getChatHistory,
   appendChatHistory,
@@ -1060,6 +1060,34 @@ test("auth: publish still returns 401 without auth", async () => {
       body: JSON.stringify({})
     });
     assert.equal(publishRes.status, 401);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: unauth GET /api/project returns 401", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const res = await fetch(`${server.baseUrl}/api/project`);
+    assert.equal(res.status, 401);
+    const body = (await res.json()) as { ok: boolean };
+    assert.equal(body.ok, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: authenticated GET /api/project returns project payload", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const sessionToken = await loginAs(server, "admin", "admin123");
+    const res = await fetch(`${server.baseUrl}/api/project`, {
+      headers: { cookie: `sbuild_session=${sessionToken}` }
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean; project?: unknown };
+    assert.equal(body.ok, true);
+    assert.ok(body.project, "project payload should be present");
   } finally {
     await server.close();
   }
@@ -4483,4 +4511,60 @@ test("clearAiChat semantics: loadChatHistory is never auto-invoked on panel open
   const withoutDecl = appSource.replace(/async function loadChatHistory\s*\([^)]*\)\s*\{[\s\S]*?^\s*\}/m, "");
   const callMatches = [...withoutDecl.matchAll(/loadChatHistory\s*\(/g)];
   assert.equal(callMatches.length, 0, "loadChatHistory must not be invoked anywhere; restore is explicit-only");
+});
+
+// =========================================================
+// Restore: path containment inside backups directory
+// =========================================================
+
+test("restore: path outside backups directory is rejected with 400", async () => {
+  const badPaths = [
+    "/etc/hostname",
+    "../project.json",
+    "../../.sbuild-secrets.json",
+    path.resolve(backupsDir, "..", "project.json")
+  ];
+  for (const bad of badPaths) {
+    const res = await fetch(`${baseUrl}/api/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: bad })
+    });
+    assert.equal(res.status, 400, `expected 400 for restore path: ${bad}`);
+    const body = (await res.json()) as { ok: boolean };
+    assert.equal(body.ok, false);
+  }
+});
+
+test("restore: backup file inside backups directory restores successfully", async () => {
+  const backupRes = await fetch(`${baseUrl}/api/backup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  });
+  assert.equal(backupRes.status, 200);
+  const backupBody = (await backupRes.json()) as { ok: boolean; backup: string };
+  assert.equal(backupBody.ok, true);
+  assert.ok(backupBody.backup.startsWith(path.resolve(backupsDir) + path.sep));
+
+  // Absolute path returned by /api/backup is accepted.
+  const absoluteRes = await fetch(`${baseUrl}/api/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: backupBody.backup })
+  });
+  assert.equal(absoluteRes.status, 200);
+  const absoluteBody = (await absoluteRes.json()) as { ok: boolean; restoredFrom: string };
+  assert.equal(absoluteBody.ok, true);
+  assert.ok(absoluteBody.restoredFrom.startsWith(path.resolve(backupsDir) + path.sep));
+
+  // Bare filename resolves against the backups directory.
+  const bareRes = await fetch(`${baseUrl}/api/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: path.basename(backupBody.backup) })
+  });
+  assert.equal(bareRes.status, 200);
+  const bareBody = (await bareRes.json()) as { ok: boolean };
+  assert.equal(bareBody.ok, true);
 });

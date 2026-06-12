@@ -600,7 +600,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     });
   });
 
-  app.get("/api/project", async (_req, res) => {
+  app.get("/api/project", async (req, res) => {
+    if (auth.enabled && !getSession(req)) {
+      res.status(401).json({ ok: false, error: "Authentication required" });
+      return;
+    }
     try {
       const project = await loadProject();
       const stat = await fs.stat(projectFile);
@@ -3304,8 +3308,14 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         res.status(400).json({ ok: false, warn: true, error: "path is required" });
         return;
       }
-      await fs.copyFile(restorePath, projectFile);
-      res.json({ ok: true, restoredFrom: restorePath });
+      const backupsRoot = path.resolve(backupsDir);
+      const resolved = path.resolve(backupsRoot, restorePath);
+      if (!resolved.startsWith(backupsRoot + path.sep)) {
+        res.status(400).json({ ok: false, warn: true, error: "restore path must resolve inside the backups directory" });
+        return;
+      }
+      await fs.copyFile(resolved, projectFile);
+      res.json({ ok: true, restoredFrom: resolved });
     } catch (error) {
       res.status(500).json({ ok: false, warn: true, error: String(error) });
     }
