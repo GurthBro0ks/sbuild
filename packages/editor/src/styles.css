@@ -139,6 +139,59 @@ html, body, #root { overflow-x: hidden; }
   display: none;
 }
 
+.version-identity-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--editor-border);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--editor-text);
+  background: #fff7df;
+}
+
+.version-identity-mismatch {
+  background: #fff0d6;
+  color: #5f3300;
+  border-bottom-color: #e8b765;
+}
+
+.version-identity-unverified {
+  background: #eef5ff;
+  color: #173a64;
+  border-bottom-color: #a9c9f7;
+}
+
+.version-identity-banner-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.version-identity-banner button {
+  flex: 0 0 auto;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.build-identity-status {
+  font-weight: 700;
+}
+
+.build-identity-match {
+  color: #2d8a4e;
+}
+
+.build-identity-mismatch,
+.build-identity-unverified {
+  color: #b85c00;
+}
+
 /* ===== GENERAL BUTTONS ===== */
 button {
   border: 1px solid var(--editor-button-border);
@@ -1873,6 +1926,12 @@ button:disabled {
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  .version-identity-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 9px 10px;
   }
 
   .workspace,

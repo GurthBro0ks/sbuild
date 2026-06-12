@@ -2920,18 +2920,19 @@ test("Image edit Square Crop uses deterministic square output", () => {
   assert.match(pipelineSrc, /fit:\s*"cover"/);
 });
 
-test("topbar uses displayVersion from buildInfo, not static SBUILD_VERSION alone", () => {
-  assert.match(appSource, /buildInfo\?\.displayVersion/);
+test("topbar uses shared display version helper, not static SBUILD_VERSION alone", () => {
+  assert.match(appSource, /function getDisplayVersion/);
+  assert.match(appSource, /version unverified/);
   const logoMatch = appSource.match(/className="logo".*\{SBUILD_APP_NAME\}/s);
   assert.ok(logoMatch, "topbar logo must exist");
-  assert.match(logoMatch[0], /buildInfo\?\.displayVersion/, "topbar logo must use buildInfo.displayVersion");
+  assert.match(logoMatch[0], /displayVersion/, "topbar logo must use shared displayVersion");
   assert.match(logoMatch[0], /\.toUpperCase\(\)/, "topbar logo must display version in uppercase");
 });
 
 test("About tab shows baseVersion and displayVersion fields", () => {
   assert.match(appSource, /Base version/);
   assert.match(appSource, /Display version/);
-  assert.match(appSource, /buildInfo\?\.displayVersion/);
+  assert.match(appSource, /getDisplayVersion/);
   assert.match(appSource, /Commit count/);
   assert.match(appSource, /buildInfo\?\.commitCount/);
 });
@@ -3000,10 +3001,14 @@ test("About tab has Build Status section header", () => {
 
 test("About tab shows browser/server build match hint", () => {
   const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
-  assert.match(aboutSection, /Browser and server build match/);
-  assert.match(aboutSection, /Browser\/server build mismatch/);
-  assert.match(aboutSection, /Hard refresh may be needed/);
-  assert.match(aboutSection, /BUILD_META\.gitCommitShort/);
+  assert.match(aboutSection, /buildIdentity\.message/);
+  assert.match(aboutSection, /buildIdentity\.detail/);
+  assert.match(aboutSection, /build-identity-status/);
+  assert.match(appSource, /Browser and server build match/);
+  assert.match(appSource, /Browser\/server build mismatch/);
+  assert.match(appSource, /older or different sBuild bundle/);
+  assert.match(appSource, /Hard refresh may be needed/);
+  assert.match(appSource, /BUILD_META\.gitCommitShort/);
 });
 
 test("About tab shows loaded project source and app dirty status in table", () => {
@@ -3013,9 +3018,43 @@ test("About tab shows loaded project source and app dirty status in table", () =
   assert.match(aboutSection, /App dirty \(unsaved edits\)/);
 });
 
-test("About tab shows server unreachable fallback when buildInfo is null", () => {
+test("About tab shows health unavailable fallback when build info is unverified", () => {
   const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
-  assert.match(aboutSection, /Server unreachable.*cannot verify build match/);
+  assert.match(aboutSection, /Service health/);
+  assert.match(aboutSection, /Health unavailable - version unverified/);
+  assert.match(appSource, /health unavailable/);
+  assert.match(appSource, /cannot be verified/);
+});
+
+test("loadBuildInfo marks health unavailable instead of silently falling back", () => {
+  const loadBuildInfoBlock = appSource.substring(appSource.indexOf("async function loadBuildInfo"), appSource.indexOf("useEffect(() => {\n    void loadProject"));
+  assert.match(loadBuildInfoBlock, /setBuildInfoStatus\("loading"\)/);
+  assert.match(loadBuildInfoBlock, /fetchJson<SBuildBuildInfo>\("\/health"\)/);
+  assert.match(loadBuildInfoBlock, /setBuildInfoStatus\("ok"\)/);
+  assert.match(loadBuildInfoBlock, /setBuildInfo\(null\)/);
+  assert.match(loadBuildInfoBlock, /setBuildInfoStatus\("unavailable"\)/);
+  assert.match(loadBuildInfoBlock, /setBuildInfoError/);
+  assert.doesNotMatch(loadBuildInfoBlock, /catch\s*\{\s*\/\/ ignore/);
+});
+
+test("version identity banner visibly surfaces mismatch and health unavailable states", () => {
+  assert.match(appSource, /showVersionIdentityBanner/);
+  assert.match(appSource, /data-testid="version-identity-banner"/);
+  assert.match(appSource, /Version drift detected/);
+  assert.match(appSource, /older or different sBuild bundle/);
+  assert.match(appSource, /Version unverified/);
+  assert.match(appSource, /setVersionBannerDismissed\(true\)/);
+  assert.match(cssSource, /\.version-identity-banner/);
+  assert.match(cssSource, /\.version-identity-mismatch/);
+  assert.match(cssSource, /\.version-identity-unverified/);
+});
+
+test("build identity mismatch only fires when browser and server commits are known", () => {
+  const helperBlock = appSource.substring(appSource.indexOf("function getBuildIdentityState"), appSource.indexOf("function imagePassesFilter"));
+  assert.match(helperBlock, /hasKnownCommit\(browserCommit\)/);
+  assert.match(helperBlock, /hasKnownCommit\(serverCommit\)/);
+  assert.match(helperBlock, /status:\s*"unverified"/);
+  assert.match(helperBlock, /browserCommit !== serverCommit/);
 });
 
 test("Copy diagnostics includes browser/server match status without secrets", () => {
@@ -3029,7 +3068,9 @@ test("Copy diagnostics includes browser/server match status without secrets", ()
   assert.match(aboutSection, /buildDate/);
   assert.match(aboutSection, /publishAllowed/);
   assert.match(aboutSection, /serviceHealth/);
+  assert.match(aboutSection, /healthError/);
   assert.match(aboutSection, /browserServerMatch/);
+  assert.match(aboutSection, /browserServerMatchStatus/);
   assert.match(aboutSection, /gitDirtySummary/);
   assert.ok(!aboutSection.includes("userAgent"), "Copy diagnostics must not include userAgent");
   const clipboardMatch = aboutSection.match(/clipboard\.writeText\(JSON\.stringify\(diag/);

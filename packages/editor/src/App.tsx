@@ -110,6 +110,14 @@ type AiPanelResizeState = { pointerId: number; handle: AiPanelResizeHandle; star
 type ImageMeta = { name: string; url: string; folder: string; size: number; modified: string; isEdited: boolean; extension?: string; isRenderableImage?: boolean };
 type ImageLibraryFilter = "all" | "hide-blank" | "hide-tall" | "generated" | "uploaded" | "used";
 type ImageTileFit = "cover" | "contain";
+type BuildInfoStatus = "loading" | "ok" | "unavailable";
+type BuildIdentityState = {
+  status: "loading" | "match" | "mismatch" | "unverified";
+  browserCommit: string;
+  serverCommit: string;
+  message: string;
+  detail: string;
+};
 
 const RENDERABLE_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"]);
 
@@ -164,6 +172,65 @@ function isGeneratedImage(meta: ImageMeta): boolean {
 
 function isUploadedImage(meta: ImageMeta): boolean {
   return !isGeneratedImage(meta) && !meta.isEdited;
+}
+
+function hasKnownCommit(commit: string | null | undefined): commit is string {
+  return Boolean(commit && commit !== "unknown" && commit !== "unreachable" && commit !== "loading");
+}
+
+function getDisplayVersion(buildInfo: SBuildBuildInfo | null, buildInfoStatus: BuildInfoStatus): string {
+  if (buildInfo?.displayVersion) return buildInfo.displayVersion;
+  if (buildInfoStatus === "unavailable") return `${SBUILD_VERSION} (version unverified)`;
+  return SBUILD_VERSION;
+}
+
+function getBuildIdentityState(buildInfo: SBuildBuildInfo | null, buildInfoStatus: BuildInfoStatus): BuildIdentityState {
+  const browserCommit = BUILD_META.gitCommitShort || "unknown";
+  if (buildInfoStatus === "loading") {
+    return {
+      status: "loading",
+      browserCommit,
+      serverCommit: "loading",
+      message: "Checking build identity.",
+      detail: ""
+    };
+  }
+  if (buildInfoStatus === "unavailable") {
+    return {
+      status: "unverified",
+      browserCommit,
+      serverCommit: "unreachable",
+      message: "Version unverified - health unavailable.",
+      detail: "The browser could not reach /health, so this bundle identity cannot be verified."
+    };
+  }
+
+  const serverCommit = buildInfo?.gitCommit || "unknown";
+  if (!hasKnownCommit(browserCommit) || !hasKnownCommit(serverCommit)) {
+    return {
+      status: "unverified",
+      browserCommit,
+      serverCommit,
+      message: "Version unverified - commit info unavailable.",
+      detail: "Commit info is missing, so the browser/server build match cannot be verified."
+    };
+  }
+  if (browserCommit !== serverCommit) {
+    return {
+      status: "mismatch",
+      browserCommit,
+      serverCommit,
+      message: "Browser/server build mismatch - this browser is running an older or different sBuild bundle.",
+      detail: `Hard refresh may be needed. Browser ${browserCommit}, server ${serverCommit}.`
+    };
+  }
+  return {
+    status: "match",
+    browserCommit,
+    serverCommit,
+    message: "Browser and server build match.",
+    detail: `Browser and server are both on ${serverCommit}.`
+  };
 }
 
 function imagePassesFilter(meta: ImageMeta, filter: ImageLibraryFilter, diagnostics: ImageDiagnostics | undefined, usedImageUrls: Set<string>): boolean {
@@ -1471,6 +1538,9 @@ export function App() {
   const [bulkDeleteMessage, setBulkDeleteMessage] = useState("");
   const [aiEnhanceResult, setAiEnhanceResult] = useState("");
   const [buildInfo, setBuildInfo] = useState<SBuildBuildInfo | null>(null);
+  const [buildInfoStatus, setBuildInfoStatus] = useState<BuildInfoStatus>("loading");
+  const [buildInfoError, setBuildInfoError] = useState("");
+  const [versionBannerDismissed, setVersionBannerDismissed] = useState(false);
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState>(null);
   const [selectedThemeName, setSelectedThemeName] = useState(themePresets[0].name);
   const [selectedPart, setSelectedPart] = useState<keyof BlockPartStyles>("container");
@@ -1492,6 +1562,11 @@ export function App() {
   const [selectMode, setSelectMode] = useState(true);
   const [loadedProjectSource, setLoadedProjectSource] = useState("unknown");
   const chatProviderStatus = providerStatus.find((provider) => provider.name === "AI Chat Summary") || null;
+  const displayVersion = getDisplayVersion(buildInfo, buildInfoStatus);
+  const buildIdentity = getBuildIdentityState(buildInfo, buildInfoStatus);
+  const showVersionIdentityBanner = !versionBannerDismissed && (
+    buildIdentity.status === "mismatch" || buildInfoStatus === "unavailable"
+  );
   const [loadedProjectUpdatedAt, setLoadedProjectUpdatedAt] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState("");
   const [lastLoadedAt, setLastLoadedAt] = useState("");
@@ -1792,11 +1867,16 @@ export function App() {
   }, [selectedBlock?.id, selectedBlock?.type, selectedGalleryIndex]);
 
   async function loadBuildInfo() {
+    setBuildInfoStatus("loading");
     try {
       const data = await fetchJson<SBuildBuildInfo>("/health");
       setBuildInfo(data);
-    } catch {
-      // ignore
+      setBuildInfoStatus("ok");
+      setBuildInfoError("");
+    } catch (err) {
+      setBuildInfo(null);
+      setBuildInfoStatus("unavailable");
+      setBuildInfoError(err instanceof Error ? err.message : "health unavailable");
     }
   }
 
@@ -5869,7 +5949,7 @@ export function App() {
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
               <p><strong>mobile-toolbar-gap-repair active</strong></p>
               <p><strong>action-controls-offset active</strong></p>
-              <p><strong>version:</strong> {buildInfo?.displayVersion || SBUILD_VERSION}</p>
+              <p><strong>version:</strong> {displayVersion}</p>
               <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
               <p><strong>spacerHeight:</strong> {debugSpacerH || "n/a"}{debugSpacerH ? "px" : ""}</p>
               <p><strong>topbarBottom:</strong> {debugToolbarBottom || "n/a"}{debugToolbarBottom ? "px" : ""}</p>
@@ -6178,7 +6258,7 @@ export function App() {
       <header ref={topbarRef} className="topbar">
         <div className="topbar-mobile-row topbar-mobile-row-main">
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
-          <div className="logo" title={`sBuild ${buildInfo?.displayVersion || SBUILD_VERSION} — base ${SBUILD_VERSION}, commit count ${buildInfo?.commitCount ?? "?"}, commit ${buildInfo?.gitCommit || BUILD_META.gitCommitShort || "?"}`}>{SBUILD_APP_NAME} {(buildInfo?.displayVersion || SBUILD_VERSION).toUpperCase()}</div>
+          <div className="logo" title={`sBuild ${displayVersion} - base ${SBUILD_VERSION}, commit count ${buildInfo?.commitCount ?? "?"}, server commit ${buildIdentity.serverCommit}, browser commit ${buildIdentity.browserCommit}`}>{SBUILD_APP_NAME} {displayVersion.toUpperCase()}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
           <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
@@ -6210,6 +6290,17 @@ export function App() {
         </div>
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
+      {showVersionIdentityBanner && (
+        <div className={`version-identity-banner version-identity-${buildIdentity.status}`} role="status" data-testid="version-identity-banner">
+          <div className="version-identity-banner-copy">
+            <strong>{buildIdentity.status === "mismatch" ? "Version drift detected" : "Version unverified"}</strong>
+            <span>{buildIdentity.message}</span>
+            {buildIdentity.detail && <span>{buildIdentity.detail}</span>}
+            {buildInfoError && <span>Health error: {buildInfoError}</span>}
+          </div>
+          <button type="button" onClick={() => setVersionBannerDismissed(true)} aria-label="Dismiss version identity warning">Dismiss</button>
+        </div>
+      )}
       {paintMode && !previewMode && (
         <div className="paint-toolbar" role="toolbar" aria-label="Markup tools">
           <div className="paint-toolbar-header">AI Markup &mdash; draw notes for AI, not saved to website</div>
@@ -7301,64 +7392,59 @@ export function App() {
               {resetPwMsg && <p className={resetPwMsgOk ? "panel-status" : "error-text"}>{resetPwMsg}</p>}
             </div>}
             {settingsTab === "debug" && <div>
-              <p><strong>Version:</strong> {SBUILD_APP_NAME} {buildInfo?.displayVersion || SBUILD_VERSION}</p>
-              <p><strong>Git commit:</strong> {buildInfo?.gitCommit || "unknown"}</p>
+              <p><strong>Version:</strong> {SBUILD_APP_NAME} {displayVersion}</p>
+              <p><strong>Git commit:</strong> {buildIdentity.serverCommit}</p>
+              <p><strong>Health:</strong> {buildInfoStatus === "ok" ? "OK" : buildInfoStatus === "unavailable" ? "health unavailable - version unverified" : "checking"}</p>
               <p><strong>Selected block:</strong> {selectedBlock?.id || "none"} ({selectedBlock?.type || "none"})</p>
               <p><strong>Theme:</strong> {themeApplied || "custom"}</p>
               <p><strong>Last API status:</strong> {status}</p>
             </div>}
             {settingsTab === "about" && <div>
               <h4 style={{ marginBottom: 8 }}>Build Status</h4>
-              <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{buildInfo?.displayVersion || SBUILD_VERSION}</span></p>
+              <p><strong>{SBUILD_APP_NAME}</strong> <span style={{ opacity: 0.7 }}>{displayVersion}</span></p>
               <table className="about-table"><tbody>
                 <tr><td>Base version</td><td>{SBUILD_VERSION}</td></tr>
-                <tr><td>Display version</td><td>{buildInfo?.displayVersion || SBUILD_VERSION}</td></tr>
-                <tr><td>Git commit</td><td>{buildInfo?.gitCommit || "unknown"}</td></tr>
+                <tr><td>Display version</td><td>{displayVersion}</td></tr>
+                <tr><td>Service health</td><td>{buildInfoStatus === "ok" ? "OK" : buildInfoStatus === "unavailable" ? "Health unavailable - version unverified" : "Checking"}</td></tr>
+                <tr><td>Git commit</td><td>{buildIdentity.serverCommit}</td></tr>
                 <tr><td>Commit count</td><td>{buildInfo?.commitCount ?? "unknown"}</td></tr>
                 <tr><td>Branch</td><td>{buildInfo?.branch || "unknown"}</td></tr>
                 <tr><td>Build date/time</td><td>{buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</td></tr>
-                <tr><td>Publish allowed</td><td>{buildInfo?.publishAllowed ? "Yes" : "No (dry-run)"}</td></tr>
+                <tr><td>Publish allowed</td><td>{buildInfoStatus === "ok" ? (buildInfo?.publishAllowed ? "Yes" : "No (dry-run)") : "unknown (health unavailable)"}</td></tr>
                 <tr><td>Loaded project source</td><td>{loadedProjectSource}</td></tr>
                 {projectPath && <tr><td>Project path</td><td>{projectPath}</td></tr>}
                 <tr><td>App dirty (unsaved edits)</td><td>{dirty ? "Yes — has unsaved changes" : "No — all saved"}</td></tr>
-                <tr><td>Git working tree</td><td>{buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)"}</td></tr>
+                <tr><td>Git working tree</td><td>{buildInfoStatus === "ok" ? (buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)") : "unknown (health unavailable)"}</td></tr>
                 {buildInfo?.dirtySummary && (
                   <tr><td>Git summary</td><td>{buildInfo.dirtySummary.modifiedTracked} tracked modified, {buildInfo.dirtySummary.untracked} untracked</td></tr>
                 )}
               </tbody></table>
               <div style={{ marginTop: 10, marginBottom: 10 }}>
-                {buildInfo ? (() => {
-                  const browserCommit = BUILD_META.gitCommitShort;
-                  const serverCommit = buildInfo.gitCommit;
-                  const match = browserCommit === serverCommit;
-                  return <>
-                    <p className="hint" style={{ color: match ? "#2d8a4e" : "#b85c00", fontWeight: 600 }}>
-                      {match ? "Browser and server build match." : "Browser/server build mismatch. Hard refresh may be needed."}
-                    </p>
-                    {!match && <p className="hint">Browser built from {browserCommit}, server running {serverCommit}.</p>}
-                  </>;
-                })() : <p className="hint" style={{ color: "#b85c00" }}>Server unreachable — cannot verify build match.</p>}
+                <p className={`hint build-identity-status build-identity-${buildIdentity.status}`}>
+                  {buildIdentity.message}
+                </p>
+                {buildIdentity.detail && <p className="hint">{buildIdentity.detail}</p>}
+                {buildInfoError && <p className="hint">Health error: {buildInfoError}</p>}
               </div>
               <hr />
               <h4 style={{ marginBottom: 8 }}>Diagnostics</h4>
               <div className="button-row compact">
                 <button onClick={() => {
-                  const browserCommit = BUILD_META.gitCommitShort;
-                  const serverCommit = buildInfo?.gitCommit || "unreachable";
-                  const match = browserCommit === serverCommit;
                   const diag = {
                     app: SBUILD_APP_NAME,
-                    displayVersion: buildInfo?.displayVersion || SBUILD_VERSION,
+                    displayVersion,
                     baseVersion: SBUILD_VERSION,
-                    gitCommit: serverCommit,
-                    gitCommitBrowser: browserCommit,
+                    gitCommit: buildIdentity.serverCommit,
+                    gitCommitBrowser: buildIdentity.browserCommit,
                     branch: buildInfo?.branch || "unknown",
                     commitCount: buildInfo?.commitCount ?? "unknown",
                     buildDate: buildInfo?.buildDate || "unknown",
                     publishAllowed: buildInfo?.publishAllowed ?? false,
-                    serviceHealth: buildInfo ? "ok" : "unreachable",
-                    browserServerMatch: match,
-                    browserServerMatchNote: match ? "Browser and server on same commit" : `Browser ${browserCommit} vs server ${serverCommit}`,
+                    serviceHealth: buildInfoStatus === "ok" ? "ok" : buildInfoStatus === "unavailable" ? "health unavailable" : "checking",
+                    healthError: buildInfoError || null,
+                    browserServerMatch: buildIdentity.status === "match",
+                    browserServerMatchStatus: buildIdentity.status,
+                    browserServerMatchNote: buildIdentity.detail || buildIdentity.message,
                     dirty: dirty ? "App has unsaved project edits" : "All app edits saved",
                     gitDirty: buildInfo?.dirty ? "Source files differ from last commit" : "Clean working tree",
                     gitDirtySummary: buildInfo?.dirtySummary || null,

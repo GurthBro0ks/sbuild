@@ -27,6 +27,16 @@ const OLD_DEFAULT_LOCAL_CHAT_MODEL = "qwen3:4b";
 const DEFAULT_OPENAI_CHAT_MODEL = "gpt-4o-mini";
 const DEFAULT_OPENROUTER_CHAT_MODEL = "openai/gpt-4o-mini";
 const DEFAULT_LOCAL_FALLBACK_TIMEOUT_SEC = 12;
+const APP_SHELL_CACHE_CONTROL = "no-store";
+const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+function setAppShellCacheHeaders(res: { setHeader(name: string, value: string): void }): void {
+  res.setHeader("Cache-Control", APP_SHELL_CACHE_CONTROL);
+}
+
+function setImmutableAssetCacheHeaders(res: { setHeader(name: string, value: string): void }): void {
+  res.setHeader("Cache-Control", IMMUTABLE_ASSET_CACHE_CONTROL);
+}
 
 function isLikelyMaskedOrTestKey(value: string): boolean {
   const v = String(value || "").trim();
@@ -532,6 +542,7 @@ async function sendEditorFallback(
   editorIndexPath: string,
   editorRootPath: string
 ): Promise<void> {
+  setAppShellCacheHeaders(res);
   try {
     await fs.access(editorIndexPath);
     res.type("html");
@@ -3371,8 +3382,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   });
 
   // Serve built editor assets for local prototype usage.
-  app.use("/assets", express.static(editorAssetsPath));
-  app.use(express.static(resolvedEditorDistPath, { index: false }));
+  app.use("/assets", express.static(editorAssetsPath, {
+    immutable: true,
+    maxAge: "1y",
+    setHeaders: setImmutableAssetCacheHeaders
+  }));
+  app.use(express.static(resolvedEditorDistPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (path.basename(filePath) === "index.html") {
+        setAppShellCacheHeaders(res);
+      }
+    }
+  }));
 
   app.use("/api", (_req, res) => {
     res.status(404).json({ ok: false, error: "API route not found" });

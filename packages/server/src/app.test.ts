@@ -193,23 +193,32 @@ test("root route returns HTML when editor dist exists", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sbuild-editor-dist-"));
   await fs.mkdir(path.join(tempDir, "assets"), { recursive: true });
   await fs.writeFile(path.join(tempDir, "index.html"), "<!doctype html><html><body><div id='root'>sbuild-test-root</div></body></html>", "utf8");
-  await fs.writeFile(path.join(tempDir, "assets", "test.js"), "console.log('asset-ok')", "utf8");
+  await fs.writeFile(path.join(tempDir, "assets", "index-abc123.js"), "console.log('asset-ok')", "utf8");
 
   const server = await startTempServer(tempDir);
   try {
     const rootResponse = await fetch(`${server.baseUrl}/`);
     const rootHtml = await rootResponse.text();
     assert.equal(rootResponse.status, 200);
+    assert.equal(rootResponse.headers.get("cache-control"), "no-store");
     assert.ok(rootHtml.includes("sbuild-test-root"));
 
-    const assetResponse = await fetch(`${server.baseUrl}/assets/test.js`);
+    const indexResponse = await fetch(`${server.baseUrl}/index.html`);
+    const indexHtml = await indexResponse.text();
+    assert.equal(indexResponse.status, 200);
+    assert.equal(indexResponse.headers.get("cache-control"), "no-store");
+    assert.ok(indexHtml.includes("sbuild-test-root"));
+
+    const assetResponse = await fetch(`${server.baseUrl}/assets/index-abc123.js`);
     const assetText = await assetResponse.text();
     assert.equal(assetResponse.status, 200);
+    assert.equal(assetResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
     assert.ok(assetText.includes("asset-ok"));
 
     const spaResponse = await fetch(`${server.baseUrl}/some/editor/path`);
     const spaHtml = await spaResponse.text();
     assert.equal(spaResponse.status, 200);
+    assert.equal(spaResponse.headers.get("cache-control"), "no-store");
     assert.ok(spaHtml.includes("sbuild-test-root"));
   } finally {
     await server.close();
