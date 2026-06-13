@@ -5,6 +5,7 @@ node_modules
 dist
 published-preview
 packages/*/dist
+packages/server/dist-test
 packages/editor/.vite
 project/images/*
 !project/images/.gitkeep

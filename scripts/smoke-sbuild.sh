@@ -4,6 +4,20 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+LIVE_SERVICE_DIR="/opt/slimy/sbuild"
+if [[ "$ROOT_DIR" == "$LIVE_SERVICE_DIR" && "${SBUILD_ALLOW_LIVE_SMOKE:-}" != "1" ]]; then
+  cat >&2 <<'WARNING'
+[sbuild] Refusing to run smoke validation in /opt/slimy/sbuild.
+
+This script runs install/build/test steps before smoke checks. The live
+sbuild.service process runs from packages/server/dist/index.js, so validation
+must run in a throwaway workcopy unless this is an intentional deploy build.
+
+To run here anyway for an approved deploy, set SBUILD_ALLOW_LIVE_SMOKE=1.
+WARNING
+  exit 2
+fi
+
 PROOF_DIR="${SBUILD_PROOF_DIR:-/tmp/proof_sbuild_goal_$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$PROOF_DIR"
 
