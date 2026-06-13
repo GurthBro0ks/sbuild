@@ -645,14 +645,17 @@ test("canvas-controls on mobile uses position static not sticky", () => {
   assert.doesNotMatch(ccBlock, /position:\s*sticky/, "canvas-controls does not use position: sticky on mobile");
 });
 
-test("main editor debug strip shows mobile-toolbar-gap-repair values", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair/);
-  assert.match(appSource, /action-controls-offset/);
-  assert.match(appSource, /toolbarH=\{debugToolbarH\}/);
-  assert.match(appSource, /spacerH=\{debugSpacerH\}/);
-  assert.match(appSource, /gapPx=\{debugGapPx\}/);
-  assert.match(appSource, /dup=\{debugDuplicateOffset/);
-  assert.match(appSource, /missing=\{debugMeasurementMissing/);
+test("normal mobile edit hint does not render layout debug instrumentation", () => {
+  const hintIdx = appSource.indexOf('className="panel-status mobile-edit-hint"');
+  assert.ok(hintIdx >= 0, "mobile edit hint exists");
+  const hintBlock = appSource.slice(hintIdx, appSource.indexOf("</p>", hintIdx));
+  assert.match(hintBlock, /Tap text to edit directly/);
+  assert.doesNotMatch(hintBlock, /mobile-toolbar-gap-repair/);
+  assert.doesNotMatch(hintBlock, /action-controls-offset/);
+  assert.doesNotMatch(hintBlock, /toolbarH=\{debugToolbarH\}/);
+  assert.doesNotMatch(hintBlock, /spacerH=\{debugSpacerH\}/);
+  assert.doesNotMatch(hintBlock, /gapPx=\{debugGapPx\}/);
+  assert.doesNotMatch(hintBlock, /missing=\{debugMeasurementMissing/);
 });
 
 test("mobile topbar keeps explicit grouped rows for density and action visibility", () => {

@@ -6817,7 +6817,7 @@ export function App() {
           )}
           {isMobileViewport && !previewMode && (
             <p className="panel-status mobile-edit-hint">
-              <strong>mobile-toolbar-gap-repair</strong> <strong>action-controls-offset</strong> toolbarH={debugToolbarH} spacerH={debugSpacerH} topbarBottom={debugToolbarBottom} ccTop={debugCanvasControlsTop} gapPx={debugGapPx} dup={debugDuplicateOffset ? "true" : "false"} topPad={debugTopbarPaddingTop} missing={debugMeasurementMissing ? "true" : "false"} · <strong>Tip:</strong> Tap text to edit directly · Long-press or tap ⋯ for styles
+              <strong>Tip:</strong> Tap text to edit directly · Long-press or tap ⋯ for styles
             </p>
           )}
 
