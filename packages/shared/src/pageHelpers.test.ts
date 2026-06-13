@@ -12,7 +12,7 @@ import {
   migrateLegacyProject,
   getStarterBlocks,
   STARTER_TEMPLATES,
-} from "../dist/pageHelpers.js";
+} from "../dist-test/pageHelpers.js";
 
 test("generateSlug removes spaces and special characters", () => {
   assert.equal(generateSlug("Hello World"), "/hello-world");

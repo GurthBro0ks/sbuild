@@ -4577,3 +4577,31 @@ test("restore: backup file inside backups directory restores successfully", asyn
   const bareBody = (await bareRes.json()) as { ok: boolean };
   assert.equal(bareBody.ok, true);
 });
+
+test("backup then restore round-trips project.json content byte-for-byte", async () => {
+  // Capture the project file up front so the round-trip leaves it unchanged.
+  const original = await fs.readFile(projectFile, "utf8");
+
+  // 1. /api/backup must produce a real copy of the current project file.
+  const backupRes = await fetch(`${baseUrl}/api/backup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  });
+  assert.equal(backupRes.status, 200);
+  const backupBody = (await backupRes.json()) as { ok: boolean; backup: string };
+  assert.equal(backupBody.ok, true);
+  assert.ok(backupBody.backup.startsWith(path.resolve(backupsDir) + path.sep));
+  const backedUp = await fs.readFile(backupBody.backup, "utf8");
+  assert.equal(backedUp, original, "backup file must match project.json at backup time");
+
+  // 2. Restoring that backup must reproduce the original content exactly.
+  const restoreRes = await fetch(`${baseUrl}/api/restore`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: backupBody.backup })
+  });
+  assert.equal(restoreRes.status, 200);
+  const restored = await fs.readFile(projectFile, "utf8");
+  assert.equal(restored, original, "restore must reproduce project.json byte-for-byte");
+});

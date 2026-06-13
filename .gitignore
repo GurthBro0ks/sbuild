@@ -6,6 +6,7 @@ dist
 published-preview
 packages/*/dist
 packages/server/dist-test
+packages/shared/dist-test
 packages/editor/.vite
 project/images/*
 !project/images/.gitkeep

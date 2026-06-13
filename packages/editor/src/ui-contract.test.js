@@ -3343,15 +3343,37 @@ test("editor state tracks lastEngineLatencyMs and lastEngineTimeoutMs for the fo
 // Browser / server build match — regression test
 // =========================================================
 
-test("generate-build-meta.sh regenerates build-meta.ts with current HEAD", async () => {
-  // 1. Read current HEAD's short commit.
+test("generate-build-meta.sh regenerates build-meta.ts with current HEAD", async (t) => {
   const { execFileSync } = await import("node:child_process");
-  const repoRoot = new URL("../../../", import.meta.url);
-  const headShort = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
-
-  // 2. Stomp build-meta.ts to a known-wrong value.
-  const buildMetaPath = new URL("../../shared/src/build-meta.ts", import.meta.url);
   const fs = await import("node:fs/promises");
+  const repoRoot = new URL("../../../", import.meta.url);
+  const buildMetaPath = new URL("../../shared/src/build-meta.ts", import.meta.url);
+
+  // This regression exercises git-derived build metadata. In an exported
+  // workcopy / tarball with no .git there is no HEAD to compare against, so
+  // skip cleanly instead of failing on git's "not a git repository" error.
+  // When git + HEAD ARE available the full assertion below runs, so genuine
+  // regressions are never masked.
+  let headShort = "";
+  try {
+    headShort = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+  } catch {
+    headShort = "";
+  }
+  if (!headShort) {
+    t.skip("no git HEAD (not a git checkout); skipping git-derived build-meta regression");
+    return;
+  }
+
+  // build-meta.ts is gitignored and may be absent in a fresh checkout; the
+  // script under test is what creates it, so establish a baseline first.
+  execFileSync("bash", ["scripts/generate-build-meta.sh"], { cwd: repoRoot, encoding: "utf8" });
+
+  // Stomp build-meta.ts to a known-wrong value.
   const original = await fs.readFile(buildMetaPath, "utf8");
   const stompRegExp = /gitCommitShort: "[a-f0-9]+"/;
   const stompValue = 'gitCommitShort: "stale-fake-fake-fake"';

@@ -7,7 +7,7 @@
     "dev": "vite --port 5177",
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "pnpm --filter @sbuild/shared build >/dev/null && tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"editor lint ok\"",
+    "lint": "pnpm run typecheck",
     "test": "node --test src/**/*.test.js"
   },
   "dependencies": {

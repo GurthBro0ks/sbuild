@@ -11,8 +11,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"cli lint ok\"",
-    "test": "echo \"cli test ok\""
+    "lint": "pnpm run typecheck",
+    "test": "node --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@sbuild/server": "workspace:*"

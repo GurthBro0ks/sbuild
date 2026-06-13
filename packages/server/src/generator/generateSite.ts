@@ -16,7 +16,7 @@ function styleClassForBlock(block: Block): string {
   return `block-${block.id}`;
 }
 
-function renderBlock(block: Block): string {
+export function renderBlock(block: Block): string {
   const idAttr = `id="${escapeHtml(block.id)}"`;
   const cls = `class="block ${styleClassForBlock(block)} type-${block.type}"`;
   const data = block.data as any;
