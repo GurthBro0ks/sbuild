@@ -4605,3 +4605,80 @@ test("backup then restore round-trips project.json content byte-for-byte", async
   const restored = await fs.readFile(projectFile, "utf8");
   assert.equal(restored, original, "restore must reproduce project.json byte-for-byte");
 });
+
+// --- Upload hardening (F-A5: size limit + image MIME filter) ---
+
+test("POST /api/images rejects non-image uploads with 400", async () => {
+  const form = new FormData();
+  form.append("images", new Blob(["this is not an image"], { type: "text/plain" }), "note.txt");
+  const res = await fetch(`${baseUrl}/api/images`, { method: "POST", body: form });
+  assert.equal(res.status, 400);
+  const body = await res.json() as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+  assert.match(body.error || "", /image/i);
+});
+
+test("POST /api/images rejects uploads over the 8MB size limit with 413", async () => {
+  const oversized = Buffer.alloc(9 * 1024 * 1024, 0); // 9MB > 8MB cap
+  const form = new FormData();
+  form.append("images", new Blob([oversized], { type: "image/png" }), "big.png");
+  const res = await fetch(`${baseUrl}/api/images`, { method: "POST", body: form });
+  assert.equal(res.status, 413);
+  const body = await res.json() as { ok: boolean; error?: string };
+  assert.equal(body.ok, false);
+});
+
+test("POST /api/images still accepts a normal image upload", async () => {
+  const png1x1 = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YVn7mQAAAAASUVORK5CYII=",
+    "base64"
+  );
+  const form = new FormData();
+  form.append("images", new Blob([png1x1], { type: "image/png" }), "ok.png");
+  const res = await fetch(`${baseUrl}/api/images`, { method: "POST", body: form });
+  assert.equal(res.status, 200);
+  const body = await res.json() as { ok: boolean; uploads?: Array<{ url: string; filename: string }> };
+  assert.equal(body.ok, true);
+  assert.ok(body.uploads && body.uploads.length === 1);
+  const filename = body.uploads?.[0]?.filename;
+  if (filename) {
+    try { await fs.unlink(path.join(path.dirname(projectFile), "images", filename)); } catch { /* ignore cleanup */ }
+  }
+});
+
+// --- Login rate limiting (F-A3: per-IP throttle/backoff) ---
+
+test("auth: repeated failed logins are throttled with 429 and Retry-After", async () => {
+  const server = await createAuthTestServer();
+  try {
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const res = await fetch(`${server.baseUrl}/login`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: "admin", password: "wrong" }).toString(),
+        redirect: "manual"
+      });
+      assert.equal(res.status, 401, `attempt ${attempt} should still return 401`);
+    }
+    const blocked = await fetch(`${server.baseUrl}/login`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username: "admin", password: "wrong" }).toString(),
+      redirect: "manual"
+    });
+    assert.equal(blocked.status, 429, "attempt past the threshold should be rate-limited");
+    assert.ok((blocked.headers.get("retry-after") || "").length > 0, "429 should carry a Retry-After header");
+  } finally {
+    await server.close();
+  }
+});
+
+test("auth: rate limiter does not block a legitimate login on a fresh client", async () => {
+  const server = await createAuthTestServer();
+  try {
+    const token = await loginAs(server, "admin", "admin123");
+    assert.ok(token.length > 0, "valid credentials should still log in successfully");
+  } finally {
+    await server.close();
+  }
+});

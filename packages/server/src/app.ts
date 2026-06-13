@@ -239,6 +239,8 @@ import {
 import { loadProject, saveProject, validateProjectShape } from "./lib/projectStore.js";
 import { generateSite } from "./generator/generateSite.js";
 
+// Image uploads are capped at 8 MB each and restricted to image/* MIME types.
+const UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, projectImagesDir),
@@ -247,7 +249,15 @@ const upload = multer({
       const base = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       cb(null, `${base}${ext}`);
     }
-  })
+  }),
+  limits: { fileSize: UPLOAD_MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\//i.test(file.mimetype)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error("Only image uploads are allowed"));
+  }
 });
 const validProviderSizes: OpenAIImageSize[] = ["1024x1024", "1024x1536", "1536x1024"];
 const localSharpEditTypes = new Set([
@@ -574,7 +584,22 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
   if (auth.enabled) migrateFromEnv();
   const editorIndexPath = path.join(resolvedEditorDistPath, "index.html");
   const editorAssetsPath = path.join(resolvedEditorDistPath, "assets");
-  app.use(cors());
+  // This is a same-origin app (editor + API served from this server, relative apiBase).
+  // Cross-origin access is opt-in via SBUILD_ALLOWED_ORIGINS (comma-separated) instead of a
+  // wildcard. Same-origin requests, curl, and health checks send no Origin header and are allowed.
+  const corsAllowList = (process.env.SBUILD_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) {
+        cb(null, true);
+        return;
+      }
+      cb(null, corsAllowList.includes(origin));
+    }
+  }));
   app.use(express.json({ limit: "4mb" }));
   app.use(express.urlencoded({ extended: false }));
   app.use("/project/images", express.static(projectImagesDir));
@@ -645,6 +670,17 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
   });
 
+  // Simple per-IP login throttle/backoff. State is per-app-instance and in-memory, which is
+  // appropriate for this single-owner staging deployment. A successful login clears the record.
+  const LOGIN_MAX_FAILS = 5;
+  const LOGIN_BLOCK_BASE_MS = 30_000;
+  const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60_000;
+  const loginAttempts = new Map<string, { fails: number; firstFailAt: number; blockedUntil: number }>();
+
+  function loginRateKey(req: express.Request): string {
+    return req.ip || req.socket?.remoteAddress || "unknown";
+  }
+
   app.get("/login", (req, res) => {
     if (!auth.enabled) {
       res.redirect(302, "/");
@@ -659,6 +695,22 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       res.redirect(302, "/");
       return;
     }
+
+    const now = Date.now();
+    const rateKey = loginRateKey(req);
+    const existing = loginAttempts.get(rateKey);
+    // Drop stale records once outside the attempt window and not actively blocked.
+    if (existing && existing.blockedUntil <= now && now - existing.firstFailAt > LOGIN_ATTEMPT_WINDOW_MS) {
+      loginAttempts.delete(rateKey);
+    }
+    const active = loginAttempts.get(rateKey);
+    if (active && active.blockedUntil > now) {
+      const retrySec = Math.ceil((active.blockedUntil - now) / 1000);
+      res.setHeader("Retry-After", String(retrySec));
+      res.status(429).type("html").send(renderLoginPage(`Too many login attempts. Try again in ${retrySec} second(s).`));
+      return;
+    }
+
     const username = String(req.body?.username || "").trim();
     const password = String(req.body?.password || "");
 
@@ -666,9 +718,18 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
 
     const user = findUserByUsername(username);
     if (!user || !verifyUserPassword(password, user.passwordHash)) {
+      const entry = loginAttempts.get(rateKey) || { fails: 0, firstFailAt: now, blockedUntil: 0 };
+      if (!entry.firstFailAt) entry.firstFailAt = now;
+      entry.fails += 1;
+      if (entry.fails >= LOGIN_MAX_FAILS) {
+        const over = entry.fails - LOGIN_MAX_FAILS;
+        entry.blockedUntil = now + LOGIN_BLOCK_BASE_MS * Math.min(2 ** over, 32);
+      }
+      loginAttempts.set(rateKey, entry);
       res.status(401).type("html").send(renderLoginPage("Invalid username or password."));
       return;
     }
+    loginAttempts.delete(rateKey);
     const token = signSession({ u: user.username, r: user.role, exp: Date.now() + sessionTtlMs }, auth.sessionSecret);
     res.setHeader("Set-Cookie", `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=43200`);
     res.redirect(302, "/");
@@ -888,16 +949,31 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
   });
 
-  app.post("/api/images", upload.array("images", 12), async (req, res) => {
-    const files = (req.files as Express.Multer.File[]) || [];
-    const uploads = files.map((file) => ({
-      filename: file.filename,
-      originalName: file.originalname,
-      url: `/project/images/${file.filename}`
-    }));
-    res.json({ ok: true, uploads });
+  const uploadImagesMw = upload.array("images", 12);
+  app.post("/api/images", (req, res) => {
+    uploadImagesMw(req, res, (err: unknown) => {
+      if (err) {
+        const isSize = err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE";
+        const message = err instanceof Error ? err.message : "upload failed";
+        res.status(isSize ? 413 : 400).json({ ok: false, error: message });
+        return;
+      }
+      const files = (req.files as Express.Multer.File[]) || [];
+      const uploads = files.map((file) => ({
+        filename: file.filename,
+        originalName: file.originalname,
+        url: `/project/images/${file.filename}`
+      }));
+      res.json({ ok: true, uploads });
+    });
   });
 
+  // F-Q1 follow-up (deferred, not low-risk to consolidate now): two image-delete paths exist with
+  // distinct contracts and distinct live editor callers:
+  //   DELETE /api/images       -> body { filenames }, name-sanitized unlink, used by deleteImages()
+  //   POST   /api/images/delete -> body { paths }, usage-aware + force + traversal-safe, used by bulkDeleteImages()
+  // Consolidating onto the safer POST path requires migrating the DELETE caller and its response
+  // shape and is out of scope for this hardening pass. Tracked as a separate follow-up.
   app.delete("/api/images", async (req, res) => {
     const filenames = req.body?.filenames;
     if (!filenames || !Array.isArray(filenames)) {

@@ -756,6 +756,24 @@ function formatChatEngineStatus(input: {
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${url}`, { headers: { "Content-Type": "application/json" }, ...init });
+  if (!res.ok) {
+    // Read the body exactly once and surface a useful server message when present.
+    let message = `Request failed (${res.status})`;
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text) as { error?: string; message?: string };
+          message = parsed.error || parsed.message || text;
+        } catch {
+          message = text;
+        }
+      }
+    } catch {
+      /* ignore body read failures; fall back to status message */
+    }
+    throw new Error(message);
+  }
   return (await res.json()) as T;
 }
 
@@ -3814,12 +3832,18 @@ export function App() {
     const latestProject = projectRef.current;
     if (!latestProject) return;
     setStatus("Saving...");
-    const data = await fetchJson<{ ok: boolean; lastSavedAt?: string; projectPath?: string }>("/api/project", { method: "PUT", body: JSON.stringify({ project: latestProject }) });
-    if (data.ok) {
+    try {
+      const data = await fetchJson<{ ok: boolean; lastSavedAt?: string; projectPath?: string }>("/api/project", { method: "PUT", body: JSON.stringify({ project: latestProject }) });
+      if (!data.ok) throw new Error("Server reported the save did not succeed");
       setLastSavedAt(data.lastSavedAt || new Date().toISOString());
       setProjectPath(data.projectPath || projectPath);
       setDirty(false);
       setStatus("Saved");
+      setLastAction("save");
+    } catch (error) {
+      // Keep unsaved state so the user can retry; never leave the UI stuck at "Saving...".
+      setDirty(true);
+      setStatus(`Save failed: ${error instanceof Error ? error.message : "could not save project"}`);
       setLastAction("save");
     }
   }

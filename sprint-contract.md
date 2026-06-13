@@ -1,29 +1,34 @@
-# Sprint Contract: AI Top Menu UX Repair
+# Sprint Contract — sBuild Runtime Hardening (Prompt 6A)
 
-## What
-Fix AI Chat UX: mode gating, chat-style UI, Apply Suggestion safety, per-user memory.
+## What I'm building/fixing
+Runtime hardening and error-handling cleanup with small, focused diffs:
+- F-E1: `fetchJson` must throw on `!res.ok`, preserve server error messages, single body read.
+- F-E2: `saveProject` error handling — visible "Save failed", keep unsaved state, never stuck at "Saving...".
+- F-A3: Per-IP login throttle/backoff for `POST /login`.
+- F-A4: Restrict CORS for this same-origin app (apiBase=""), env-gated, no wildcard default.
+- F-A5: multer `limits.fileSize` + image-only MIME filter, clean 4xx/413 responses.
+- F-Q1: image-delete duplication — inspect; consolidate only if low-risk else defer + document.
+- F-V5: tiny version display fallback helper — only if small/isolated, else defer.
 
-## Done Criteria (testable)
-1. `pnpm -r typecheck` passes
-2. `pnpm -r build` passes
-3. `pnpm -r lint` passes
-4. `pnpm -r test` passes (editor + server)
-5. `bash scripts/smoke-sbuild.sh` passes
-6. `curl http://127.0.0.1:3137/health` shows publishAllowed=false
-7. `curl -X POST /api/publish` (unauth) returns 401
-8. AI Chat opens from Edit, Preview, AND Markup modes
-9. AI Chat shows chat-style message bubbles, not toolbar form
-10. Apply Suggestion disabled for plain text, disabled in Preview/Markup, enabled only in Edit with valid proposal
-11. Per-user memory endpoint keyed by session user
-12. Manual desktop + mobile QA checklist provided
+## Done criteria (verification)
+1. `fetchJson` throws on non-ok with preserved message; no double body read.
+   - `grep -n "res.ok" packages/editor/src/App.tsx`
+2. `saveProject` wrapped in try/catch; failure keeps dirty + shows "Save failed".
+   - `grep -n "Save failed" packages/editor/src/App.tsx`
+3. `POST /login` rejects with 429 after repeated failures; correct login still succeeds.
+   - new server test: repeated bad logins -> 429; fresh server good login -> cookie.
+4. multer rejects oversized and non-image uploads; normal image upload still works.
+   - new server tests for oversize (413) and non-image (400/415).
+5. CORS no longer emits wildcard by default; same-origin/health/login unaffected.
+   - `pnpm -r test` server suite still passes (health, login, 401 routes).
+6. Workcopy `pnpm -r lint` PASS and `pnpm -r test` PASS.
 
-## Regression List
-- publishAllowed stays false
-- unauth publish 401
-- Image Gen tab works
-- Image Enhance tab works
-- Website Manager unchanged
-- Settings/Account/User Management unchanged
-- Help Guide unchanged
-- Theme isolation intact
-- Save/Revert/Build/Publish toolbar unchanged
+## Regression list (must still work)
+- `/health` returns 200 JSON.
+- Unauth `GET /api/project` returns 401.
+- `auth: login with admin credentials returns session cookie` test.
+- `auth: login with wrong password returns 401` test.
+- Existing `/api/images/delete` path-traversal + in-use tests.
+- Editor `ui-contract.test.js` source assertions (saveProject, /api/project PUT).
+- Live `sbuild.service` keeps running OLD dist (no restart this phase).
+- `project/project.json` remains dirty, untouched, unstaged.

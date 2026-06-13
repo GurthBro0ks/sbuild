@@ -3451,3 +3451,17 @@ test("generate-build-meta.sh regenerates build-meta.ts with current HEAD", async
     });
   }
 });
+
+test("fetchJson surfaces non-ok responses as thrown errors (F-E1)", () => {
+  // Must guard on res.ok and throw rather than parsing 4xx/5xx bodies as success.
+  assert.match(appSource, /async function fetchJson/);
+  assert.match(appSource, /if \(!res\.ok\)/);
+  assert.match(appSource, /throw new Error\(message\)/);
+});
+
+test("saveProject reports failures and keeps unsaved state (F-E2)", () => {
+  assert.match(appSource, /async function saveProject/);
+  assert.match(appSource, /Save failed/);
+  // The failure path must keep the project dirty so the user can retry.
+  assert.match(appSource, /catch \(error\) \{[\s\S]{0,240}setDirty\(true\)/);
+});
