@@ -907,9 +907,9 @@ test("properties tab renders when site part is selected without block", () => {
 });
 
 test("preview mode disables contentEditable on hero and text blocks", () => {
-  assert.match(appSource, /contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /HeroBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /TextBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /contentEditable=\{editable\}/);
+  assert.match(appSource, /HeroBlock[\s\S]*<EditableText tag="h1"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /TextBlock[\s\S]*<EditableText tag="h2"[\s\S]*editable=\{!isPreview\}/);
 });
 
 test("preview mode clears selection and closes drawers via useEffect", () => {
@@ -956,8 +956,32 @@ test("preview mode hides selection outlines via CSS", () => {
 });
 
 test("edit mode supports direct text editing with stopPropagation on contentEditable", () => {
-  assert.match(appSource, /onPointerDown=\{\(e\) => \{ onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\); \}\}/);
+  assert.match(appSource, /data-sbuild-editable-text="uncontrolled"/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,80}onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,80}\}\}/);
   assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+});
+
+test("direct canvas text editing does not let React control text children while focused", () => {
+  assert.match(appSource, /const EditableText =/);
+  assert.match(appSource, /useLayoutEffect\(\(\) => \{[\s\S]*if \(!el \|\| focusedRef\.current\) return;[\s\S]*el\.textContent = value/);
+  assert.doesNotMatch(appSource, /<h1[^>]*contentEditable=\{!isPreview\}[\s\S]*>\{data\.heading\}<\/h1>/);
+});
+
+test("block text update path preserves typed heading order", () => {
+  const input = "black fish farms";
+  const reversed = input.split("").reverse().join("");
+  let block = { id: "hero-1", data: { heading: "" } };
+  for (let i = 1; i <= input.length; i += 1) {
+    const value = input.slice(0, i);
+    block = { ...block, data: { ...block.data, heading: value } };
+  }
+  assert.equal(block.data.heading, input);
+  assert.notEqual(block.data.heading, reversed);
+});
+
+test("direct canvas text updates patch the emitted block id rather than stale selection", () => {
+  assert.match(appSource, /function patchBlock\(blockId: string, mutator: \(block: Block\) => Block\)/);
+  assert.match(appSource, /patchBlock\(block\.id, \(current\) => \(\{ \.\.\.current, data: \{ \.\.\.\(current\.data as Record<string, unknown>\), \[field\]: value \} \}\)\)/);
 });
 
 test("site title is contentEditable in edit mode and guarded in preview", () => {
@@ -971,7 +995,8 @@ test("nav labels are contentEditable in edit mode and guarded in preview", () =>
 });
 
 test("cards block title and card text are contentEditable in edit mode", () => {
-  assert.match(appSource, /CardsBlock[\s\S]*contentEditable=\{!isPreview\}/);
+  assert.match(appSource, /CardsBlock[\s\S]*<EditableText tag="h2"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /CardsBlock[\s\S]*<EditableText tag="h3"[\s\S]*editable=\{!isPreview\}/);
   assert.match(appSource, /onCardText\?\./);
 });
 
@@ -980,15 +1005,15 @@ test("gallery slots are guarded in preview mode", () => {
 });
 
 test("hours block title is contentEditable in edit mode", () => {
-  assert.match(appSource, /HoursBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("title", e\.currentTarget\.textContent/);
+  assert.match(appSource, /HoursBlock[\s\S]*<EditableText tag="h2"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("title", value\)/);
 });
 
 test("contact block title and fields are contentEditable in edit mode", () => {
-  assert.match(appSource, /ContactBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("phone", e\.currentTarget\.textContent/);
-  assert.match(appSource, /onText\("email", e\.currentTarget\.textContent/);
-  assert.match(appSource, /onText\("address", e\.currentTarget\.textContent/);
+  assert.match(appSource, /ContactBlock[\s\S]*<EditableText tag="h2"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("phone", value\)/);
+  assert.match(appSource, /onText\("email", value\)/);
+  assert.match(appSource, /onText\("address", value\)/);
 });
 
 test("testimonial quote and author are contentEditable in edit mode", () => {
@@ -998,29 +1023,29 @@ test("testimonial quote and author are contentEditable in edit mode", () => {
 });
 
 test("map block address is contentEditable in edit mode", () => {
-  assert.match(appSource, /MapBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("address", e\.currentTarget\.textContent/);
+  assert.match(appSource, /MapBlock[\s\S]*<EditableText tag="h2"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("address", value\)/);
 });
 
 test("gallery block title is contentEditable in edit mode", () => {
-  assert.match(appSource, /GalleryBlock[\s\S]*contentEditable=\{!isPreview\}[\s\S]*data\.title/);
-  assert.match(appSource, /onText\?\.\("title", e\.currentTarget\.textContent/);
+  assert.match(appSource, /GalleryBlock[\s\S]*<EditableText tag="h2"[\s\S]*value=\{data\.title \?\? ""\}[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\?\.\("title", value\)/);
 });
 
 test("marquee block text is contentEditable in edit mode", () => {
-  assert.match(appSource, /MarqueeBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("text", e\.currentTarget\.textContent/);
+  assert.match(appSource, /MarqueeBlock[\s\S]*<EditableText tag="div"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("text", value\)/);
 });
 
 test("image block caption is contentEditable in edit mode", () => {
-  assert.match(appSource, /ImageBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("caption", e\.currentTarget\.textContent/);
+  assert.match(appSource, /ImageBlock[\s\S]*<EditableText tag="p"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText\("caption", value\)/);
 });
 
 test("all contentEditable blocks stop propagation on pointer events", () => {
-  const contentEditableMatches = appSource.match(/contentEditable=\{!isPreview\}/g);
-  assert.ok(contentEditableMatches && contentEditableMatches.length >= 8, `Expected at least 8 contentEditable elements, found ${contentEditableMatches?.length || 0}`);
-  assert.match(appSource, /onPointerDown=\{\(e\) => \{ onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\); \}\}/);
+  const editableTextMatches = appSource.match(/<EditableText /g);
+  assert.ok(editableTextMatches && editableTextMatches.length >= 12, `Expected at least 12 EditableText elements, found ${editableTextMatches?.length || 0}`);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,80}onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,80}\}\}/);
   assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
 });
 
@@ -1084,8 +1109,9 @@ test("block components accept onActivateTarget prop", () => {
 });
 
 test("contentEditable onPointerDown calls onActivateTarget before stopPropagation", () => {
-  const actCalls = appSource.match(/onActivateTarget\?\.\(\"[a-zA-Z]+\"\);\s*e\.stopPropagation\(\)/g);
-  assert.ok(actCalls && actCalls.length >= 8, `Expected onActivateTarget calls before stopPropagation, found ${actCalls?.length || 0}`);
+  assert.match(appSource, /onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\)/);
+  const activateProps = appSource.match(/onActivateTarget=\{\(\) => onActivateTarget\?\.\(\"[a-zA-Z]+\"\)\}/g);
+  assert.ok(activateProps && activateProps.length >= 12, `Expected EditableText activate props, found ${activateProps?.length || 0}`);
 });
 
 test("activateBlockTextTarget is passed to renderTypedBlock call site", () => {

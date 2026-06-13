@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Block,
   BlockType,
@@ -959,13 +959,62 @@ function withSavedStatusText(status: string, dirty: boolean): string {
   return "Idle";
 }
 
+type EditableTextTag = "h1" | "h2" | "h3" | "p" | "div";
+type EditableTextProps = {
+  tag: EditableTextTag;
+  value: string;
+  editable?: boolean;
+  style?: CSSProperties;
+  className?: string;
+  onText: (value: string) => void;
+  onActivateTarget?: () => void;
+};
+
+const EditableText = ({ tag, value, editable = true, style, className, onText, onActivateTarget }: EditableTextProps) => {
+  const elRef = useRef<HTMLElement | null>(null);
+  const focusedRef = useRef(false);
+  const Component = tag;
+
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!el || focusedRef.current) return;
+    if (el.textContent !== value) el.textContent = value;
+  }, [value]);
+
+  function commitText(el: HTMLElement) {
+    onText(el.textContent || "");
+  }
+
+  return (
+    <Component
+      ref={(node) => { elRef.current = node; }}
+      className={className}
+      style={style}
+      contentEditable={editable}
+      suppressContentEditableWarning
+      data-sbuild-editable-text="uncontrolled"
+      onFocus={() => { focusedRef.current = true; }}
+      onInput={(e) => commitText(e.currentTarget)}
+      onBlur={(e) => {
+        focusedRef.current = false;
+        commitText(e.currentTarget);
+      }}
+      onPointerDown={(e) => {
+        onActivateTarget?.();
+        e.stopPropagation();
+      }}
+      onPointerUp={(e) => e.stopPropagation()}
+    />
+  );
+};
+
 const HeroBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as HeroBlockData;
   const parts = block.styles?.parts;
   return (
     <section>
-      <h1 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("heading", e.currentTarget.textContent || "")} onBlur={(e) => onText("heading", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.heading}</h1>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("subheading", e.currentTarget.textContent || "")} onBlur={(e) => onText("subheading", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.subheading}</p>
+      <EditableText tag="h1" value={data.heading} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("heading", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
+      <EditableText tag="p" value={data.subheading ?? ""} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("subheading", value)} onActivateTarget={() => onActivateTarget?.("body")} />
       <button className="cta-btn" style={partStyleToCss(parts?.button, "body")}>{data.ctaLabel || "Call to Action"}</button>
     </section>
   );
@@ -976,8 +1025,8 @@ const TextBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Bloc
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("body", e.currentTarget.textContent || "")} onBlur={(e) => onText("body", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.body}</p>
+      <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
+      <EditableText tag="p" value={data.body} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("body", value)} onActivateTarget={() => onActivateTarget?.("body")} />
     </section>
   );
 };
@@ -989,7 +1038,7 @@ const ImageBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Blo
   return (
     <section>
       {data.src ? <img src={data.src} alt={data.alt} className="block-image" style={{ objectFit: fit, ...partStyleToCss(parts?.image) }} /> : <div className="image-placeholder" style={partStyleToCss(parts?.image)}>Image Placeholder</div>}
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("caption", e.currentTarget.textContent || "")} onBlur={(e) => onText("caption", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.caption}</p>
+      <EditableText tag="p" value={data.caption ?? ""} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("caption", value)} onActivateTarget={() => onActivateTarget?.("body")} />
     </section>
   );
 };
@@ -999,12 +1048,12 @@ const CardsBlock = ({ block, onText, onCardText, isPreview, onActivateTarget }: 
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText?.("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
       <div className="cards-grid">
         {data.cards.map((card, i) => (
           <article key={card.id} style={partStyleToCss(parts?.card, "body")}>
-            <h3 style={partStyleToCss(parts?.cardHeading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("cardHeading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{card.title}</h3>
-            <p style={partStyleToCss(parts?.cardBody, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onBlur={(e) => onCardText?.(i, "body", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("cardBody"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{card.body}</p>
+            <EditableText tag="h3" value={card.title} style={partStyleToCss(parts?.cardHeading, "heading")} editable={!isPreview} onText={(value) => onCardText?.(i, "title", value)} onActivateTarget={() => onActivateTarget?.("cardHeading")} />
+            <EditableText tag="p" value={card.body} style={partStyleToCss(parts?.cardBody, "body")} editable={!isPreview} onText={(value) => onCardText?.(i, "body", value)} onActivateTarget={() => onActivateTarget?.("cardBody")} />
           </article>
         ))}
       </div>
@@ -1017,7 +1066,7 @@ const HoursBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Blo
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
       <ul>
         {data.rows.map((row, i) => (
           <li key={`${row.day}-${i}`} style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onBlur={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{row.day}: {row.open} - {row.close}</li>
@@ -1049,7 +1098,7 @@ const GalleryBlock = ({ block, selectedIndex, onImageSelect, isMobileViewport, o
   }
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText?.("title", e.currentTarget.textContent || "")} onBlur={(e) => onText?.("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
+      <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText?.("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
       <div className="gallery-grid">
         {data.images.map((img, i) => (
           <figure
@@ -1100,10 +1149,10 @@ const ContactBlock = ({ block, onText, isPreview, onActivateTarget }: { block: B
   const parts = block.styles?.parts;
   return (
     <section>
-      <h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("title", e.currentTarget.textContent || "")} onBlur={(e) => onText("title", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.title}</h2>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("phone", e.currentTarget.textContent || "")} onBlur={(e) => onText("phone", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.phone}</p>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("email", e.currentTarget.textContent || "")} onBlur={(e) => onText("email", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.email}</p>
-      <p style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.address}</p>
+      <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
+      <EditableText tag="p" value={data.phone ?? ""} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("phone", value)} onActivateTarget={() => onActivateTarget?.("body")} />
+      <EditableText tag="p" value={data.email ?? ""} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("email", value)} onActivateTarget={() => onActivateTarget?.("body")} />
+      <EditableText tag="p" value={data.address ?? ""} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("address", value)} onActivateTarget={() => onActivateTarget?.("body")} />
     </section>
   );
 };
@@ -1122,13 +1171,13 @@ const TestimonialBlock = ({ block, onText, isPreview, onActivateTarget }: { bloc
 const MapBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as MapBlockData;
   const parts = block.styles?.parts;
-  return <section><h2 style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("address", e.currentTarget.textContent || "")} onBlur={(e) => onText("address", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.address || "Map placeholder"}</h2></section>;
+  return <section><EditableText tag="h2" value={data.address || "Map placeholder"} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("address", value)} onActivateTarget={() => onActivateTarget?.("heading")} /></section>;
 };
 
 const MarqueeBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Block; onText: (field: string, value: string) => void; isPreview?: boolean; onActivateTarget?: (part?: string) => void }) => {
   const data = block.data as MarqueeBlockData;
   const parts = block.styles?.parts;
-  return <section className="marquee" style={partStyleToCss(parts?.container)}><div style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("text", e.currentTarget.textContent || "")} onBlur={(e) => onText("text", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.text}</div></section>;
+  return <section className="marquee" style={partStyleToCss(parts?.container)}><EditableText tag="div" value={data.text} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("text", value)} onActivateTarget={() => onActivateTarget?.("body")} /></section>;
 };
 
 const SpacerBlock = ({ block }: { block: Block }) => {
@@ -2634,9 +2683,14 @@ export function App() {
     setDirty(true);
   }
 
+  function patchBlock(blockId: string, mutator: (block: Block) => Block) {
+    if (!selectedPage) return;
+    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, blockId, mutator) });
+  }
+
   function patchSelectedBlock(mutator: (block: Block) => Block) {
     if (!selectedPage || !selectedBlock) return;
-    patchCurrentPage({ ...selectedPage, blocks: updateBlock(selectedPage.blocks, selectedBlock.id, mutator) });
+    patchBlock(selectedBlock.id, mutator);
   }
 
   function patchSelectedBlockData(patch: Record<string, unknown>) {
@@ -7044,9 +7098,9 @@ export function App() {
                           </div>
                         )}
                         {renderTypedBlock(block, (field, value) => {
-                          patchSelectedBlock((current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
+                          patchBlock(block.id, (current) => ({ ...current, data: { ...(current.data as Record<string, unknown>), [field]: value } }));
                         }, canEditBlocks ? (index) => selectGallerySlot(block.id, index) : undefined, selectedBlock?.id === block.id ? selectedGalleryIndex : null, isMobileViewport, canEditBlocks ? (index) => openGallerySlotDrawer(block.id, index) : undefined, !canEditBlocks, (cardIndex, field, value) => {
-                          patchSelectedBlock((current) => {
+                          patchBlock(block.id, (current) => {
                             const data = current.data as CardsBlockData;
                             const cards = [...data.cards];
                             cards[cardIndex] = { ...cards[cardIndex], [field]: value };
