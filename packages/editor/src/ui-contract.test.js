@@ -232,8 +232,8 @@ test("canvas controls use grouped labels for View and Selected", () => {
 });
 
 test("mobile AI panel uses dynamic viewport height and allows internal scrolling", () => {
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,300}max-height:\s*92dvh/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,400}min-height:\s*60dvh/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,300}max-height:\s*calc\(100dvh - var\(--mobile-topbar-h/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,400}min-height:\s*min\(60dvh,\s*calc\(100dvh - var\(--mobile-topbar-h/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel-tab-content[\s\S]{0,200}overflow-y:\s*auto/);
   assert.match(cssSource, /safe-area-inset-bottom/);
 });
@@ -285,7 +285,7 @@ test("right panel layout prevents content clipping", () => {
   assert.match(cssSource, /\.panel[\s\S]*overflow-x: hidden/);
   assert.match(cssSource, /\.right-drawer-header[\s\S]*border-bottom/);
   assert.match(cssSource, /\.image-action-stack button[\s\S]*word-break: break-word/);
-  assert.match(cssSource, /\.app[\s\S]*height: 100vh/);
+  assert.match(cssSource, /\.app[\s\S]*height: 100dvh/);
   assert.match(cssSource, /\.app[\s\S]*overflow: hidden/);
   assert.match(cssSource, /\.workspace[\s\S]*overflow: hidden/);
   assert.match(cssSource, /\.canvas-area[\s\S]*overflow-y: auto/);
@@ -507,11 +507,32 @@ test("desktop AI panel exposes draggable and reset affordances", () => {
   assert.match(appSource, /ai-panel-drag-handle/);
   assert.match(appSource, /Reset panel/);
   assert.match(appSource, /AI_PANEL_STORAGE_KEY/);
+  assert.match(appSource, /AI_PANEL_STORAGE_VERSION/);
+  assert.match(appSource, /isStoredAiPanelRect/);
   assert.match(appSource, /clampAiPanelRect/);
-  assert.match(appSource, /Math\.min\(560,/);
+  assert.match(appSource, /aiPanelViewportBounds/);
   assert.match(cssSource, /\.ai-panel-drag-handle/);
   assert.match(cssSource, /\.ai-panel-reset/);
   assert.match(cssSource, /\.ai-panel-tabs[\s\S]*flex-wrap:\s*wrap/);
+});
+
+test("AI panel storage validates versioned rect payloads before restoring", () => {
+  assert.match(appSource, /const AI_PANEL_STORAGE_VERSION = 1/);
+  assert.match(appSource, /function isStoredAiPanelRect/);
+  assert.match(appSource, /parsed\.version !== undefined && parsed\.version !== AI_PANEL_STORAGE_VERSION/);
+  assert.match(appSource, /Number\.isFinite/);
+  assert.match(appSource, /if \(!isStoredAiPanelRect\(parsed\)\) return defaultAiPanelRect\(\)/);
+  assert.match(appSource, /JSON\.stringify\(\{ version: AI_PANEL_STORAGE_VERSION, \.\.\.aiPanelRect \}\)/);
+});
+
+test("AI panel viewport bounds use measured topbar and safe-area values", () => {
+  assert.match(appSource, /function aiPanelViewportBounds/);
+  assert.match(appSource, /visualViewport\?\.height \|\| window\.innerHeight/);
+  assert.match(appSource, /readCssPxVar\("--mobile-topbar-h", AI_PANEL_MOBILE_TOPBAR_FALLBACK\)/);
+  assert.match(appSource, /readCssPxVar\("--safe-area-top", 0\)/);
+  assert.match(appSource, /readCssPxVar\("--safe-area-bottom", 0\)/);
+  assert.match(cssSource, /--safe-area-top:\s*env\(safe-area-inset-top,\s*0px\)/);
+  assert.match(cssSource, /--safe-area-bottom:\s*env\(safe-area-inset-bottom,\s*0px\)/);
 });
 
 test("desktop AI panel exposes only corner resize handle", () => {
@@ -1342,6 +1363,7 @@ test("mobile spacer uses measured toolbar variable height", () => {
   assert.match(cssSource, /\.topbar-mobile-spacer[\s\S]*min-height:\s*var\(--mobile-topbar-h,\s*110px\)/);
   assert.match(appSource, /ResizeObserver/);
   assert.match(appSource, /setProperty\("--mobile-topbar-h"/);
+  assert.doesNotMatch(appSource, /setTimeout\(update,\s*120\)/);
 });
 
 test("mobile topbar hides when left drawer is open", () => {
@@ -1371,6 +1393,7 @@ test("topbar height is measured dynamically via ResizeObserver", () => {
   assert.match(appSource, /getBoundingClientRect\(\)\.bottom/);
   assert.match(appSource, /--mobile-topbar-h/);
   assert.match(appSource, /statusPillRef/);
+  assert.doesNotMatch(appSource, /setTimeout\(update,\s*120\)/);
 });
 
 test("mobile measurement uses viewport readiness not preview device mode", () => {
@@ -1414,12 +1437,27 @@ test("site header context menu AI Assistant still exists", () => {
 });
 
 test("mobile editor sheet height is bounded by viewport and toolbar measurement", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74vh,\s*calc\(100dvh - var\(--mobile-topbar-h/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74dvh,\s*calc\(100dvh - var\(--mobile-topbar-h/);
   assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*max-height:\s*calc\(100dvh - var\(--mobile-topbar-h/);
 });
 
-test("mobile editor sheet top includes safe-area-inset-top", () => {
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*env\(safe-area-inset-top/);
+test("mobile editor sheet sizing uses shared safe-area variables", () => {
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*var\(--safe-area-top\)/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*var\(--safe-area-bottom\)/);
+});
+
+test("app shell avoids risky 100vh sizing in favor of dynamic viewport units", () => {
+  assert.doesNotMatch(cssSource, /\b100vh\b/);
+  assert.match(cssSource, /\.app[\s\S]*height:\s*100dvh/);
+  assert.match(cssSource, /\.sbuild-editor-shell[\s\S]*min-height:\s*100dvh/);
+  assert.match(cssSource, /\.loading[\s\S]*min-height:\s*100dvh/);
+});
+
+test("mobile AI panel is bounded by topbar, safe-area, and dynamic viewport", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.ai-panel[\s\S]*max-height:\s*calc\(100dvh - var\(--mobile-topbar-h/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.ai-panel[\s\S]*var\(--safe-area-top\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.ai-panel[\s\S]*var\(--safe-area-bottom\)/);
+  assert.doesNotMatch(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2500}\.ai-panel[\s\S]{0,300}max-height:\s*92dvh/);
 });
 
 test("mobile editor sheet body uses overflow-y auto and min-height 0", () => {
@@ -1578,7 +1616,7 @@ test("body/content row uses a dedicated scroll container", () => {
 
 test("CSS for mobile overlay uses position fixed and viewport-bounded sheet", () => {
   assert.match(cssSource, /\.mobile-editor-overlay[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74vh,/);
+  assert.match(cssSource, /\.mobile-editor-sheet[\s\S]*height:\s*min\(74dvh,/);
   assert.match(cssSource, /\.mobile-editor-sheet-body[\s\S]*touch-action:\s*pan-y/);
 });
 

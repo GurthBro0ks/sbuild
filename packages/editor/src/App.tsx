@@ -251,6 +251,43 @@ const AI_PANEL_MIN_WIDTH = 440;
 const AI_PANEL_MIN_HEIGHT = 480;
 const AI_PANEL_MAX_WIDTH = 760;
 const AI_PANEL_MARGIN = 16;
+const AI_PANEL_STORAGE_VERSION = 1;
+const AI_PANEL_MOBILE_TOPBAR_FALLBACK = 110;
+
+function readCssPxVar(name: string, fallback: number): number {
+  if (typeof window === "undefined") return fallback;
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name);
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function visualViewportHeight(): number {
+  if (typeof window === "undefined") return 760;
+  return window.visualViewport?.height || window.innerHeight;
+}
+
+function aiPanelViewportBounds() {
+  if (typeof window === "undefined") {
+    return {
+      left: AI_PANEL_MARGIN,
+      top: 72,
+      width: 1024 - AI_PANEL_MARGIN * 2,
+      height: 768 - 72 - AI_PANEL_MARGIN
+    };
+  }
+  const isMobile = window.innerWidth <= 768;
+  const topbarH = isMobile ? readCssPxVar("--mobile-topbar-h", AI_PANEL_MOBILE_TOPBAR_FALLBACK) : 0;
+  const safeTop = readCssPxVar("--safe-area-top", 0);
+  const safeBottom = readCssPxVar("--safe-area-bottom", 0);
+  const top = isMobile ? Math.max(topbarH, safeTop) + 8 : AI_PANEL_MARGIN;
+  const bottom = safeBottom + AI_PANEL_MARGIN;
+  return {
+    left: AI_PANEL_MARGIN,
+    top,
+    width: Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2),
+    height: Math.max(240, visualViewportHeight() - top - bottom)
+  };
+}
 
 function formatChatTimestamp(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -292,25 +329,34 @@ function defaultAiPanelRect(): AiPanelRect {
   if (typeof window === "undefined") {
     return { x: 24, y: 96, width: 560, height: 680 };
   }
-  const width = Math.min(560, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
-  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 120);
+  const bounds = aiPanelViewportBounds();
+  const width = Math.min(560, bounds.width);
+  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, bounds.height);
   const height = Math.min(680, maxHeight);
-  const x = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - 24);
-  const y = Math.max(72, Math.round((window.innerHeight - height) / 2));
+  const x = Math.max(bounds.left, window.innerWidth - width - 24);
+  const y = Math.max(bounds.top, Math.round(bounds.top + (bounds.height - height) / 2));
   return { x, y, width, height };
 }
 
 function clampAiPanelRect(rect: AiPanelRect): AiPanelRect {
   if (typeof window === "undefined") return rect;
-  const maxWidth = Math.min(AI_PANEL_MAX_WIDTH, Math.max(AI_PANEL_MIN_WIDTH, window.innerWidth - AI_PANEL_MARGIN * 2));
+  const bounds = aiPanelViewportBounds();
+  const maxWidth = Math.min(AI_PANEL_MAX_WIDTH, bounds.width);
   const width = Math.min(maxWidth, Math.max(AI_PANEL_MIN_WIDTH, rect.width));
-  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, window.innerHeight - 96);
+  const maxHeight = Math.max(AI_PANEL_MIN_HEIGHT, bounds.height);
   const height = Math.min(maxHeight, Math.max(AI_PANEL_MIN_HEIGHT, rect.height));
-  const maxX = Math.max(AI_PANEL_MARGIN, window.innerWidth - width - AI_PANEL_MARGIN);
-  const maxY = Math.max(56, window.innerHeight - height - AI_PANEL_MARGIN);
-  const x = Math.min(maxX, Math.max(AI_PANEL_MARGIN, rect.x));
-  const y = Math.min(maxY, Math.max(56, rect.y));
+  const maxX = Math.max(bounds.left, window.innerWidth - width - AI_PANEL_MARGIN);
+  const maxY = Math.max(bounds.top, bounds.top + bounds.height - height);
+  const x = Math.min(maxX, Math.max(bounds.left, rect.x));
+  const y = Math.min(maxY, Math.max(bounds.top, rect.y));
   return { x, y, width, height };
+}
+
+function isStoredAiPanelRect(value: unknown): value is AiPanelRect & { version?: number } {
+  if (!value || typeof value !== "object") return false;
+  const parsed = value as Partial<AiPanelRect> & { version?: unknown };
+  if (parsed.version !== undefined && parsed.version !== AI_PANEL_STORAGE_VERSION) return false;
+  return [parsed.x, parsed.y, parsed.width, parsed.height].every((n) => typeof n === "number" && Number.isFinite(n));
 }
 
 function loadAiPanelRect(): AiPanelRect {
@@ -318,13 +364,9 @@ function loadAiPanelRect(): AiPanelRect {
   try {
     const raw = localStorage.getItem(AI_PANEL_STORAGE_KEY);
     if (!raw) return defaultAiPanelRect();
-    const parsed = JSON.parse(raw) as Partial<AiPanelRect>;
-    return clampAiPanelRect({
-      x: Number(parsed.x ?? 0),
-      y: Number(parsed.y ?? 0),
-      width: Number(parsed.width ?? 0),
-      height: Number(parsed.height ?? 0)
-    });
+    const parsed = JSON.parse(raw);
+    if (!isStoredAiPanelRect(parsed)) return defaultAiPanelRect();
+    return clampAiPanelRect(parsed);
   } catch {
     return defaultAiPanelRect();
   }
@@ -1577,7 +1619,7 @@ export function App() {
 
   useEffect(() => {
     if (typeof window === "undefined" || isMobileViewport) return;
-    localStorage.setItem(AI_PANEL_STORAGE_KEY, JSON.stringify(aiPanelRect));
+    localStorage.setItem(AI_PANEL_STORAGE_KEY, JSON.stringify({ version: AI_PANEL_STORAGE_VERSION, ...aiPanelRect }));
   }, [aiPanelRect, isMobileViewport]);
 
   useEffect(() => {
@@ -2003,13 +2045,11 @@ export function App() {
     update();
     const raf1 = requestAnimationFrame(update);
     const raf2 = requestAnimationFrame(update);
-    const timer = window.setTimeout(update, 120);
     const el = topbarRef.current;
     if (!el) {
       return () => {
         cancelAnimationFrame(raf1);
         cancelAnimationFrame(raf2);
-        clearTimeout(timer);
       };
     }
     const obs = new ResizeObserver(update);
@@ -2024,7 +2064,6 @@ export function App() {
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
-      clearTimeout(timer);
       obs.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
