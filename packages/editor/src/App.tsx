@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEventHandler } from "react";
 import {
   Block,
   BlockType,
@@ -959,7 +959,7 @@ function withSavedStatusText(status: string, dirty: boolean): string {
   return "Idle";
 }
 
-type EditableTextTag = "h1" | "h2" | "h3" | "p" | "div";
+type EditableTextTag = "h1" | "h2" | "h3" | "p" | "div" | "strong" | "span" | "cite" | "blockquote" | "li";
 type EditableTextProps = {
   tag: EditableTextTag;
   value: string;
@@ -968,16 +968,21 @@ type EditableTextProps = {
   className?: string;
   onText: (value: string) => void;
   onActivateTarget?: () => void;
+  onClick?: MouseEventHandler<HTMLElement>;
+  onPointerDown?: MouseEventHandler<HTMLElement>;
+  onPointerUp?: MouseEventHandler<HTMLElement>;
+  onPointerMove?: MouseEventHandler<HTMLElement>;
 };
 
-const EditableText = ({ tag, value, editable = true, style, className, onText, onActivateTarget }: EditableTextProps) => {
+const EditableText = ({ tag, value, editable = true, style, className, onText, onActivateTarget, onClick, onPointerDown, onPointerUp, onPointerMove }: EditableTextProps) => {
   const elRef = useRef<HTMLElement | null>(null);
   const focusedRef = useRef(false);
+  const composingRef = useRef(false);
   const Component = tag;
 
   useLayoutEffect(() => {
     const el = elRef.current;
-    if (!el || focusedRef.current) return;
+    if (!el || focusedRef.current || composingRef.current) return;
     if (el.textContent !== value) el.textContent = value;
   }, [value]);
 
@@ -987,23 +992,35 @@ const EditableText = ({ tag, value, editable = true, style, className, onText, o
 
   return (
     <Component
-      ref={(node) => { elRef.current = node; }}
+      ref={(node: HTMLElement | null) => { elRef.current = node; }}
       className={className}
       style={style}
       contentEditable={editable}
       suppressContentEditableWarning
       data-sbuild-editable-text="uncontrolled"
       onFocus={() => { focusedRef.current = true; }}
-      onInput={(e) => commitText(e.currentTarget)}
+      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionEnd={(e) => { composingRef.current = false; commitText(e.currentTarget); }}
+      onInput={(e) => { if (!composingRef.current) commitText(e.currentTarget); }}
       onBlur={(e) => {
         focusedRef.current = false;
         commitText(e.currentTarget);
       }}
+      onClick={onClick}
       onPointerDown={(e) => {
-        onActivateTarget?.();
-        e.stopPropagation();
+        if (onActivateTarget) {
+          onActivateTarget();
+          e.stopPropagation();
+        }
+        if (onPointerDown) onPointerDown(e);
       }}
-      onPointerUp={(e) => e.stopPropagation()}
+      onPointerUp={(e) => {
+        if (onActivateTarget) {
+          e.stopPropagation();
+        }
+        if (onPointerUp) onPointerUp(e);
+      }}
+      onPointerMove={onPointerMove}
     />
   );
 };
@@ -1069,7 +1086,7 @@ const HoursBlock = ({ block, onText, isPreview, onActivateTarget }: { block: Blo
       <EditableText tag="h2" value={data.title ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("title", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
       <ul>
         {data.rows.map((row, i) => (
-          <li key={`${row.day}-${i}`} style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onBlur={(e) => onText(`rows.${i}.day`, e.currentTarget.textContent?.split(":")[0]?.trim() || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{row.day}: {row.open} - {row.close}</li>
+          <EditableText key={`${row.day}-${i}`} tag="li" value={`${row.day}: ${row.open} - ${row.close}`} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(text) => onText(`rows.${i}.day`, text.split(":")[0]?.trim() || "")} onActivateTarget={() => onActivateTarget?.("body")} />
         ))}
       </ul>
     </section>
@@ -1162,8 +1179,8 @@ const TestimonialBlock = ({ block, onText, isPreview, onActivateTarget }: { bloc
   const parts = block.styles?.parts;
   return (
     <section>
-      <blockquote style={partStyleToCss(parts?.body, "body")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("quote", e.currentTarget.textContent || "")} onBlur={(e) => onText("quote", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("body"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>"{data.quote}"</blockquote>
-      <cite style={partStyleToCss(parts?.heading, "heading")} contentEditable={!isPreview} suppressContentEditableWarning onInput={(e) => onText("author", e.currentTarget.textContent || "")} onBlur={(e) => onText("author", e.currentTarget.textContent || "")} onPointerDown={(e) => { onActivateTarget?.("heading"); e.stopPropagation(); }} onPointerUp={(e) => e.stopPropagation()}>{data.author}</cite>
+      <EditableText tag="blockquote" value={`"${data.quote ?? ""}"`} style={partStyleToCss(parts?.body, "body")} editable={!isPreview} onText={(value) => onText("quote", value)} onActivateTarget={() => onActivateTarget?.("body")} />
+      <EditableText tag="cite" value={data.author ?? ""} style={partStyleToCss(parts?.heading, "heading")} editable={!isPreview} onText={(value) => onText("author", value)} onActivateTarget={() => onActivateTarget?.("heading")} />
     </section>
   );
 };
@@ -6939,12 +6956,12 @@ export function App() {
               onContextMenu={(e) => openSiteHeaderContextMenu(e)}
             >
               <div className="site-header-left">
-                <strong
+                <EditableText
+                  tag="strong"
                   className={!previewMode && selectedSitePart === "site-title" && selectedNavIndex === null ? "selected-site-part" : ""}
-                  contentEditable={canEditBlocks}
-                  suppressContentEditableWarning
-                  onInput={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
-                  onBlur={(e) => { setProject({ ...project, site: { ...project.site, siteName: e.currentTarget.textContent || "" } }); setDirty(true); }}
+                  editable={canEditBlocks}
+                  value={project.site.siteName}
+                  onText={(value) => { setProject({ ...project, site: { ...project.site, siteName: value } }); setDirty(true); }}
                   onClick={(e) => {
                     if (!canEditBlocks) return;
                     e.stopPropagation();
@@ -6973,7 +6990,7 @@ export function App() {
                     const dy = Math.abs(e.clientY - siteHeaderLongPressRef.current.startY);
                     if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
                   }}
-                >{project.site.siteName}</strong>
+                />
                 {isMobileViewport && canEditBlocks && (
                   <button
                     className="site-header-edit-btn"
@@ -6987,13 +7004,13 @@ export function App() {
               </div>
               <div className="nav-items">
                 {project.site.nav.map((item, ni) => (
-                  <span
+                  <EditableText
                     key={item.id}
+                    tag="span"
                     className={!previewMode && selectedSitePart === "nav" && selectedNavIndex === ni ? "selected-site-part" : ""}
-                    contentEditable={canEditBlocks}
-                    suppressContentEditableWarning
-                    onInput={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
-                    onBlur={(e) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: e.currentTarget.textContent || "" }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
+                    editable={canEditBlocks}
+                    value={item.label}
+                    onText={(value) => { const nav = [...project.site.nav]; nav[ni] = { ...nav[ni], label: value }; setProject({ ...project, site: { ...project.site, nav } }); setDirty(true); }}
                     onClick={(e) => {
                       if (previewMode) {
                         e.stopPropagation();
@@ -7038,7 +7055,7 @@ export function App() {
                       const dy = Math.abs(e.clientY - siteHeaderLongPressRef.current.startY);
                       if (dx > 12 || dy > 12) cancelSiteHeaderLongPress();
                     }}
-                  >{item.label}</span>
+                  />
                 ))}
               </div>
             </nav>

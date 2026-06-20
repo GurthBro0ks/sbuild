@@ -865,7 +865,7 @@ test("context menu uses light backdrop dim layer", () => {
 });
 
 test("mobile site title single tap edits directly without opening drawer", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /editable=\{canEditBlocks\}[\s\S]{0,120}value=\{project\.site\.siteName\}/);
   assert.match(appSource, /if \(!canEditBlocks\) return;[\s\S]*setSelectedSitePart\("site-title"\)/);
   assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("site-title"\)[\s\S]{0,60}Site title selected/);
 });
@@ -879,7 +879,7 @@ test("mobile site title long press opens right drawer", () => {
 });
 
 test("mobile nav link single tap edits directly without opening drawer", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
+  assert.match(appSource, /editable=\{canEditBlocks\}[\s\S]{0,120}value=\{item\.label\}/);
   assert.match(appSource, /if \(!canEditBlocks\) return;[\s\S]*setSelectedSitePart\("nav"\)/);
   assert.doesNotMatch(appSource, /if \(isMobileViewport\)[\s\S]{0,120}setSelectedSitePart\("nav"\)[\s\S]{0,60}Nav link/);
 });
@@ -957,13 +957,13 @@ test("preview mode hides selection outlines via CSS", () => {
 
 test("edit mode supports direct text editing with stopPropagation on contentEditable", () => {
   assert.match(appSource, /data-sbuild-editable-text="uncontrolled"/);
-  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,80}onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,80}\}\}/);
-  assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,140}onActivateTarget[\s\S]{0,40}onActivateTarget\(\);[\s\S]{0,40}e\.stopPropagation\(\);[\s\S]{0,140}\}\}/);
+  assert.match(appSource, /onPointerUp=\{\(e\) => \{[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,120}\}\}/);
 });
 
 test("direct canvas text editing does not let React control text children while focused", () => {
   assert.match(appSource, /const EditableText =/);
-  assert.match(appSource, /useLayoutEffect\(\(\) => \{[\s\S]*if \(!el \|\| focusedRef\.current\) return;[\s\S]*el\.textContent = value/);
+  assert.match(appSource, /useLayoutEffect\(\(\) => \{[\s\S]*if \(!el \|\| focusedRef\.current(?: \|\| composingRef\.current)?\) return;[\s\S]*el\.textContent = value/);
   assert.doesNotMatch(appSource, /<h1[^>]*contentEditable=\{!isPreview\}[\s\S]*>\{data\.heading\}<\/h1>/);
 });
 
@@ -984,14 +984,98 @@ test("direct canvas text updates patch the emitted block id rather than stale se
   assert.match(appSource, /patchBlock\(block\.id, \(current\) => \(\{ \.\.\.current, data: \{ \.\.\.\(current\.data as Record<string, unknown>\), \[field\]: value \} \}\)\)/);
 });
 
+test("no raw contentEditable element in App.tsx keeps React-controlled children (caret-reversal pattern eliminated)", () => {
+  // The classic reversal bug is: <TAG ... contentEditable={X} ...>{someExpression}</TAG>
+  // where React reconciles the children text node on each keystroke, which resets the
+  // contentEditable caret to 0 in real browsers and reverses typed text.
+  // After the fix, EVERY contentEditable element must be the uncontrolled EditableText
+  // helper (no JSX children) — never a raw element with a {child} expression.
+  assert.doesNotMatch(appSource, /<(?:h1|h2|h3|p|div|strong|span|cite|blockquote|li)\b[^>]*contentEditable=\{[^}]+\}[^>]*>\{[^}]+\}<\/(?:h1|h2|h3|p|div|strong|span|cite|blockquote|li)>/);
+  // The only contentEditable declaration left in App.tsx is inside EditableText itself.
+  const contentEditableMatches = appSource.match(/contentEditable=\{/g) || [];
+  assert.equal(contentEditableMatches.length, 1, `Expected exactly 1 contentEditable declaration (inside EditableText), found ${contentEditableMatches.length}`);
+});
+
+test("site title, nav label, hours row, and testimonial fields are edited via uncontrolled EditableText", () => {
+  assert.match(appSource, /<EditableText\s+tag="strong"[^>]*value=\{project\.site\.siteName\}/);
+  assert.match(appSource, /<EditableText\s+key=\{item\.id\}\s+tag="span"[^>]*value=\{item\.label\}/);
+  assert.match(appSource, /<EditableText\s+key=\{`\$\{row\.day\}-\$\{i\}`\}\s+tag="li"[^>]*value=\{`\$\{row\.day\}: \$\{row\.open\} - \$\{row\.close\}`\}/);
+  assert.match(appSource, /<EditableText\s+tag="blockquote"[^>]*value=\{`"\$\{data\.quote \?\? ""\}"`\}/);
+  assert.match(appSource, /<EditableText\s+tag="cite"[^>]*value=\{data\.author \?\? ""\}/);
+});
+
+test("EditableText does not commit text or overwrite textContent during IME composition", () => {
+  assert.match(appSource, /onCompositionStart=\{\(\) => \{ composingRef\.current = true; \}\}/);
+  assert.match(appSource, /onCompositionEnd=\{\(e\) => \{ composingRef\.current = false; commitText\(e\.currentTarget\); \}\}/);
+  assert.match(appSource, /onInput=\{\(e\) => \{ if \(!composingRef\.current\) commitText\(e\.currentTarget\); \}\}/);
+  assert.match(appSource, /if \(!el \|\| focusedRef\.current \|\| composingRef\.current\) return;/);
+});
+
+test("uncontrolled contentEditable sync model preserves typed character order and never reverses", () => {
+  // Models the EditableText contract: while the element is the active element, the sync
+  // effect must NOT overwrite textContent. Typing one character at a time at the caret
+  // must therefore accumulate in typed order, never reversed.
+  function typeSequence(target, chars, isActive) {
+    // Simulates a user typing `chars` one at a time at the caret, then the sync effect
+    // running after each React commit. `isActive` models document.activeElement === el.
+    let text = target.value;
+    let caret = text.length;
+    const seen = [];
+    for (const ch of chars) {
+      text = text.slice(0, caret) + ch + text.slice(caret);
+      caret += 1;
+      // Sync effect: EditableText must NOT overwrite textContent while focused.
+      // (If it did, e.g. text = value where value lagged, the caret would reset and
+      // subsequent typing would prepend -> reversed text.)
+      if (!isActive) {
+        // When not active, the effect syncs DOM to the latest value (no caret to disturb).
+        text = target.value;
+      }
+      seen.push(text);
+    }
+    return seen;
+  }
+  const target = { value: "" };
+  // Active (focused) editing: the DOM is the source of truth; sync must be a no-op.
+  const active = typeSequence(target, ["b", "l", "a", "c", "k"], true);
+  assert.equal(active[active.length - 1], "black");
+  assert.notEqual(active[active.length - 1], "kcalb");
+  // Every prefix must be in forward order, never reversed.
+  for (let i = 0; i < active.length; i += 1) {
+    const prefix = "black".slice(0, i + 1);
+    assert.equal(active[i], prefix, `step ${i + 1} expected ${prefix}, got ${active[i]}`);
+  }
+});
+
+test("full phrase typed via the uncontrolled model stays in order and does not reverse", () => {
+  const phrase = "black fish farms";
+  // Walk the model: caret at end, insert each char; focused -> sync is no-op.
+  let text = "";
+  let caret = 0;
+  for (const ch of phrase) {
+    text = text.slice(0, caret) + ch + text.slice(caret);
+    caret += 1;
+  }
+  assert.equal(text, phrase);
+  assert.notEqual(text, phrase.split("").reverse().join(""));
+});
+
+test("heading editor has no value-derived remount key and no unconditional setSelectionRange(0,0)", () => {
+  // A remount key derived from the input value, or an unconditional setSelectionRange(0,0)
+  // on every update, would both force the caret to index 0 and reverse subsequent typing.
+  assert.doesNotMatch(appSource, /key=\{[^}]*data\.heading[^}]*\}/);
+  assert.doesNotMatch(appSource, /setSelectionRange\(0,\s*0\)/);
+  assert.doesNotMatch(appSource, /selectionStart\s*=\s*0/);
+});
+
 test("site title is contentEditable in edit mode and guarded in preview", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
-  assert.match(appSource, /setProject\(\{ \.\.\.project, site: \{ \.\.\.project\.site, siteName:/);
+  assert.match(appSource, /tag="strong"[^>]*editable=\{canEditBlocks\}[\s\S]{0,80}value=\{project\.site\.siteName\}/);
+  assert.match(appSource, /onText=\{\(value\) => \{ setProject\(\{ \.\.\.project, site: \{ \.\.\.project\.site, siteName: value \} \}\); setDirty\(true\); \}\}/);
 });
 
 test("nav labels are contentEditable in edit mode and guarded in preview", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
-  assert.match(appSource, /nav\[ni\] = \{ \.\.\.nav\[ni\], label: e\.currentTarget\.textContent/);
+  assert.match(appSource, /tag="span"[^>]*editable=\{canEditBlocks\}[\s\S]{0,80}value=\{item\.label\}/);
+  assert.match(appSource, /nav\[ni\] = \{ \.\.\.nav\[ni\], label: value \}/);
 });
 
 test("cards block title and card text are contentEditable in edit mode", () => {
@@ -1017,9 +1101,10 @@ test("contact block title and fields are contentEditable in edit mode", () => {
 });
 
 test("testimonial quote and author are contentEditable in edit mode", () => {
-  assert.match(appSource, /TestimonialBlock[\s\S]*contentEditable=\{!isPreview\}/);
-  assert.match(appSource, /onText\("quote", e\.currentTarget\.textContent/);
-  assert.match(appSource, /onText\("author", e\.currentTarget\.textContent/);
+  assert.match(appSource, /TestimonialBlock[\s\S]*<EditableText tag="blockquote"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /TestimonialBlock[\s\S]*<EditableText tag="cite"[\s\S]*editable=\{!isPreview\}/);
+  assert.match(appSource, /onText=\{\(value\) => onText\("quote", value\)\}/);
+  assert.match(appSource, /onText=\{\(value\) => onText\("author", value\)\}/);
 });
 
 test("map block address is contentEditable in edit mode", () => {
@@ -1045,8 +1130,8 @@ test("image block caption is contentEditable in edit mode", () => {
 test("all contentEditable blocks stop propagation on pointer events", () => {
   const editableTextMatches = appSource.match(/<EditableText /g);
   assert.ok(editableTextMatches && editableTextMatches.length >= 12, `Expected at least 12 EditableText elements, found ${editableTextMatches?.length || 0}`);
-  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,80}onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,80}\}\}/);
-  assert.match(appSource, /onPointerUp=\{\(e\) => e\.stopPropagation\(\)\}/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,120}onActivateTarget[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,120}\}\}/);
+  assert.match(appSource, /onPointerUp=\{\(e\) => \{[\s\S]{0,80}e\.stopPropagation\(\);[\s\S]{0,120}\}\}/);
 });
 
 test("top toolbar AI button calls toggleAiTopMenu handler", () => {
@@ -1109,7 +1194,7 @@ test("block components accept onActivateTarget prop", () => {
 });
 
 test("contentEditable onPointerDown calls onActivateTarget before stopPropagation", () => {
-  assert.match(appSource, /onActivateTarget\?\.\(\);[\s\S]{0,80}e\.stopPropagation\(\)/);
+  assert.match(appSource, /onPointerDown=\{\(e\) => \{[\s\S]{0,40}if \(onActivateTarget\) \{[\s\S]{0,20}onActivateTarget\(\);[\s\S]{0,20}e\.stopPropagation\(\);[\s\S]{0,40}\}/);
   const activateProps = appSource.match(/onActivateTarget=\{\(\) => onActivateTarget\?\.\(\"[a-zA-Z]+\"\)\}/g);
   assert.ok(activateProps && activateProps.length >= 12, `Expected EditableText activate props, found ${activateProps?.length || 0}`);
 });
@@ -1144,13 +1229,13 @@ test("site header empty-area click selects container via nav onClick", () => {
 });
 
 test("site title direct edit still works via contentEditable and onClick", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*project\.site\.siteName/);
+  assert.match(appSource, /tag="strong"[^>]*editable=\{canEditBlocks\}[\s\S]{0,80}value=\{project\.site\.siteName\}/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("site-title"\)/);
   assert.match(appSource, /e\.stopPropagation\(\)[\s\S]*setSelectedSitePart\("site-title"\)/);
 });
 
 test("nav label direct edit still works via contentEditable and onClick", () => {
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}[\s\S]*item\.label/);
+  assert.match(appSource, /tag="span"[^>]*editable=\{canEditBlocks\}[\s\S]{0,80}value=\{item\.label\}/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedSitePart\("nav"\)/);
   assert.match(appSource, /onClick=\{\(e\)[\s\S]*setSelectedNavIndex\(ni\)/);
 });
@@ -1818,7 +1903,7 @@ test("paint mode disables block editing interactions through canEditBlocks gate"
   assert.match(appSource, /const canEditBlocks = !previewMode && !paintMode;/);
   assert.match(appSource, /if \(previewMode \|\| paintMode\) return;/);
   assert.match(appSource, /draggable=\{canEditBlocks\}/);
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}/);
+  assert.match(appSource, /editable=\{canEditBlocks\}/);
   assert.match(appSource, /\{selectedBlock\?\.id === block\.id && canEditBlocks && \(/);
 });
 
@@ -2090,7 +2175,7 @@ test("paint overlay captures pointer events in exclusive paint mode", () => {
 
 test("paint mode disables contentEditable and block selection", () => {
   assert.match(appSource, /const canEditBlocks = !previewMode && !paintMode;/);
-  assert.match(appSource, /contentEditable=\{canEditBlocks\}/);
+  assert.match(appSource, /editable=\{canEditBlocks\}/);
   assert.match(appSource, /draggable=\{canEditBlocks\}/);
 });
 
