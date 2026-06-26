@@ -3312,6 +3312,88 @@ test("/api/images response never includes .gitkeep or zero-byte placeholder file
   }
 });
 
+test("/api/images/delete deletes a project image through the canonical route", async () => {
+  const name = `itest-delete-canonical-${Date.now()}.png`;
+  const absolute = path.join(path.dirname(projectFile), "images", name);
+  const tempBuffer = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c636000000000050001a5f645400000000049454e44ae426082", "hex");
+  await fs.writeFile(absolute, tempBuffer);
+  try {
+    const res = await fetch(`${baseUrl}/api/images/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ paths: [`/project/images/${name}`] })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; deletedCount: number; results: Array<{ path: string; deleted: boolean }> };
+    assert.equal(body.ok, true);
+    assert.equal(body.deletedCount, 1);
+    assert.equal(body.results[0].path, name);
+    assert.equal(body.results[0].deleted, true);
+    await assert.rejects(fs.access(absolute), /ENOENT/);
+  } finally {
+    await fs.rm(absolute, { force: true });
+  }
+});
+
+test("DELETE /api/images delegates to shared image deletion for compatibility", async () => {
+  const name = `itest-delete-legacy-${Date.now()}.png`;
+  const absolute = path.join(path.dirname(projectFile), "images", name);
+  const tempBuffer = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c636000000000050001a5f645400000000049454e44ae426082", "hex");
+  await fs.writeFile(absolute, tempBuffer);
+  try {
+    const res = await fetch(`${baseUrl}/api/images`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ filenames: [name] })
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ok: boolean; deletedCount: number; results: Array<{ filename: string; deleted: boolean }> };
+    assert.equal(body.ok, true);
+    assert.equal(body.deletedCount, 1);
+    assert.equal(body.results[0].filename, name);
+    assert.equal(body.results[0].deleted, true);
+    await assert.rejects(fs.access(absolute), /ENOENT/);
+  } finally {
+    await fs.rm(absolute, { force: true });
+  }
+});
+
+test("image delete routes reject missing input and outside project image paths", async () => {
+  const missingCanonical = await fetch(`${baseUrl}/api/images/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  });
+  assert.equal(missingCanonical.status, 400);
+
+  const missingLegacy = await fetch(`${baseUrl}/api/images`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  });
+  assert.equal(missingLegacy.status, 400);
+
+  const outsideCanonical = await fetch(`${baseUrl}/api/images/delete`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ paths: ["/tmp/not-owned.png", "project/other/not-owned.png"] })
+  });
+  assert.equal(outsideCanonical.status, 200);
+  const outsideCanonicalBody = await outsideCanonical.json() as { deletedCount: number; results: Array<{ deleted: boolean; error?: string }> };
+  assert.equal(outsideCanonicalBody.deletedCount, 0);
+  assert.equal(outsideCanonicalBody.results.every((r) => r.deleted === false && typeof r.error === "string"), true);
+
+  const traversalLegacy = await fetch(`${baseUrl}/api/images`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ filenames: ["../project.json", "nested/../../secret.png"] })
+  });
+  assert.equal(traversalLegacy.status, 200);
+  const traversalLegacyBody = await traversalLegacy.json() as { deletedCount: number; results: Array<{ deleted: boolean; error?: string }> };
+  assert.equal(traversalLegacyBody.deletedCount, 0);
+  assert.equal(traversalLegacyBody.results.every((r) => r.deleted === false && typeof r.error === "string"), true);
+});
+
 test("/api/images/delete blocks path traversal and refuses .gitkeep / hidden files", async () => {
   const payload = {
     paths: [

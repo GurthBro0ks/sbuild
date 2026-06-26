@@ -2324,16 +2324,6 @@ export function App() {
     } catch { setUploadedImages([]); }
   }
 
-  async function deleteImages(filenames: string[]): Promise<{ ok: boolean; deletedCount: number; results: Array<{ filename: string; deleted: boolean; error?: string }> }> {
-    if (filenames.length === 0) return { ok: true, deletedCount: 0, results: [] };
-    const data = await fetchJson<{ ok: boolean; deletedCount: number; results: Array<{ filename: string; deleted: boolean; error?: string }> }>("/api/images", {
-      method: "DELETE",
-      body: JSON.stringify({ filenames })
-    });
-    await loadImages();
-    return data;
-  }
-
   async function bulkDeleteImages(paths: string[]): Promise<{ ok: boolean; deletedCount: number; skippedCount: number; results: Array<{ path: string; deleted: boolean; error?: string; skipped?: string }> }> {
     if (paths.length === 0) return { ok: true, deletedCount: 0, skippedCount: 0, results: [] };
     const data = await fetchJson<{ ok: boolean; deletedCount: number; skippedCount: number; results: Array<{ path: string; deleted: boolean; error?: string; skipped?: string }> }>("/api/images/delete", {

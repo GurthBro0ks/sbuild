@@ -981,34 +981,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     });
   });
 
-  // F-Q1 follow-up (deferred, not low-risk to consolidate now): two image-delete paths exist with
-  // distinct contracts and distinct live editor callers:
-  //   DELETE /api/images       -> body { filenames }, name-sanitized unlink, used by deleteImages()
-  //   POST   /api/images/delete -> body { paths }, usage-aware + force + traversal-safe, used by bulkDeleteImages()
-  // Consolidating onto the safer POST path requires migrating the DELETE caller and its response
-  // shape and is out of scope for this hardening pass. Tracked as a separate follow-up.
-  app.delete("/api/images", async (req, res) => {
-    const filenames = req.body?.filenames;
-    if (!filenames || !Array.isArray(filenames)) {
-      res.status(400).json({ ok: false, error: "filenames array is required" });
-      return;
-    }
-    const results: { filename: string; deleted: boolean; error?: string }[] = [];
-    for (const filename of filenames) {
-      const safeName = String(filename).replace(/[^a-zA-Z0-9._-]/g, "");
-      const filePath = path.join(projectImagesDir, safeName);
-      try {
-        await fs.unlink(filePath);
-        results.push({ filename: safeName, deleted: true });
-      } catch (error) {
-        results.push({ filename: safeName, deleted: false, error: String(error) });
-      }
-    }
-    const allDeleted = results.every((r) => r.deleted);
-    res.json({ ok: allDeleted, results, deletedCount: results.filter((r) => r.deleted).length });
-  });
-
   type DeleteImageResult = { path: string; deleted: boolean; error?: string; skipped?: string };
+  type DeleteImagesResponse = { ok: boolean; deletedCount: number; skippedCount: number; results: DeleteImageResult[] };
 
   function collectProjectImageReferences(project: SBuildProject | null): { url: string; usedBy: string[] }[] {
     const out: { url: string; usedBy: string[] }[] = [];
@@ -1069,13 +1043,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     return { ok: true, absolute, relative: normalized };
   }
 
-  app.post("/api/images/delete", async (req, res) => {
-    const items = Array.isArray(req.body?.paths) ? req.body.paths : [];
-    const force = req.body?.force === true;
-    if (items.length === 0) {
-      res.status(400).json({ ok: false, error: "paths array is required" });
-      return;
-    }
+  async function deleteProjectImages(items: unknown[], options: { force?: boolean } = {}): Promise<DeleteImagesResponse> {
+    const force = options.force === true;
     let project: SBuildProject | null = null;
     try {
       project = await loadProject();
@@ -1116,7 +1085,35 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       }
     }
     const ok = results.every((r) => r.deleted || r.skipped);
-    res.json({ ok, deletedCount, skippedCount, results });
+    return { ok, deletedCount, skippedCount, results };
+  }
+
+  app.delete("/api/images", async (req, res) => {
+    const filenames = req.body?.filenames;
+    if (!filenames || !Array.isArray(filenames)) {
+      res.status(400).json({ ok: false, error: "filenames array is required" });
+      return;
+    }
+    const result = await deleteProjectImages(filenames.map((filename) => `/project/images/${String(filename)}`));
+    res.json({
+      ok: result.ok,
+      deletedCount: result.deletedCount,
+      results: result.results.map((entry) => ({
+        filename: entry.path,
+        deleted: entry.deleted,
+        error: entry.error || entry.skipped
+      }))
+    });
+  });
+
+  app.post("/api/images/delete", async (req, res) => {
+    const items = Array.isArray(req.body?.paths) ? req.body.paths : [];
+    if (items.length === 0) {
+      res.status(400).json({ ok: false, error: "paths array is required" });
+      return;
+    }
+    const result = await deleteProjectImages(items, { force: req.body?.force === true });
+    res.json(result);
   });
 
   app.post("/api/images/folder/create", async (req, res) => {
