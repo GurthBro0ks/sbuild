@@ -63,7 +63,7 @@ export function collectUsedImageUrls(project: SBuildProject | null): Set<string>
   return used;
 }
 
-function isLikelyScreenshotName(name: string): boolean {
+export function isLikelyScreenshotName(name: string): boolean {
   return /(screenshot|screen[-_]?shot|capture|img[-_]?\d{4,})/i.test(name);
 }
 

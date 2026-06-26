@@ -4,7 +4,8 @@ import test from "node:test";
 
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.url), "utf8");
-const editorSource = `${appSource}\n${behaviorSource}`;
+const versionIdentityBannerSource = readFileSync(new URL("./VersionIdentityBanner.tsx", import.meta.url), "utf8");
+const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
@@ -3218,10 +3219,10 @@ test("loadBuildInfo marks health unavailable instead of silently falling back", 
 
 test("version identity banner visibly surfaces mismatch and health unavailable states", () => {
   assert.match(appSource, /showVersionIdentityBanner/);
-  assert.match(appSource, /data-testid="version-identity-banner"/);
-  assert.match(appSource, /Version drift detected/);
+  assert.match(editorSource, /data-testid="version-identity-banner"/);
+  assert.match(editorSource, /Version drift detected/);
   assert.match(editorSource, /older or different sBuild bundle/);
-  assert.match(appSource, /Version unverified/);
+  assert.match(editorSource, /Version unverified/);
   assert.match(appSource, /setVersionBannerDismissed\(true\)/);
   assert.match(cssSource, /\.version-identity-banner/);
   assert.match(cssSource, /\.version-identity-mismatch/);

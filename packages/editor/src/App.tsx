@@ -57,6 +57,7 @@ import {
   getSaveFailureState,
   imagePassesFilter,
   isRenderableImageMeta,
+  isLikelyScreenshotName,
   shouldSyncEditableTextContent,
   type BuildInfoStatus,
   type BuildIdentityState,
@@ -64,6 +65,7 @@ import {
   type ImageLibraryFilter,
   type ImageMeta
 } from "./editorBehavior.js";
+import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
 type RightTab = "properties" | "style" | "images" | "ai" | "status";
@@ -6292,15 +6294,11 @@ export function App() {
       </header>
       <div ref={spacerRef} className="topbar-mobile-spacer" />
       {showVersionIdentityBanner && (
-        <div className={`version-identity-banner version-identity-${buildIdentity.status}`} role="status" data-testid="version-identity-banner">
-          <div className="version-identity-banner-copy">
-            <strong>{buildIdentity.status === "mismatch" ? "Version drift detected" : "Version unverified"}</strong>
-            <span>{buildIdentity.message}</span>
-            {buildIdentity.detail && <span>{buildIdentity.detail}</span>}
-            {buildInfoError && <span>Health error: {buildInfoError}</span>}
-          </div>
-          <button type="button" onClick={() => setVersionBannerDismissed(true)} aria-label="Dismiss version identity warning">Dismiss</button>
-        </div>
+        <VersionIdentityBanner
+          buildIdentity={buildIdentity}
+          buildInfoError={buildInfoError}
+          onDismiss={() => setVersionBannerDismissed(true)}
+        />
       )}
       {paintMode && !previewMode && (
         <div className="paint-toolbar" role="toolbar" aria-label="Markup tools">
