@@ -8,6 +8,7 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
 import { backupsDir, projectFile, secretsFile } from "./lib/paths.js";
+import { BUILD_META } from "@sbuild/shared";
 import {
   getChatHistory,
   appendChatHistory,
@@ -3024,6 +3025,11 @@ test("/health returns complete version identity", async () => {
     baseVersion?: string;
     displayVersion?: string;
     gitCommit?: string;
+    gitCommitFull?: string;
+    repoHeadCommit?: string;
+    repoHeadCommitFull?: string;
+    repoBranch?: string;
+    repoDirty?: boolean;
     commitCount?: number;
     branch?: string;
     ok?: boolean;
@@ -3033,8 +3039,23 @@ test("/health returns complete version identity", async () => {
   assert.ok(body.baseVersion && typeof body.baseVersion === "string", "baseVersion must be a string");
   assert.ok(body.displayVersion && typeof body.displayVersion === "string", "displayVersion must be a string");
   assert.ok(body.gitCommit && typeof body.gitCommit === "string" && body.gitCommit !== "unknown", "gitCommit must be a real commit hash");
+  assert.equal(body.gitCommit, BUILD_META.gitCommitShort, "gitCommit must report the served build metadata identity");
+  assert.equal(body.gitCommitFull, BUILD_META.gitCommitFull, "gitCommitFull must report the served build metadata identity");
+  assert.ok(body.repoHeadCommit && typeof body.repoHeadCommit === "string", "repoHeadCommit must expose live repo diagnostics separately");
+  assert.ok(body.repoHeadCommitFull && typeof body.repoHeadCommitFull === "string", "repoHeadCommitFull must expose live repo diagnostics separately");
+  assert.ok(body.repoBranch && typeof body.repoBranch === "string", "repoBranch must expose live repo diagnostics separately");
+  assert.ok(typeof body.repoDirty === "boolean", "repoDirty must expose live repo diagnostics separately");
   assert.ok(typeof body.commitCount === "number" && body.commitCount > 0, "commitCount must be a positive number");
   assert.ok(body.branch && typeof body.branch === "string", "branch must be a string");
+});
+
+test("/health implementation keeps runtime repo HEAD out of served build gitCommit", async () => {
+  const appSource = await fs.readFile(path.join(process.cwd(), "src", "app.ts"), "utf8");
+  const getBuildInfoBlock = appSource.substring(appSource.indexOf("function getBuildInfo"), appSource.indexOf("import { applyDeterministicPaintFix"));
+  assert.match(getBuildInfoBlock, /servedCommit = BUILD_META\.gitCommitShort/, "served gitCommit must come from BUILD_META");
+  assert.match(getBuildInfoBlock, /repoHeadCommit = safeGitCommand\("git rev-parse --short HEAD"/, "runtime repo HEAD must be collected only as repoHeadCommit");
+  assert.doesNotMatch(getBuildInfoBlock, /gitCommit:\s*repoHeadCommit/, "health gitCommit must not be runtime repo HEAD");
+  assert.match(getBuildInfoBlock, /gitCommit:\s*servedCommit/, "health gitCommit must be the served build commit");
 });
 
 test("displayVersion includes commit identity beyond base version", async () => {
@@ -3067,6 +3088,8 @@ test("/health returns buildDate and dirtySummary for diagnostics", async () => {
     buildDate?: string;
     dirty?: boolean;
     dirtySummary?: { modifiedTracked: number; untracked: number };
+    repoDirty?: boolean;
+    repoDirtySummary?: { modifiedTracked: number; untracked: number };
     publishAllowed?: boolean;
     editorDistExists?: boolean;
     paths?: { editorDistPath: string; editorIndexPath: string; projectPath: string };
@@ -3075,6 +3098,9 @@ test("/health returns buildDate and dirtySummary for diagnostics", async () => {
   assert.ok(typeof body.dirty === "boolean", "dirty must be boolean");
   assert.ok(body.dirtySummary && typeof body.dirtySummary.modifiedTracked === "number", "dirtySummary.modifiedTracked must be number");
   assert.ok(typeof body.dirtySummary.untracked === "number", "dirtySummary.untracked must be number");
+  assert.ok(typeof body.repoDirty === "boolean", "repoDirty must be boolean");
+  assert.ok(body.repoDirtySummary && typeof body.repoDirtySummary.modifiedTracked === "number", "repoDirtySummary.modifiedTracked must be number");
+  assert.ok(typeof body.repoDirtySummary.untracked === "number", "repoDirtySummary.untracked must be number");
   assert.equal(body.publishAllowed, false, "publishAllowed must be false in test/dev");
   assert.ok(body.paths && body.paths.projectPath, "paths.projectPath must exist");
 });

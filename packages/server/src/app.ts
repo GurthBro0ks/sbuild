@@ -100,26 +100,34 @@ function resolveBranch(cwd: string, commit: string): string {
   return "unknown";
 }
 
-function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary } {
-  const commit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || BUILD_META.gitCommitShort;
-  const commitFull = safeGitCommand("git rev-parse HEAD", repoRoot) || BUILD_META.gitCommitFull;
-  const branch = resolveBranch(repoRoot, commit);
-  const dirty = computeDirtySummary(repoRoot);
+function getBuildInfo(): SBuildBuildInfo & { dirtySummary?: GitDirtySummary; repoDirtySummary?: GitDirtySummary } {
+  const servedCommit = BUILD_META.gitCommitShort || "unknown";
+  const servedCommitFull = BUILD_META.gitCommitFull || "unknown";
+  const repoHeadCommit = safeGitCommand("git rev-parse --short HEAD", repoRoot) || "unknown";
+  const repoHeadCommitFull = safeGitCommand("git rev-parse HEAD", repoRoot) || "unknown";
+  const repoBranch = resolveBranch(repoRoot, repoHeadCommit);
+  const repoDirtySummary = computeDirtySummary(repoRoot);
   const buildDate = BUILD_META.buildTimeUtc;
   const commitCount = BUILD_META.commitCount;
-  const displayVersion = computeDisplayVersion(SBUILD_VERSION, commit, commitCount);
+  const displayVersion = computeDisplayVersion(SBUILD_VERSION, servedCommit, commitCount);
+  const repoDirty = repoDirtySummary.modifiedTracked > 0 || repoDirtySummary.untracked > 0;
   return {
     version: SBUILD_VERSION,
     appName: SBUILD_APP_NAME,
     baseVersion: SBUILD_VERSION,
     displayVersion,
-    gitCommit: commit,
-    gitCommitFull: commitFull,
-    branch,
+    gitCommit: servedCommit,
+    gitCommitFull: servedCommitFull,
+    branch: BUILD_META.branch || "unknown",
     buildDate,
     commitCount,
-    dirty: dirty.modifiedTracked > 0 || dirty.untracked > 0,
-    dirtySummary: dirty,
+    dirty: Boolean(BUILD_META.dirty),
+    dirtySummary: repoDirtySummary,
+    repoHeadCommit,
+    repoHeadCommitFull,
+    repoBranch,
+    repoDirty,
+    repoDirtySummary,
     publishAllowed: process.env.SBUILD_ALLOW_PUBLISH === "1",
   };
 }
@@ -626,6 +634,11 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       dirty: info.dirty,
       dirtySummary: info.dirtySummary,
       branch: info.branch,
+      repoHeadCommit: info.repoHeadCommit,
+      repoHeadCommitFull: info.repoHeadCommitFull,
+      repoBranch: info.repoBranch,
+      repoDirty: info.repoDirty,
+      repoDirtySummary: info.repoDirtySummary,
       publishAllowed: info.publishAllowed,
       editorDistExists,
       paths: {

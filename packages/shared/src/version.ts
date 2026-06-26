@@ -18,6 +18,11 @@ export interface SBuildBuildInfo {
   commitCount: number;
   dirty: boolean;
   dirtySummary?: SBuildDirtySummary;
+  repoHeadCommit?: string;
+  repoHeadCommitFull?: string;
+  repoBranch?: string;
+  repoDirty?: boolean;
+  repoDirtySummary?: SBuildDirtySummary;
   publishAllowed: boolean;
 }
 

@@ -3163,6 +3163,29 @@ test("About tab shows browser/server build match hint", () => {
   assert.match(appSource, /BUILD_META\.gitCommitShort/);
 });
 
+test("browser/server mismatch compares browser commit to served build health gitCommit, not repo HEAD diagnostics", () => {
+  const helperBlock = appSource.substring(appSource.indexOf("function getBuildIdentityState"), appSource.indexOf("function imagePassesFilter"));
+  assert.match(helperBlock, /servedBuildCommit = buildInfo\?\.gitCommit/, "mismatch must use /health.gitCommit as served build identity");
+  assert.doesNotMatch(helperBlock, /repoHeadCommit/, "repo HEAD diagnostics must not drive mismatch warning");
+
+  const classify = ({ browserCommit, servedBuildCommit }) => {
+    const known = (commit) => Boolean(commit && !["unknown", "unreachable", "loading"].includes(commit));
+    if (!known(browserCommit) || !known(servedBuildCommit)) return "unverified";
+    return browserCommit === servedBuildCommit ? "match" : "mismatch";
+  };
+
+  assert.equal(
+    classify({ browserCommit: "1e40434", servedBuildCommit: "1e40434", repoHeadCommit: "90e7b10" }),
+    "match",
+    "docs-only repo HEAD drift must not create a browser/server mismatch"
+  );
+  assert.equal(
+    classify({ browserCommit: "1e40434", servedBuildCommit: "90e7b10", repoHeadCommit: "90e7b10" }),
+    "mismatch",
+    "old browser bundle against a newer served build must still warn"
+  );
+});
+
 test("About tab shows loaded project source and app dirty status in table", () => {
   const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
   assert.match(aboutSection, /Loaded project source/);
@@ -3204,9 +3227,9 @@ test("version identity banner visibly surfaces mismatch and health unavailable s
 test("build identity mismatch only fires when browser and server commits are known", () => {
   const helperBlock = appSource.substring(appSource.indexOf("function getBuildIdentityState"), appSource.indexOf("function imagePassesFilter"));
   assert.match(helperBlock, /hasKnownCommit\(browserCommit\)/);
-  assert.match(helperBlock, /hasKnownCommit\(serverCommit\)/);
+  assert.match(helperBlock, /hasKnownCommit\(servedBuildCommit\)/);
   assert.match(helperBlock, /status:\s*"unverified"/);
-  assert.match(helperBlock, /browserCommit !== serverCommit/);
+  assert.match(helperBlock, /browserCommit !== servedBuildCommit/);
 });
 
 test("Copy diagnostics includes browser/server match status without secrets", () => {
@@ -3214,8 +3237,10 @@ test("Copy diagnostics includes browser/server match status without secrets", ()
   assert.match(aboutSection, /Copy diagnostics/);
   assert.match(aboutSection, /displayVersion/);
   assert.match(aboutSection, /baseVersion/);
-  assert.match(aboutSection, /gitCommit/);
-  assert.match(aboutSection, /branch/);
+  assert.match(aboutSection, /servedBuildCommit/);
+  assert.match(aboutSection, /browserBuildCommit/);
+  assert.match(aboutSection, /repoHeadCommit/);
+  assert.match(aboutSection, /repoBranch/);
   assert.match(aboutSection, /commitCount/);
   assert.match(aboutSection, /buildDate/);
   assert.match(aboutSection, /publishAllowed/);
@@ -3223,12 +3248,21 @@ test("Copy diagnostics includes browser/server match status without secrets", ()
   assert.match(aboutSection, /healthError/);
   assert.match(aboutSection, /browserServerMatch/);
   assert.match(aboutSection, /browserServerMatchStatus/);
-  assert.match(aboutSection, /gitDirtySummary/);
+  assert.match(aboutSection, /repoDirtySummary/);
   assert.ok(!aboutSection.includes("userAgent"), "Copy diagnostics must not include userAgent");
   const clipboardMatch = aboutSection.match(/clipboard\.writeText\(JSON\.stringify\(diag/);
   assert.ok(clipboardMatch, "must call clipboard.writeText with diag object");
   const diagBlock = aboutSection.substring(aboutSection.indexOf("const diag = {"), aboutSection.indexOf("navigator.clipboard.writeText"));
   assert.ok(!diagBlock.includes("buildInfo: buildInfo"), "diag must not include raw buildInfo object reference");
+});
+
+test("About tab labels repo HEAD as diagnostics separate from served build identity", () => {
+  const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
+  assert.match(aboutSection, /Served build commit/);
+  assert.match(aboutSection, /Repo HEAD diagnostic/);
+  assert.match(aboutSection, /Repo branch diagnostic/);
+  assert.match(aboutSection, /Repo working tree diagnostic/);
+  assert.doesNotMatch(aboutSection, /<tr><td>Git commit<\/td>/);
 });
 
 test("About tab mentions automatic build identity and version bump command", () => {

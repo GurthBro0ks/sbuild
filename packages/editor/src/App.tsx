@@ -205,31 +205,31 @@ function getBuildIdentityState(buildInfo: SBuildBuildInfo | null, buildInfoStatu
     };
   }
 
-  const serverCommit = buildInfo?.gitCommit || "unknown";
-  if (!hasKnownCommit(browserCommit) || !hasKnownCommit(serverCommit)) {
+  const servedBuildCommit = buildInfo?.gitCommit || "unknown";
+  if (!hasKnownCommit(browserCommit) || !hasKnownCommit(servedBuildCommit)) {
     return {
       status: "unverified",
       browserCommit,
-      serverCommit,
+      serverCommit: servedBuildCommit,
       message: "Version unverified - commit info unavailable.",
       detail: "Commit info is missing, so the browser/server build match cannot be verified."
     };
   }
-  if (browserCommit !== serverCommit) {
+  if (browserCommit !== servedBuildCommit) {
     return {
       status: "mismatch",
       browserCommit,
-      serverCommit,
+      serverCommit: servedBuildCommit,
       message: "Browser/server build mismatch - this browser is running an older or different sBuild bundle.",
-      detail: `Hard refresh may be needed. Browser ${browserCommit}, server ${serverCommit}.`
+      detail: `Hard refresh may be needed. Browser ${browserCommit}, server ${servedBuildCommit}.`
     };
   }
   return {
     status: "match",
     browserCommit,
-    serverCommit,
+    serverCommit: servedBuildCommit,
     message: "Browser and server build match.",
-    detail: `Browser and server are both on ${serverCommit}.`
+    detail: `Browser and server are both on ${servedBuildCommit}.`
   };
 }
 
@@ -7527,7 +7527,8 @@ export function App() {
             </div>}
             {settingsTab === "debug" && <div>
               <p><strong>Version:</strong> {SBUILD_APP_NAME} {displayVersion}</p>
-              <p><strong>Git commit:</strong> {buildIdentity.serverCommit}</p>
+              <p><strong>Served build commit:</strong> {buildIdentity.serverCommit}</p>
+              <p><strong>Repo HEAD:</strong> {buildInfo?.repoHeadCommit || "unknown"}</p>
               <p><strong>Health:</strong> {buildInfoStatus === "ok" ? "OK" : buildInfoStatus === "unavailable" ? "health unavailable - version unverified" : "checking"}</p>
               <p><strong>Selected block:</strong> {selectedBlock?.id || "none"} ({selectedBlock?.type || "none"})</p>
               <p><strong>Theme:</strong> {themeApplied || "custom"}</p>
@@ -7540,17 +7541,20 @@ export function App() {
                 <tr><td>Base version</td><td>{SBUILD_VERSION}</td></tr>
                 <tr><td>Display version</td><td>{displayVersion}</td></tr>
                 <tr><td>Service health</td><td>{buildInfoStatus === "ok" ? "OK" : buildInfoStatus === "unavailable" ? "Health unavailable - version unverified" : "Checking"}</td></tr>
-                <tr><td>Git commit</td><td>{buildIdentity.serverCommit}</td></tr>
+                <tr><td>Served build commit</td><td>{buildIdentity.serverCommit}</td></tr>
                 <tr><td>Commit count</td><td>{buildInfo?.commitCount ?? "unknown"}</td></tr>
-                <tr><td>Branch</td><td>{buildInfo?.branch || "unknown"}</td></tr>
+                <tr><td>Build branch</td><td>{buildInfo?.branch || "unknown"}</td></tr>
                 <tr><td>Build date/time</td><td>{buildInfo?.buildDate ? new Date(buildInfo.buildDate).toLocaleString() : "unknown"}</td></tr>
+                <tr><td>Repo HEAD diagnostic</td><td>{buildInfo?.repoHeadCommit || "unknown"}</td></tr>
+                <tr><td>Repo branch diagnostic</td><td>{buildInfo?.repoBranch || "unknown"}</td></tr>
                 <tr><td>Publish allowed</td><td>{buildInfoStatus === "ok" ? (buildInfo?.publishAllowed ? "Yes" : "No (dry-run)") : "unknown (health unavailable)"}</td></tr>
                 <tr><td>Loaded project source</td><td>{loadedProjectSource}</td></tr>
                 {projectPath && <tr><td>Project path</td><td>{projectPath}</td></tr>}
                 <tr><td>App dirty (unsaved edits)</td><td>{dirty ? "Yes — has unsaved changes" : "No — all saved"}</td></tr>
-                <tr><td>Git working tree</td><td>{buildInfoStatus === "ok" ? (buildInfo?.dirty ? "Modified (has local changes)" : "Clean (matches last commit)") : "unknown (health unavailable)"}</td></tr>
-                {buildInfo?.dirtySummary && (
-                  <tr><td>Git summary</td><td>{buildInfo.dirtySummary.modifiedTracked} tracked modified, {buildInfo.dirtySummary.untracked} untracked</td></tr>
+                <tr><td>Build artifact dirty</td><td>{buildInfoStatus === "ok" ? (buildInfo?.dirty ? "Yes (build included local source changes)" : "No") : "unknown (health unavailable)"}</td></tr>
+                <tr><td>Repo working tree diagnostic</td><td>{buildInfoStatus === "ok" ? (buildInfo?.repoDirty ? "Modified (has local changes)" : "Clean (matches last commit)") : "unknown (health unavailable)"}</td></tr>
+                {buildInfo?.repoDirtySummary && (
+                  <tr><td>Repo dirty summary</td><td>{buildInfo.repoDirtySummary.modifiedTracked} tracked modified, {buildInfo.repoDirtySummary.untracked} untracked</td></tr>
                 )}
               </tbody></table>
               <div style={{ marginTop: 10, marginBottom: 10 }}>
@@ -7568,11 +7572,13 @@ export function App() {
                     app: SBUILD_APP_NAME,
                     displayVersion,
                     baseVersion: SBUILD_VERSION,
-                    gitCommit: buildIdentity.serverCommit,
-                    gitCommitBrowser: buildIdentity.browserCommit,
-                    branch: buildInfo?.branch || "unknown",
+                    servedBuildCommit: buildIdentity.serverCommit,
+                    browserBuildCommit: buildIdentity.browserCommit,
+                    buildBranch: buildInfo?.branch || "unknown",
                     commitCount: buildInfo?.commitCount ?? "unknown",
                     buildDate: buildInfo?.buildDate || "unknown",
+                    repoHeadCommit: buildInfo?.repoHeadCommit || "unknown",
+                    repoBranch: buildInfo?.repoBranch || "unknown",
                     publishAllowed: buildInfo?.publishAllowed ?? false,
                     serviceHealth: buildInfoStatus === "ok" ? "ok" : buildInfoStatus === "unavailable" ? "health unavailable" : "checking",
                     healthError: buildInfoError || null,
@@ -7580,8 +7586,9 @@ export function App() {
                     browserServerMatchStatus: buildIdentity.status,
                     browserServerMatchNote: buildIdentity.detail || buildIdentity.message,
                     dirty: dirty ? "App has unsaved project edits" : "All app edits saved",
-                    gitDirty: buildInfo?.dirty ? "Source files differ from last commit" : "Clean working tree",
-                    gitDirtySummary: buildInfo?.dirtySummary || null,
+                    buildArtifactDirty: buildInfo?.dirty ? "Build included local source changes" : "Build artifact was clean",
+                    repoDirty: buildInfo?.repoDirty ? "Source files differ from last commit" : "Clean working tree",
+                    repoDirtySummary: buildInfo?.repoDirtySummary || null,
                     blocks: project?.pages.reduce((sum, p) => sum + p.blocks.length, 0) || 0,
                     pages: project?.pages.length || 0,
                     theme: themeApplied || "custom",
