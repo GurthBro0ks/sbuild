@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.url), "utf8");
+const editorSource = `${appSource}\n${behaviorSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
@@ -39,7 +41,7 @@ test("image library provides multi-select delete with confirmation", () => {
   assert.match(appSource, /data-testid="image-library-delete-confirm"/);
   assert.match(appSource, /data-testid="image-library-select-mode-toggle"/);
   assert.match(appSource, /data-testid="image-library-selected-count"/);
-  assert.match(appSource, /api\/images\/delete/);
+  assert.match(editorSource, /api\/images\/delete/);
   assert.match(appSource, /data-testid="image-library-delete-confirm-yes"/);
   assert.match(appSource, /selectAllFilteredImages/);
   assert.match(appSource, /toggleImageSelected/);
@@ -59,7 +61,7 @@ test("image library bulk delete confirmation skips .gitkeep placeholder if any s
 
 test("image library filters out non-renderable entries (.gitkeep) on load", () => {
   assert.match(appSource, /isRenderableImageMeta/);
-  assert.match(appSource, /RENDERABLE_IMAGE_EXTENSIONS/);
+  assert.match(editorSource, /RENDERABLE_IMAGE_EXTENSIONS/);
   assert.match(cssSource, /\.image-card-checkbox/);
   assert.match(cssSource, /\.image-card\.multi-selected/);
 });
@@ -963,7 +965,8 @@ test("edit mode supports direct text editing with stopPropagation on contentEdit
 
 test("direct canvas text editing does not let React control text children while focused", () => {
   assert.match(appSource, /const EditableText =/);
-  assert.match(appSource, /useLayoutEffect\(\(\) => \{[\s\S]*if \(!el \|\| focusedRef\.current(?: \|\| composingRef\.current)?\) return;[\s\S]*el\.textContent = value/);
+  assert.match(appSource, /shouldSyncEditableTextContent\(focusedRef\.current, composingRef\.current\)/);
+  assert.match(behaviorSource, /function shouldSyncEditableTextContent\(isFocused: boolean, isComposing: boolean\)/);
   assert.doesNotMatch(appSource, /<h1[^>]*contentEditable=\{!isPreview\}[\s\S]*>\{data\.heading\}<\/h1>/);
 });
 
@@ -1008,7 +1011,8 @@ test("EditableText does not commit text or overwrite textContent during IME comp
   assert.match(appSource, /onCompositionStart=\{\(\) => \{ composingRef\.current = true; \}\}/);
   assert.match(appSource, /onCompositionEnd=\{\(e\) => \{ composingRef\.current = false; commitText\(e\.currentTarget\); \}\}/);
   assert.match(appSource, /onInput=\{\(e\) => \{ if \(!composingRef\.current\) commitText\(e\.currentTarget\); \}\}/);
-  assert.match(appSource, /if \(!el \|\| focusedRef\.current \|\| composingRef\.current\) return;/);
+  assert.match(appSource, /shouldSyncEditableTextContent\(focusedRef\.current, composingRef\.current\)/);
+  assert.match(behaviorSource, /return !isFocused && !isComposing;/);
 });
 
 test("uncontrolled contentEditable sync model preserves typed character order and never reverses", () => {
@@ -3073,8 +3077,8 @@ test("Image edit Square Crop uses deterministic square output", () => {
 });
 
 test("topbar uses shared display version helper, not static SBUILD_VERSION alone", () => {
-  assert.match(appSource, /function getDisplayVersion/);
-  assert.match(appSource, /version unverified/);
+  assert.match(behaviorSource, /function getDisplayVersion/);
+  assert.match(behaviorSource, /version unverified/);
   const logoMatch = appSource.match(/className="logo".*\{SBUILD_APP_NAME\}/s);
   assert.ok(logoMatch, "topbar logo must exist");
   assert.match(logoMatch[0], /displayVersion/, "topbar logo must use shared displayVersion");
@@ -3156,15 +3160,15 @@ test("About tab shows browser/server build match hint", () => {
   assert.match(aboutSection, /buildIdentity\.message/);
   assert.match(aboutSection, /buildIdentity\.detail/);
   assert.match(aboutSection, /build-identity-status/);
-  assert.match(appSource, /Browser and server build match/);
-  assert.match(appSource, /Browser\/server build mismatch/);
-  assert.match(appSource, /older or different sBuild bundle/);
-  assert.match(appSource, /Hard refresh may be needed/);
-  assert.match(appSource, /BUILD_META\.gitCommitShort/);
+  assert.match(editorSource, /Browser and server build match/);
+  assert.match(editorSource, /Browser\/server build mismatch/);
+  assert.match(editorSource, /older or different sBuild bundle/);
+  assert.match(editorSource, /Hard refresh may be needed/);
+  assert.match(behaviorSource, /BUILD_META\.gitCommitShort/);
 });
 
 test("browser/server mismatch compares browser commit to served build health gitCommit, not repo HEAD diagnostics", () => {
-  const helperBlock = appSource.substring(appSource.indexOf("function getBuildIdentityState"), appSource.indexOf("function imagePassesFilter"));
+  const helperBlock = behaviorSource.substring(behaviorSource.indexOf("function getBuildIdentityState"), behaviorSource.indexOf("function imagePassesFilter"));
   assert.match(helperBlock, /servedBuildCommit = buildInfo\?\.gitCommit/, "mismatch must use /health.gitCommit as served build identity");
   assert.doesNotMatch(helperBlock, /repoHeadCommit/, "repo HEAD diagnostics must not drive mismatch warning");
 
@@ -3196,9 +3200,9 @@ test("About tab shows loaded project source and app dirty status in table", () =
 test("About tab shows health unavailable fallback when build info is unverified", () => {
   const aboutSection = appSource.substring(appSource.indexOf('settingsTab === "about"'));
   assert.match(aboutSection, /Service health/);
-  assert.match(aboutSection, /Health unavailable - version unverified/);
-  assert.match(appSource, /health unavailable/);
-  assert.match(appSource, /cannot be verified/);
+  assert.match(editorSource, /Health unavailable - version unverified/);
+  assert.match(editorSource, /health unavailable/);
+  assert.match(editorSource, /cannot be verified/);
 });
 
 test("loadBuildInfo marks health unavailable instead of silently falling back", () => {
@@ -3216,7 +3220,7 @@ test("version identity banner visibly surfaces mismatch and health unavailable s
   assert.match(appSource, /showVersionIdentityBanner/);
   assert.match(appSource, /data-testid="version-identity-banner"/);
   assert.match(appSource, /Version drift detected/);
-  assert.match(appSource, /older or different sBuild bundle/);
+  assert.match(editorSource, /older or different sBuild bundle/);
   assert.match(appSource, /Version unverified/);
   assert.match(appSource, /setVersionBannerDismissed\(true\)/);
   assert.match(cssSource, /\.version-identity-banner/);
@@ -3225,7 +3229,7 @@ test("version identity banner visibly surfaces mismatch and health unavailable s
 });
 
 test("build identity mismatch only fires when browser and server commits are known", () => {
-  const helperBlock = appSource.substring(appSource.indexOf("function getBuildIdentityState"), appSource.indexOf("function imagePassesFilter"));
+  const helperBlock = behaviorSource.substring(behaviorSource.indexOf("function getBuildIdentityState"), behaviorSource.indexOf("function imagePassesFilter"));
   assert.match(helperBlock, /hasKnownCommit\(browserCommit\)/);
   assert.match(helperBlock, /hasKnownCommit\(servedBuildCommit\)/);
   assert.match(helperBlock, /status:\s*"unverified"/);
@@ -3272,8 +3276,8 @@ test("About tab mentions automatic build identity and version bump command", () 
 });
 
 test("editor imports BUILD_META for browser-side commit comparison", () => {
-  assert.match(appSource, /BUILD_META/);
-  assert.match(appSource, /BUILD_META\.gitCommitShort/);
+  assert.match(behaviorSource, /BUILD_META/);
+  assert.match(behaviorSource, /BUILD_META\.gitCommitShort/);
 });
 
 test("extractBlockContent serializes d.cards array into Card N: lines", () => {
@@ -3606,7 +3610,8 @@ test("fetchJson surfaces non-ok responses as thrown errors (F-E1)", () => {
 
 test("saveProject reports failures and keeps unsaved state (F-E2)", () => {
   assert.match(appSource, /async function saveProject/);
-  assert.match(appSource, /Save failed/);
+  assert.match(editorSource, /Save failed/);
   // The failure path must keep the project dirty so the user can retry.
-  assert.match(appSource, /catch \(error\) \{[\s\S]{0,240}setDirty\(true\)/);
+  assert.match(appSource, /catch \(error\) \{[\s\S]{0,260}getSaveFailureState\(error\)/);
+  assert.match(behaviorSource, /dirty: true/);
 });

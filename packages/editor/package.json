@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "pnpm --filter @sbuild/shared build >/dev/null && tsc -p tsconfig.json --noEmit",
     "lint": "pnpm run typecheck",
-    "test": "node --test src/**/*.test.js"
+    "test": "pnpm --filter @sbuild/shared build >/dev/null && tsc -p tsconfig.test.json >/dev/null && node --test src/**/*.test.js"
   },
   "dependencies": {
     "@sbuild/shared": "workspace:*",
