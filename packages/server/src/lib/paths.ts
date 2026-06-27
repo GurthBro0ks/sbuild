@@ -5,7 +5,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const repoRoot = path.resolve(__dirname, "../../../../");
-export const projectDir = path.join(repoRoot, "project");
+const configuredDataRoot = process.env.SBUILD_DATA_ROOT?.trim();
+
+export const dataRoot = configuredDataRoot ? path.resolve(configuredDataRoot) : path.join(repoRoot, "project");
+export const projectDir = dataRoot;
 export const projectFile = path.join(projectDir, "project.json");
 export const projectImagesDir = path.join(projectDir, "images");
 export const generatedImagesDir = path.join(projectImagesDir, "generated");
