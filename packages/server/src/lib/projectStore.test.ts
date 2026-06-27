@@ -88,6 +88,28 @@ test("Markup note annotations round trip through project normalization", () => {
   ]);
 });
 
+test("Moved Markup note coordinates persist through project normalization", () => {
+  const normalized = normalizeProjectForStorage(
+    baseProject({
+      markupAnnotations: [
+        {
+          id: "note-moved",
+          type: "note",
+          pageId: "page-home",
+          x: 0.82,
+          y: 0.14,
+          text: "Moved note",
+          updatedAt: "2026-06-27T03:00:00.000Z"
+        }
+      ]
+    })
+  );
+
+  assert.equal(normalized.markupAnnotations?.[0]?.x, 0.82);
+  assert.equal(normalized.markupAnnotations?.[0]?.y, 0.14);
+  assert.equal(normalized.markupAnnotations?.[0]?.text, "Moved note");
+});
+
 test("Markup annotation normalization filters unsupported records and clamps note coordinates", () => {
   const normalized = normalizeProjectForStorage(
     baseProject({

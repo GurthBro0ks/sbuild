@@ -66,6 +66,7 @@ import {
   type ImageLibraryFilter,
   type ImageMeta
 } from "./editorBehavior.js";
+import { moveMarkupAnnotation } from "./markupAnnotations.js";
 import { MarkupWorkspace } from "./MarkupWorkspace.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
@@ -4466,6 +4467,13 @@ export function App() {
     setStatus("Markup note updated");
   }
 
+  function moveMarkupNote(id: string, x: number, y: number) {
+    const timestamp = new Date().toISOString();
+    updateMarkupAnnotations((annotations) => moveMarkupAnnotation(annotations, id, x, y, timestamp));
+    setLastAction("markup-note-move");
+    setStatus("Markup note moved");
+  }
+
   function deleteMarkupNote(id: string) {
     updateMarkupAnnotations((annotations) => annotations.filter((annotation) => annotation.id !== id));
     setLastAction("markup-note-delete");
@@ -6365,6 +6373,7 @@ export function App() {
           blockId={selectedBlock?.id || ""}
           deviceMode={deviceMode}
           annotations={currentPageMarkupAnnotations}
+          saveStatusText={withSavedStatusText(status, dirty)}
           draftStrokeCount={paintDraftStrokes.length}
           appliedStrokeCount={paintAppliedStrokes.length}
           activePointCount={paintActivePoints.length}
@@ -6379,8 +6388,10 @@ export function App() {
           onSizeChange={setPaintSize}
           onClearDraft={clearPaintDraft}
           onKeepMarkup={applyPaintOverlay}
+          onSaveProject={saveProject}
           onCreateNote={createMarkupNote}
           onUpdateNoteText={updateMarkupNoteText}
+          onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
         />
       )}

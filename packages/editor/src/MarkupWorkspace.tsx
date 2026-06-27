@@ -1,4 +1,6 @@
+import { useRef, useState, type PointerEvent } from "react";
 import type { MarkupAnnotation } from "@sbuild/shared";
+import { clampMarkupCoordinate } from "./markupAnnotations.js";
 
 type MarkupWorkspaceProps = {
   pageTitle: string;
@@ -6,6 +8,7 @@ type MarkupWorkspaceProps = {
   blockId: string;
   deviceMode: string;
   annotations: MarkupAnnotation[];
+  saveStatusText: string;
   draftStrokeCount: number;
   appliedStrokeCount: number;
   activePointCount: number;
@@ -20,8 +23,10 @@ type MarkupWorkspaceProps = {
   onSizeChange: (value: number) => void;
   onClearDraft: () => void;
   onKeepMarkup: () => void;
+  onSaveProject: () => void | Promise<void>;
   onCreateNote: () => void;
   onUpdateNoteText: (id: string, text: string) => void;
+  onMoveNote: (id: string, x: number, y: number) => void;
   onDeleteNote: (id: string) => void;
 };
 
@@ -31,6 +36,7 @@ export function MarkupWorkspace({
   blockId,
   deviceMode,
   annotations,
+  saveStatusText,
   draftStrokeCount,
   appliedStrokeCount,
   activePointCount,
@@ -45,11 +51,46 @@ export function MarkupWorkspace({
   onSizeChange,
   onClearDraft,
   onKeepMarkup,
+  onSaveProject,
   onCreateNote,
   onUpdateNoteText,
+  onMoveNote,
   onDeleteNote
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
+  const canvasFrameRef = useRef<HTMLDivElement | null>(null);
+  const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
+
+  function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
+    const rect = canvasFrameRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    onMoveNote(
+      id,
+      clampMarkupCoordinate((event.clientX - rect.left) / rect.width),
+      clampMarkupCoordinate((event.clientY - rect.top) / rect.height)
+    );
+  }
+
+  function startNoteDrag(id: string, event: PointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingNoteId(id);
+    moveNoteFromPointer(id, event);
+  }
+
+  function dragNote(id: string, event: PointerEvent<HTMLButtonElement>) {
+    if (draggingNoteId !== id) return;
+    event.preventDefault();
+    moveNoteFromPointer(id, event);
+  }
+
+  function endNoteDrag(event: PointerEvent<HTMLButtonElement>) {
+    if (draggingNoteId) {
+      moveNoteFromPointer(draggingNoteId, event);
+    }
+    setDraggingNoteId(null);
+  }
 
   return (
     <section
@@ -66,15 +107,25 @@ export function MarkupWorkspace({
             {blockId ? ` / ${blockId.slice(0, 12)}` : ""}
           </p>
         </div>
-        <button
-          type="button"
-          className="markup-workspace-close"
-          data-testid="markup-workspace-close"
-          onClick={onClose}
-          aria-label="Close Markup workspace"
-        >
-          Close Markup
-        </button>
+        <div className="markup-workspace-header-actions">
+          <button
+            type="button"
+            className="markup-workspace-save"
+            data-testid="markup-save-project"
+            onClick={() => void onSaveProject()}
+          >
+            Save Project
+          </button>
+          <button
+            type="button"
+            className="markup-workspace-close"
+            data-testid="markup-workspace-close"
+            onClick={onClose}
+            aria-label="Close Markup workspace"
+          >
+            Close Markup
+          </button>
+        </div>
       </header>
 
       <div className="markup-workspace-body">
@@ -84,6 +135,7 @@ export function MarkupWorkspace({
             <span>Draft strokes: {draftStrokeCount}</span>
             <span>Kept strokes: {appliedStrokeCount}</span>
             <span>Notes: {annotations.length}</span>
+            <span>Save: {saveStatusText}</span>
           </div>
 
           <div className="markup-workspace-toolbar" role="toolbar" aria-label="Markup tools">
@@ -146,21 +198,29 @@ export function MarkupWorkspace({
         </aside>
 
         <div className="markup-workspace-canvas-area" aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
-          <div className="markup-workspace-canvas-frame">
+          <div className="markup-workspace-canvas-frame" ref={canvasFrameRef}>
             <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
               {annotations.map((annotation, index) => (
-                <span
+                <button
+                  type="button"
                   key={annotation.id}
-                  className="markup-note-pin"
+                  className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""}`}
                   data-testid="markup-note-pin"
+                  data-markup-note-id={annotation.id}
+                  aria-label={`Move Markup note ${index + 1}`}
+                  title={`Move note ${index + 1}`}
                   style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, backgroundColor: annotation.color || "#ffcf33" }}
+                  onPointerDown={(event) => startNoteDrag(annotation.id, event)}
+                  onPointerMove={(event) => dragNote(annotation.id, event)}
+                  onPointerUp={endNoteDrag}
+                  onPointerCancel={endNoteDrag}
                 >
                   {index + 1}
-                </span>
+                </button>
               ))}
             </div>
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw freehand draft markup. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins to move them. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>

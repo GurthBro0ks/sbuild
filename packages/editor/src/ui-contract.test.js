@@ -6,7 +6,8 @@ const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.url), "utf8");
 const versionIdentityBannerSource = readFileSync(new URL("./VersionIdentityBanner.tsx", import.meta.url), "utf8");
 const markupWorkspaceSource = readFileSync(new URL("./MarkupWorkspace.tsx", import.meta.url), "utf8");
-const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}`;
+const markupAnnotationsSource = readFileSync(new URL("./markupAnnotations.ts", import.meta.url), "utf8");
+const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}\n${markupAnnotationsSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
@@ -1888,7 +1889,7 @@ test("Markup workspace keeps freehand strokes session-local while notes persist 
   assert.match(markupWorkspaceSource, /session-only/);
   assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
-  assert.doesNotMatch(markupWorkspaceSource, /fetchJson|saveProject|project\.pages|setProject|localStorage/);
+  assert.doesNotMatch(markupWorkspaceSource, /fetchJson|project\.pages|setProject|localStorage/);
 });
 
 test("clear and discard remove pending strokes", () => {
@@ -1932,14 +1933,45 @@ test("Markup sticky note controls are explicit and scoped to the workspace", () 
   assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
 });
 
+test("Markup workspace save button invokes the existing project save flow", () => {
+  assert.match(markupWorkspaceSource, /data-testid="markup-save-project"/);
+  assert.match(markupWorkspaceSource, /Save Project/);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => void onSaveProject\(\)\}/);
+  assert.match(appSource, /onSaveProject=\{saveProject\}/);
+  assert.match(markupWorkspaceSource, /Save: \{saveStatusText\}/);
+});
+
+test("Markup sticky note pins are draggable and report normalized coordinates", () => {
+  assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}/);
+  assert.match(markupWorkspaceSource, /onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /onPointerUp=\{endNoteDrag\}/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(\(event\.clientX - rect\.left\) \/ rect\.width\)/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(\(event\.clientY - rect\.top\) \/ rect\.height\)/);
+  assert.match(cssSource, /\.markup-note-pin[\s\S]*pointer-events:\s*auto/);
+  assert.match(cssSource, /\.markup-note-pin[\s\S]*touch-action:\s*none/);
+});
+
+test("Markup note move helper clamps normalized x/y and updates only the selected note", () => {
+  assert.match(markupAnnotationsSource, /export function clampMarkupCoordinate\(value: number\): number/);
+  assert.match(markupAnnotationsSource, /Math\.min\(1, Math\.max\(0, value\)\)/);
+  assert.match(markupAnnotationsSource, /export function moveMarkupAnnotation/);
+  assert.match(markupAnnotationsSource, /annotation\.id === id/);
+  assert.match(markupAnnotationsSource, /x: nextX/);
+  assert.match(markupAnnotationsSource, /y: nextY/);
+  assert.match(markupAnnotationsSource, /updatedAt/);
+});
+
 test("App wires sticky notes through project markupAnnotations without persisting freehand strokes", () => {
   assert.match(appSource, /MarkupAnnotation/);
   assert.match(appSource, /currentPageMarkupAnnotations/);
   assert.match(appSource, /project\?\.markupAnnotations \|\| \[\]/);
   assert.match(appSource, /function createMarkupNote\(\)/);
   assert.match(appSource, /function updateMarkupNoteText\(id: string, text: string\)/);
+  assert.match(appSource, /function moveMarkupNote\(id: string, x: number, y: number\)/);
   assert.match(appSource, /function deleteMarkupNote\(id: string\)/);
   assert.match(appSource, /markupAnnotations: updater\(current\.markupAnnotations \|\| \[\]\)/);
+  assert.match(appSource, /moveMarkupAnnotation\(annotations, id, x, y, timestamp\)/);
   assert.match(appSource, /setDirty\(true\)/);
   assert.doesNotMatch(appSource, /paintDraftStrokes[\s\S]{0,120}markupAnnotations/);
 });
