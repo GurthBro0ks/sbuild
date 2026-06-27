@@ -25,6 +25,7 @@ project/users.json
 data/ai-memory.json
 data/ai-chat-history.json
 data/preview-cache.json
+# sBuild mutable live/local project data
 project/project.json
 project/user-preferences.json
 project/image-folder.json

@@ -57,3 +57,7 @@ pnpm --filter @sbuild/editor dev
 - OpenCode chat uses fallback mock behavior when CLI invocation fails.
 - Publish is dry-run by default for safety.
 - Restore flow expects an explicit backup path payload.
+
+### sBuild Mutable Project Data
+
+Production mutable project data is outside the git worktree. Set `SBUILD_DATA_ROOT=/var/lib/sbuild` for production. The tracked example seed is `project/project.example.json`; do not commit live `project/project.json` changes.

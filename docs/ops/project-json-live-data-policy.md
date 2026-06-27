@@ -37,3 +37,14 @@ A safer target shape would be:
 * migration proof with backup, rollback, health checks, auth checks, and manual browser QA
 
 That migration should be its own focused phase and should not be mixed with docs, feature work, or broad cleanup.
+
+## Production migration status
+
+As of the live project data migration phase, production is configured with:
+
+* `SBUILD_DATA_ROOT=/var/lib/sbuild`
+* project data at `/var/lib/sbuild/project.json`
+* images at `/var/lib/sbuild/images`
+* backups at `/var/lib/sbuild/backups`
+
+The repo-local `project/project.json` is ignored local/live residue and must not be committed as source data. Use `project/project.example.json` as the tracked seed/example file.
