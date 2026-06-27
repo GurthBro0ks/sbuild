@@ -2,8 +2,8 @@
 
 > **Status:** Docs-only audit/plan. No `DESIGN.md` is created in this phase.
 > **Phase:** `sbuild-designmd-audit-plan`
-> **Date (UTC):** 2026-06-25
-> **Repo:** `/opt/slimy/sbuild` — branch `main`, `HEAD=1e40434` (9 ahead of `origin/main`, not pushed)
+> **Date (UTC):** 2026-06-25; current-state note added 2026-06-27
+> **Repo:** `/opt/slimy/sbuild` — branch `main`, current accepted `HEAD=b24045b`
 > **Author role:** SlimyAI ops lead (planning-only)
 >
 > This document inventories the *current* sBuild UI/design reality from code,
@@ -11,6 +11,27 @@
 > machine-readable tokens vs. human rationale, and lists the validation gate that
 > must pass **before** `DESIGN.md` is treated as source of truth. It changes no
 > runtime behavior and restarts no service.
+
+---
+
+## Current accepted state note — 2026-06-27
+
+This remains a documentation/adoption plan. It is **not** an implemented root
+`DESIGN.md`, and it does not make the design system authoritative.
+
+Current repo state to preserve during future work:
+
+- sBuild A-D follow-up is accepted at commit `21baac5`.
+- Operator QA confirmed the deployed UI reported `0.5.0-dev.142+21baac5`
+  with browser/server build match.
+- The `project/project.json` live-data policy is accepted at commit `b24045b`
+  and lives at `docs/ops/project-json-live-data-policy.md`.
+- `project/project.json` is production live/user data and may remain a tracked
+  dirty file in the production worktree. This plan must cross-reference the
+  policy, not duplicate or override it.
+- Future docs-only DESIGN.md adoption phases should not restart services,
+  deploy, change Caddy/DNS/cron/timers/tmux, touch publish settings, or create
+  root `DESIGN.md` unless that exact file is explicitly approved.
 
 ---
 
@@ -250,16 +271,17 @@ The follow-up phase must prove the documented values match shipped CSS/TS, with
 2. **Triplication reconciliation (read-only first):** confirm the three
    `--editor-*` light declarations are byte-identical except for the canvas-only
    extras (`--editor-muted`, `--editor-surface`); document any divergence.
-3. **Truth gate (no mutation, no restart):** in a throwaway workcopy run
-   `pnpm -r lint`, `pnpm -r typecheck`, `pnpm -r test`, `pnpm -r build`. All must
-   stay green at current counts (baseline: 772/772 tests per last session).
+3. **Docs-only truth gate:** for a descriptive documentation phase, run
+   `git diff --check`, `pnpm -r lint`, `pnpm -r typecheck`, and `pnpm -r test`.
+   Do not build, deploy, or restart services for docs-only adoption work.
 4. **Contract test (optional, recommended):** add a test asserting
    `themePresets` and the token file agree, so future drift fails CI.
 5. **Scope-isolation regression:** confirm canvas preview still renders with
    light `--editor-*` even when the editor shell is in dark theme.
-6. **No-op deploy proof:** if/when tokens are extracted, the built CSS must be
-   semantically identical (visual diff or hashed-rule comparison) before any
-   restart is even proposed.
+6. **Token-extraction proof, separate phase only:** if/when tokens are
+   extracted, run the broader build/visual parity proof in that later phase.
+   The built CSS must be semantically identical (visual diff or hashed-rule
+   comparison) before any restart is even proposed.
 7. **Operator sign-off:** operator confirms DESIGN.md matches the live UI on
    desktop + mobile before flipping it to "source of truth."
 
@@ -270,7 +292,8 @@ DESIGN.md stays marked `DRAFT — descriptive only` until steps 1–7 pass.
 ## 5. Files Likely Touched in the Next Phase
 
 **Next phase (write DESIGN.md, descriptive-only):**
-- `DESIGN.md` (new, root) — descriptive snapshot.
+- `DESIGN.md` (new, root) — descriptive snapshot, but only if the mission
+  explicitly names that filename.
 - `docs/sbuild-designmd-adoption-plan.md` (this file) — status update only.
 
 **Later phase (token extraction, separate sprint, higher risk):**
@@ -296,8 +319,8 @@ DESIGN.md stays marked `DRAFT — descriptive only` until steps 1–7 pass.
 | R4 | **Scope-isolation breakage** if canvas reset is "deduplicated" away | Treat canvas light reset as a contract; regression test (§4.5) |
 | R5 | **Bundling docs with refactor** raises blast radius on auth-sensitive service | Keep doc phase pure-docs; extraction is a separate gated sprint |
 | R6 | **Accessibility gaps get frozen as "the standard"** (36px targets, outline resets) | Record them as GAPs with a remediation TODO, not as approved baseline |
-| R7 | **Persistent dirty `project/project.json`** confuses "clean" claims | Document it as known/preserved; never stage it during doc work |
-| R8 | **Unpushed backlog (9 commits ahead)** means DESIGN.md describes un-pushed state | Note the HEAD/ahead status in DESIGN.md header |
+| R7 | **Persistent dirty `project/project.json`** confuses "clean" claims | Treat it as live/user data; follow `docs/ops/project-json-live-data-policy.md`; never stage it during doc work |
+| R8 | **Docs-only work accidentally becomes an implementation phase** | No root `DESIGN.md`, code edits, skill installs, build, deploy, or restart unless explicitly approved |
 
 ---
 
@@ -305,19 +328,48 @@ DESIGN.md stays marked `DRAFT — descriptive only` until steps 1–7 pass.
 
 Pulled from `claude-progress.md`, `feature_list.json`, and live repo state:
 
-1. **Caret / reverse-typing fix (`1e40434`)** is *deployed but manual QA is
-   PENDING*; `passes:false`, `accepted:false`. DESIGN.md must not state text
-   editing is "solved."
-2. **`project/project.json` is persistently dirty** (preserved, never staged);
-   `/health` reports `dirty=true`.
-3. **9 commits ahead of `origin/main`, not pushed** — described UI is local-only.
-4. **Latent testimonial quote-doubling** behavior is known and out of scope.
-5. **Duplicate image-delete endpoints (F-Q1)** deferred.
-6. **Runtime hardening closeout (`2a9b4f2`)** still BLOCKED per prior missions.
-7. **Touch targets at 36px** below the 44px recommendation; **`outline:none`
+1. **A-D follow-up is accepted at `21baac5`** and operator QA passed for the
+   visible deployed version `0.5.0-dev.142+21baac5`, browser/server match,
+   image upload/delete, caret typing, and save. DESIGN.md may reference that
+   accepted state, but it must not imply unrelated design/token extraction has
+   shipped.
+2. **`project/project.json` is live/user project data** and may remain dirty in
+   the production worktree. Follow `docs/ops/project-json-live-data-policy.md`
+   instead of treating dirty status as something to hide or clean.
+3. **Latent testimonial quote-doubling** behavior is known and out of scope.
+4. **Touch targets at 36px** below the 44px recommendation; **`outline:none`
    resets** reduce keyboard-focus visibility in places.
-8. **No contrast audit** exists for the 8 presets (esp. Retro Terminal /
+5. **No contrast audit** exists for the 8 presets (esp. Retro Terminal /
    Slimy Neon high-saturation pairs).
+
+---
+
+## Safe Future Implementation Checklist
+
+Use this checklist before any future phase converts this plan into a root
+`DESIGN.md`, installs design skills, or extracts tokens.
+
+1. Read context first:
+   - `cat /home/slimy/AGENTS.md`
+   - `cat /home/slimy/claude-progress.md`
+   - `source /home/slimy/init.sh`
+2. Record proof in a fresh `/tmp/proof_sbuild_designmd_*` directory.
+3. Run `git status --short` and identify unrelated dirty files before editing.
+4. Preserve `project/project.json` as live/user data:
+   - keep it dirty if already dirty
+   - do not stage it
+   - do not reset, delete, overwrite, move, or hide it
+   - follow `docs/ops/project-json-live-data-policy.md`
+5. Do not create root `DESIGN.md` unless that exact filename is the explicit
+   mission.
+6. Do not install, symlink, or modify skills unless explicitly approved.
+7. For docs-only work, do not build, deploy, restart `sbuild.service`, change
+   Caddy/DNS/cron/timers/tmux, or touch publish settings.
+8. For UI behavior or token extraction work, require repo validation plus
+   operator desktop/mobile browser QA before acceptance.
+9. Keep unrelated dirty work separate and commit only task-related files.
+10. Report final status using the standard fields: proof dir, validation, dirty
+    state, notification status, whether services changed, and the next step.
 
 ---
 
@@ -334,7 +386,8 @@ Pulled from `claude-progress.md`, `feature_list.json`, and live repo state:
 - [ ] Confirm copy-tone examples (§1.9) reflect the actual UI strings.
 - [ ] Confirm the Known QA Issues list (§7) is accurate and nothing is hidden.
 - [ ] Decide & confirm: the next phase **may** create a descriptive root
-      `DESIGN.md` (no code/token changes).
+      `DESIGN.md` (no code/token changes), if and only if that exact filename
+      is approved.
 - [ ] Manual QA remains **PENDING** until the operator explicitly confirms.
 
 ---
