@@ -65,6 +65,7 @@ import {
   type ImageLibraryFilter,
   type ImageMeta
 } from "./editorBehavior.js";
+import { MarkupWorkspace } from "./MarkupWorkspace.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
@@ -6301,24 +6302,26 @@ export function App() {
         />
       )}
       {paintMode && !previewMode && (
-        <div className="paint-toolbar" role="toolbar" aria-label="Markup tools">
-          <div className="paint-toolbar-header">AI Markup &mdash; draw notes for AI, not saved to website</div>
-          <button onClick={() => setPaintTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
-          <button onClick={() => setPaintTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
-          <button onClick={() => setPaintDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
-          <button onClick={() => setPaintDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
-          <input aria-label="Markup color" type="color" value={paintColor} onChange={(e) => setPaintColor(e.target.value)} />
-          <label className="paint-size-control">
-            Size
-            <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => setPaintSize(Number(e.target.value))} />
-            <span>{paintSize}px</span>
-          </label>
-          <button onClick={clearPaintDraft} disabled={paintDraftStrokes.length === 0 && paintActivePoints.length === 0}>Clear</button>
-          <button onClick={applyPaintOverlay} disabled={paintDraftStrokes.length === 0}>Keep Markup</button>
-          <button disabled className="paint-ai-attach-btn">Attach to AI (coming soon)</button>
-          <button onClick={discardPaintAndExit}>Discard Markup</button>
-          <span className="paint-toolbar-note">Click and drag to draw. Markup is only for AI notes and is not published.</span>
-        </div>
+        <MarkupWorkspace
+          pageTitle={selectedPage?.title || "No page selected"}
+          blockLabel={selectedBlock ? (blockTypeLabels[selectedBlock.type] || selectedBlock.type) : "No block selected"}
+          blockId={selectedBlock?.id || ""}
+          deviceMode={deviceMode}
+          draftStrokeCount={paintDraftStrokes.length}
+          appliedStrokeCount={paintAppliedStrokes.length}
+          activePointCount={paintActivePoints.length}
+          paintTool={paintTool}
+          paintDrawMode={paintDrawMode}
+          paintColor={paintColor}
+          paintSize={paintSize}
+          onClose={discardPaintAndExit}
+          onSelectTool={setPaintTool}
+          onSelectDrawMode={setPaintDrawMode}
+          onColorChange={setPaintColor}
+          onSizeChange={setPaintSize}
+          onClearDraft={clearPaintDraft}
+          onKeepMarkup={applyPaintOverlay}
+        />
       )}
 
       {aiTopMenuOpen && (

@@ -1304,6 +1304,7 @@ button:disabled {
   .app.mobile-shell.paint-active .workspace {
     padding-top: 60px;
   }
+
 }
 
 .paint-toolbar input[type="color"] {
@@ -1323,6 +1324,203 @@ button:disabled {
 
 .paint-size-control input[type="range"] {
   width: 100px;
+}
+
+.markup-workspace-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 12px;
+  gap: 12px;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(249, 250, 252, 0.9), rgba(249, 250, 252, 0.56)),
+    color-mix(in srgb, var(--editor-bg) 72%, transparent);
+}
+
+.theme-dark .markup-workspace-shell {
+  background:
+    linear-gradient(180deg, rgba(28, 32, 38, 0.92), rgba(28, 32, 38, 0.58)),
+    color-mix(in srgb, var(--editor-bg) 72%, transparent);
+}
+
+.markup-workspace-header,
+.markup-workspace-panel {
+  pointer-events: auto;
+  background: var(--editor-panel-bg);
+  border: 1px solid var(--editor-border);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+
+.markup-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+.markup-workspace-title-group {
+  min-width: 0;
+}
+
+.markup-workspace-title-group h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.markup-workspace-title-group p {
+  margin: 4px 0 0;
+  color: var(--editor-text-muted);
+  font-size: 12px;
+}
+
+.markup-workspace-close {
+  min-width: 112px;
+}
+
+.markup-workspace-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.markup-workspace-panel {
+  align-self: start;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.markup-workspace-context {
+  display: grid;
+  gap: 4px;
+  color: var(--editor-text-muted);
+  font-size: 12px;
+}
+
+.markup-workspace-toolbar,
+.markup-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.markup-workspace-color,
+.markup-workspace-size {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  font-size: 12px;
+}
+
+.markup-workspace-color input[type="color"] {
+  width: 40px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.markup-workspace-size input[type="range"] {
+  width: 112px;
+}
+
+.markup-workspace-ai-attach {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.markup-workspace-canvas-area {
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+
+.markup-workspace-canvas-frame {
+  width: min(100%, 760px);
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--editor-text);
+  border: 1px dashed var(--editor-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--editor-panel-bg) 70%, transparent);
+}
+
+.markup-workspace-canvas-frame p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--editor-text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .markup-workspace-shell {
+    z-index: 130;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 8px max(8px, env(safe-area-inset-bottom, 0px));
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .markup-workspace-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .markup-workspace-title-group h2 {
+    font-size: 16px;
+  }
+
+  .markup-workspace-close {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .markup-workspace-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .markup-workspace-panel {
+    align-self: stretch;
+    padding: 10px;
+  }
+
+  .markup-workspace-toolbar button,
+  .markup-workspace-actions button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+
+  .markup-workspace-color,
+  .markup-workspace-size {
+    flex: 1 1 100%;
+  }
+
+  .markup-workspace-size input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .markup-workspace-canvas-frame {
+    min-height: 120px;
+    padding: 14px;
+  }
 }
 
 /* ===== EFFECTS ===== */

@@ -5,7 +5,8 @@ import test from "node:test";
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.url), "utf8");
 const versionIdentityBannerSource = readFileSync(new URL("./VersionIdentityBanner.tsx", import.meta.url), "utf8");
-const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}`;
+const markupWorkspaceSource = readFileSync(new URL("./MarkupWorkspace.tsx", import.meta.url), "utf8");
+const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
@@ -1856,28 +1857,37 @@ test("preview mode CSS hides paint overlay", () => {
   assert.match(cssSource, /\.app\.preview \.paint-overlay/);
 });
 
-test("paint mode has explicit toolbar lifecycle controls", () => {
-  assert.match(appSource, /className="paint-toolbar"/);
-  assert.match(appSource, /role="toolbar" aria-label="Markup tools"/);
-  assert.match(appSource, />Brush<\/button>/);
-  assert.match(appSource, />Eraser<\/button>/);
-  assert.match(appSource, />Free Draw<\/button>/);
-  assert.match(appSource, />Line<\/button>/);
-  assert.match(appSource, /aria-label="Markup color"/);
-  assert.match(appSource, /aria-label="Brush size"/);
-  assert.match(appSource, />Clear<\/button>/);
-  assert.match(appSource, />Keep Markup<\/button>/);
-  assert.match(appSource, />Discard Markup<\/button>/);
-  assert.match(appSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
+test("paint mode uses a focused Markup workspace shell", () => {
+  assert.match(appSource, /import \{ MarkupWorkspace \} from "\.\/MarkupWorkspace\.js"/);
+  assert.match(appSource, /<MarkupWorkspace/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-workspace"/);
+  assert.match(markupWorkspaceSource, /role="dialog"/);
+  assert.match(markupWorkspaceSource, /aria-labelledby="markup-workspace-title"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-workspace-close"/);
+  assert.match(markupWorkspaceSource, /aria-label="Close Markup workspace"/);
+  assert.match(markupWorkspaceSource, /aria-label="Canvas preview area"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-workspace-context"/);
 });
 
-test("paint toolbar only renders in paint mode and never in preview", () => {
-  assert.match(appSource, /\{paintMode && !previewMode && \(/);
+test("paint workspace only renders in paint mode and never in preview", () => {
+  assert.match(appSource, /\{paintMode && !previewMode && \([\s\S]{0,120}<MarkupWorkspace/);
 });
 
 test("paint mode entering does not auto-start stroke", () => {
   assert.match(appSource, /setPaintMode\(\(p\) => !p\); setPaintActivePoints\(\[\]\)/);
   assert.match(appSource, /if \(!paintMode \|\| previewMode\) return;/);
+});
+
+test("Markup workspace close returns to normal editor state through existing discard path", () => {
+  assert.match(appSource, /onClose=\{discardPaintAndExit\}/);
+  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,180}setPaintMode\(false\)/);
+  assert.match(markupWorkspaceSource, /onClick=\{onClose\}/);
+});
+
+test("Markup workspace keeps first slice session-local with no project schema persistence", () => {
+  assert.match(markupWorkspaceSource, /session-only/);
+  assert.match(markupWorkspaceSource, /persistence, annotation schema, advanced drawing tools, and AI attach are not implemented/);
+  assert.doesNotMatch(markupWorkspaceSource, /fetchJson|saveProject|project\.pages|setProject|localStorage/);
 });
 
 test("clear and discard remove pending strokes", () => {
@@ -2141,23 +2151,22 @@ test("desktop right panel restore button still opens panel", () => {
   assert.match(appSource, /right-drawer-restore-btn[\s\S]{0,100}onClick=\{\(\) => setRightCollapsed\(false\)/);
 });
 
-test("paint toolbar is positioned in editor chrome stack", () => {
+test("Markup workspace is positioned in editor chrome stack", () => {
   const spacerIdx = appSource.indexOf('className="topbar-mobile-spacer"');
-  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+  const workspaceShellIdx = appSource.indexOf("<MarkupWorkspace");
   const workspaceIdx = appSource.indexOf('className={`workspace');
   assert.ok(spacerIdx > 0, "topbar-mobile-spacer exists");
-  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(workspaceShellIdx > 0, "MarkupWorkspace exists");
   assert.ok(workspaceIdx > 0, "workspace exists");
-  assert.ok(spacerIdx < toolbarIdx, "paint toolbar is after spacer in DOM");
-  assert.ok(toolbarIdx < workspaceIdx, "paint toolbar is before workspace in DOM");
+  assert.ok(spacerIdx < workspaceShellIdx, "Markup workspace is after spacer in DOM");
+  assert.ok(workspaceShellIdx < workspaceIdx, "Markup workspace is before workspace in DOM");
 });
 
-test("paint toolbar uses static positioning on desktop and fixed on mobile", () => {
-  assert.match(cssSource, /\.paint-toolbar[\s\S]*position:\s*static/);
-  assert.match(cssSource, /\.paint-toolbar[\s\S]*z-index:\s*40/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*position:\s*fixed/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*top:\s*max\(var\(--mobile-topbar-h/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.paint-toolbar[\s\S]*z-index:\s*25/);
+test("Markup workspace uses fixed full-page positioning and mobile z-index", () => {
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]*position:\s*fixed/);
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]*inset:\s*0/);
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]*z-index:\s*120/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.markup-workspace-shell[\s\S]*z-index:\s*130/);
 });
 
 test("paint overlay SVG does not use viewBox scaling", () => {
@@ -2188,25 +2197,25 @@ test("paint exclusive mode applies user-select none", () => {
   assert.match(cssSource, /\.canvas-frame\.paint-exclusive[\s\S]*user-select:\s*none/);
 });
 
-test("paint toolbar is only present in paint mode not preview", () => {
+test("Markup workspace is only present in paint mode not preview", () => {
   assert.match(appSource, /\{paintMode && !previewMode && \(/);
-  assert.match(appSource, /className="paint-toolbar"/);
+  assert.match(appSource, /<MarkupWorkspace/);
 });
 
-test("paint toolbar is not inside paint-overlay SVG", () => {
-  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+test("Markup workspace is not inside paint-overlay SVG", () => {
+  const workspaceShellIdx = appSource.indexOf("<MarkupWorkspace");
   const overlayIdx = appSource.indexOf('className={`paint-overlay');
-  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(workspaceShellIdx > 0, "MarkupWorkspace exists");
   assert.ok(overlayIdx > 0, "paint-overlay exists");
-  assert.ok(toolbarIdx < overlayIdx, "paint toolbar is before paint-overlay in DOM, not inside it");
+  assert.ok(workspaceShellIdx < overlayIdx, "Markup workspace is before paint-overlay in DOM, not inside it");
 });
 
-test("paint toolbar is outside canvas-area scroll container", () => {
-  const toolbarIdx = appSource.indexOf('className="paint-toolbar"');
+test("Markup workspace is outside canvas-area scroll container", () => {
+  const workspaceShellIdx = appSource.indexOf("<MarkupWorkspace");
   const canvasAreaIdx = appSource.indexOf('className="canvas-area"');
-  assert.ok(toolbarIdx > 0, "paint-toolbar exists");
+  assert.ok(workspaceShellIdx > 0, "MarkupWorkspace exists");
   assert.ok(canvasAreaIdx > 0, "canvas-area exists");
-  assert.ok(toolbarIdx < canvasAreaIdx, "paint toolbar is before canvas-area in DOM, outside scroll container");
+  assert.ok(workspaceShellIdx < canvasAreaIdx, "Markup workspace is before canvas-area in DOM, outside scroll container");
 });
 
 test("paint-active class added to app container when paint mode is on", () => {
@@ -2519,9 +2528,25 @@ test("paint-overlay has width/height 100% and touch-action none when capturing",
   assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*user-select:\s*none/);
 });
 
+test("Markup workspace shell is full-page editor chrome with click-through canvas area", () => {
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]{0,240}position:\s*fixed/);
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]{0,240}inset:\s*0/);
+  assert.match(cssSource, /\.markup-workspace-shell[\s\S]{0,320}pointer-events:\s*none/);
+  assert.match(cssSource, /\.markup-workspace-header,[\s\S]{0,120}\.markup-workspace-panel[\s\S]{0,120}pointer-events:\s*auto/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,180}pointer-events:\s*none/);
+});
+
+test("Markup workspace mobile close control remains reachable", () => {
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1600}\.markup-workspace-shell[\s\S]{0,120}z-index:\s*130/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1800}\.markup-workspace-header[\s\S]{0,180}flex-direction:\s*column/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}width:\s*100%/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-height:\s*40px/);
+});
+
 test("markup toolbar shows click-drag instruction", () => {
-  assert.match(appSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
-  assert.match(appSource, />Discard Markup<\/button>/);
+  assert.match(markupWorkspaceSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
+  assert.match(markupWorkspaceSource, /advanced drawing tools/);
+  assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
 });
 
 test("canvas-area uses site-theme background var not editor var", () => {
