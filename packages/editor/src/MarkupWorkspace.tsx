@@ -60,6 +60,7 @@ export function MarkupWorkspace({
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
   const canvasFrameRef = useRef<HTMLDivElement | null>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
+  const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
 
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
     const rect = canvasFrameRef.current?.getBoundingClientRect();
@@ -82,6 +83,7 @@ export function MarkupWorkspace({
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    setArmedMoveNoteId(null);
     setDraggingNoteId(id);
     moveNoteFromPointer(id, event);
   }
@@ -97,6 +99,21 @@ export function MarkupWorkspace({
       moveNoteFromPointer(draggingNoteId, event);
     }
     setDraggingNoteId(null);
+  }
+
+  function armNoteMove(id: string) {
+    setDraggingNoteId(null);
+    setArmedMoveNoteId((currentId) => (currentId === id ? null : id));
+  }
+
+  function placeArmedNote(event: PointerEvent<HTMLDivElement>) {
+    if (!armedMoveNoteId) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest(".markup-note-pin")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveNoteFromPointer(armedMoveNoteId, event);
+    setArmedMoveNoteId(null);
   }
 
   return (
@@ -186,20 +203,21 @@ export function MarkupWorkspace({
                 {annotations.map((annotation, index) => (
                   <article className="markup-workspace-note-editor" data-testid="markup-note-editor" key={annotation.id}>
                     <div
-                      className={`markup-workspace-note-handle ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                      className={`markup-workspace-note-handle ${armedMoveNoteId === annotation.id ? "move-armed" : ""}`}
                       data-testid="markup-note-drag-handle"
                       data-markup-note-id={annotation.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Move Markup note ${index + 1}`}
-                      title={`Drag to move note ${index + 1}`}
-                      onPointerDown={(event) => startNoteDrag(annotation.id, event)}
-                      onPointerMove={(event) => dragNote(annotation.id, event)}
-                      onPointerUp={endNoteDrag}
-                      onPointerCancel={endNoteDrag}
                     >
                       <span>Note {index + 1}</span>
-                      <span aria-hidden="true">Move</span>
+                      <button
+                        type="button"
+                        className="markup-workspace-note-move"
+                        data-testid="markup-note-move"
+                        data-markup-note-id={annotation.id}
+                        aria-pressed={armedMoveNoteId === annotation.id}
+                        onClick={() => armNoteMove(annotation.id)}
+                      >
+                        Move
+                      </button>
                     </div>
                     <label>
                       Text
@@ -220,8 +238,12 @@ export function MarkupWorkspace({
           </section>
         </aside>
 
-        <div className="markup-workspace-canvas-area" aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
-          <div className="markup-workspace-canvas-frame" ref={canvasFrameRef}>
+        <div className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""}`} aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
+          <div
+            className={`markup-workspace-canvas-frame ${armedMoveNoteId ? "move-armed" : ""}`}
+            ref={canvasFrameRef}
+            onPointerDown={placeArmedNote}
+          >
             <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
               {annotations.map((annotation, index) => (
                 <button
@@ -243,7 +265,7 @@ export function MarkupWorkspace({
               ))}
             </div>
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw freehand draft markup. Drag numbered note pins to move them. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins, or choose Move on a note and click the canvas. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>

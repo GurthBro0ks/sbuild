@@ -1506,21 +1506,28 @@ button:disabled {
   background: color-mix(in srgb, var(--editor-panel-bg) 76%, var(--editor-bg));
   font-size: 12px;
   font-weight: 700;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
+  cursor: default;
+  touch-action: pan-y;
+  user-select: auto;
 }
 
-.markup-workspace-note-handle span:last-child {
-  color: var(--editor-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.markup-workspace-note-handle.dragging {
-  cursor: grabbing;
+.markup-workspace-note-handle.move-armed {
   border-style: solid;
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16);
+  border-color: var(--editor-highlight);
+  background: color-mix(in srgb, var(--editor-highlight) 10%, var(--editor-panel-bg));
+}
+
+.markup-workspace-note-move {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.markup-workspace-note-move[aria-pressed="true"] {
+  background: var(--editor-highlight);
+  border-color: var(--editor-highlight);
+  color: #ffffff;
 }
 
 .markup-workspace-note-editor label {
@@ -1543,6 +1550,10 @@ button:disabled {
   place-items: center;
 }
 
+.markup-workspace-canvas-area.move-armed {
+  pointer-events: auto;
+}
+
 .markup-workspace-canvas-frame {
   position: relative;
   width: min(100%, 760px);
@@ -1558,10 +1569,17 @@ button:disabled {
   background: color-mix(in srgb, var(--editor-panel-bg) 70%, transparent);
 }
 
+.markup-workspace-canvas-frame.move-armed {
+  cursor: crosshair;
+  outline: 2px solid var(--editor-highlight);
+  outline-offset: 2px;
+}
+
 .markup-note-pin-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 2;
 }
 
 .markup-note-pin {
@@ -1581,6 +1599,7 @@ button:disabled {
   pointer-events: auto;
   cursor: grab;
   touch-action: none;
+  z-index: 3;
 }
 
 .markup-note-pin::before {
@@ -1593,7 +1612,7 @@ button:disabled {
 .markup-note-pin.dragging {
   cursor: grabbing;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34);
-  z-index: 2;
+  z-index: 4;
 }
 
 .markup-workspace-canvas-frame p {
