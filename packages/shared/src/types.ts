@@ -355,6 +355,21 @@ export interface SBuildDeploySettings {
   githubRepo?: string;
 }
 
+export type MarkupAnnotationType = "note";
+
+export interface MarkupAnnotation {
+  id: string;
+  type: MarkupAnnotationType;
+  pageId: string;
+  blockId?: string;
+  x: number;
+  y: number;
+  text: string;
+  color?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface SBuildProject {
   version: string;
   updatedAt: string;
@@ -362,6 +377,7 @@ export interface SBuildProject {
   globalStyles: SBuildGlobalStyles;
   ai: SBuildAISettings;
   deploy: SBuildDeploySettings;
+  markupAnnotations?: MarkupAnnotation[];
   pages: SBuildPage[];
   selectedTheme?: string;
 }

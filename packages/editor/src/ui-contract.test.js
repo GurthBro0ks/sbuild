@@ -1884,9 +1884,10 @@ test("Markup workspace close returns to normal editor state through existing dis
   assert.match(markupWorkspaceSource, /onClick=\{onClose\}/);
 });
 
-test("Markup workspace keeps first slice session-local with no project schema persistence", () => {
+test("Markup workspace keeps freehand strokes session-local while notes persist through project schema", () => {
   assert.match(markupWorkspaceSource, /session-only/);
-  assert.match(markupWorkspaceSource, /Persistence, annotation schema, advanced drawing tools, and AI attach are not implemented/);
+  assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
+  assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
   assert.doesNotMatch(markupWorkspaceSource, /fetchJson|saveProject|project\.pages|setProject|localStorage/);
 });
 
@@ -1919,6 +1920,28 @@ test("Keep Markup is explicit and session-only without marking the project dirty
   assert.ok(keepFnIdx > 0, "applyPaintOverlay function exists");
   const keepFn = appSource.substring(keepFnIdx, appSource.indexOf("function discardPaintAndExit()", keepFnIdx));
   assert.doesNotMatch(keepFn, /setDirty\(true\)/);
+});
+
+test("Markup sticky note controls are explicit and scoped to the workspace", () => {
+  assert.match(markupWorkspaceSource, /data-testid="markup-add-note"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-editor"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-text"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-delete-note"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-pin"/);
+  assert.match(markupWorkspaceSource, /aria-label="Sticky note annotations"/);
+  assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
+});
+
+test("App wires sticky notes through project markupAnnotations without persisting freehand strokes", () => {
+  assert.match(appSource, /MarkupAnnotation/);
+  assert.match(appSource, /currentPageMarkupAnnotations/);
+  assert.match(appSource, /project\?\.markupAnnotations \|\| \[\]/);
+  assert.match(appSource, /function createMarkupNote\(\)/);
+  assert.match(appSource, /function updateMarkupNoteText\(id: string, text: string\)/);
+  assert.match(appSource, /function deleteMarkupNote\(id: string\)/);
+  assert.match(appSource, /markupAnnotations: updater\(current\.markupAnnotations \|\| \[\]\)/);
+  assert.match(appSource, /setDirty\(true\)/);
+  assert.doesNotMatch(appSource, /paintDraftStrokes[\s\S]{0,120}markupAnnotations/);
 });
 
 test("paint overlay captures pointer events only in exclusive paint mode", () => {
@@ -2565,9 +2588,11 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
 });
 
 test("markup toolbar shows click-drag instruction", () => {
-  assert.match(markupWorkspaceSource, /Click and drag to draw\./);
-  assert.match(markupWorkspaceSource, /Markup is session-only, not published, and discarded when you close this workspace/);
-  assert.match(markupWorkspaceSource, /advanced drawing tools/);
+  assert.match(markupWorkspaceSource, /Click and drag to draw freehand draft markup/);
+  assert.match(markupWorkspaceSource, /Freehand strokes are session-only/);
+  assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
+  assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
+  assert.match(markupWorkspaceSource, /Advanced drawing tools/);
   assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
 });
 

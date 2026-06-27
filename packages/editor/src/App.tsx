@@ -6,6 +6,7 @@ import {
   DividerStyle,
   ImageSizeDecision,
   ImageTargetContext,
+  MarkupAnnotation,
   SBuildNavItem,
   SBuildPage,
   SBuildProject,
@@ -1856,6 +1857,10 @@ export function App() {
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
   const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
+  const currentPageMarkupAnnotations = useMemo(
+    () => (project?.markupAnnotations || []).filter((annotation) => annotation.type === "note" && annotation.pageId === selectedPage?.id),
+    [project?.markupAnnotations, selectedPage?.id]
+  );
   const rowRenderItems = useMemo(() => toRowRenderItems(selectedPage?.blocks || []), [selectedPage?.blocks]);
   const shouldStackRows = deviceMode === "phone";
   const usedImageUrls = useMemo(() => collectUsedImageUrls(project), [project]);
@@ -4415,6 +4420,58 @@ export function App() {
     setStatus("Discarded markup");
   }
 
+  function updateMarkupAnnotations(updater: (annotations: MarkupAnnotation[]) => MarkupAnnotation[]) {
+    setProject((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        markupAnnotations: updater(current.markupAnnotations || [])
+      };
+    });
+    setDirty(true);
+  }
+
+  function createMarkupNote() {
+    if (!selectedPage) {
+      setStatus("Select a page before adding a Markup note");
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    const note: MarkupAnnotation = {
+      id: `note-${Date.now()}`,
+      type: "note",
+      pageId: selectedPage.id,
+      blockId: selectedBlock?.id,
+      x: 0.5,
+      y: 0.5,
+      text: "New markup note",
+      color: paintColor,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    updateMarkupAnnotations((annotations) => [...annotations, note]);
+    setLastAction("markup-note-create");
+    setStatus("Markup note added");
+  }
+
+  function updateMarkupNoteText(id: string, text: string) {
+    const timestamp = new Date().toISOString();
+    updateMarkupAnnotations((annotations) =>
+      annotations.map((annotation) =>
+        annotation.id === id ? { ...annotation, text, updatedAt: timestamp } : annotation
+      )
+    );
+    setLastAction("markup-note-edit");
+    setStatus("Markup note updated");
+  }
+
+  function deleteMarkupNote(id: string) {
+    updateMarkupAnnotations((annotations) => annotations.filter((annotation) => annotation.id !== id));
+    setLastAction("markup-note-delete");
+    setStatus("Markup note deleted");
+  }
+
   // Drag reorder handlers
   function handleDragStart(blockId: string, index: number) {
     setDrag({ blockId, startIndex: index, currentIndex: index });
@@ -6307,6 +6364,7 @@ export function App() {
           blockLabel={selectedBlock ? (blockTypeLabels[selectedBlock.type] || selectedBlock.type) : "No block selected"}
           blockId={selectedBlock?.id || ""}
           deviceMode={deviceMode}
+          annotations={currentPageMarkupAnnotations}
           draftStrokeCount={paintDraftStrokes.length}
           appliedStrokeCount={paintAppliedStrokes.length}
           activePointCount={paintActivePoints.length}
@@ -6321,6 +6379,9 @@ export function App() {
           onSizeChange={setPaintSize}
           onClearDraft={clearPaintDraft}
           onKeepMarkup={applyPaintOverlay}
+          onCreateNote={createMarkupNote}
+          onUpdateNoteText={updateMarkupNoteText}
+          onDeleteNote={deleteMarkupNote}
         />
       )}
 

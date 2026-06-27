@@ -39,6 +39,7 @@
     "webRoot": "/var/www/blackfishfarms.com",
     "githubRepo": ""
   },
+  "markupAnnotations": [],
   "pages": [
     {
       "id": "page-home",

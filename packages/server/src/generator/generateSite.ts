@@ -134,14 +134,11 @@ async function copyProjectImages(): Promise<void> {
   }
 }
 
-export async function generateSite(project: SBuildProject): Promise<{ outputDir: string; files: string[] }> {
-  await fs.mkdir(distDir, { recursive: true });
-  await fs.mkdir(path.join(distDir, "assets"), { recursive: true });
-
+export function renderSiteDocument(project: SBuildProject): string {
   const home = project.pages.find((p) => p.slug === "/") || project.pages[0];
   const blocksHtml = home.blocks.map((b) => renderBlock(b)).join("\n");
 
-  const html = `<!doctype html>
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -159,6 +156,13 @@ export async function generateSite(project: SBuildProject): Promise<{ outputDir:
 <footer><small>${escapeHtml(project.site.siteName)} · ${new Date().getFullYear()}</small></footer>
 </body>
 </html>`;
+}
+
+export async function generateSite(project: SBuildProject): Promise<{ outputDir: string; files: string[] }> {
+  await fs.mkdir(distDir, { recursive: true });
+  await fs.mkdir(path.join(distDir, "assets"), { recursive: true });
+
+  const html = renderSiteDocument(project);
 
   const styles = `:root{--bg:${project.globalStyles.colors.bg};--surface:${project.globalStyles.colors.surface};--text:${project.globalStyles.colors.text};--accent:${project.globalStyles.colors.accent};--muted:${project.globalStyles.colors.muted};}
 *{box-sizing:border-box}

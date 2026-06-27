@@ -1,8 +1,11 @@
+import type { MarkupAnnotation } from "@sbuild/shared";
+
 type MarkupWorkspaceProps = {
   pageTitle: string;
   blockLabel: string;
   blockId: string;
   deviceMode: string;
+  annotations: MarkupAnnotation[];
   draftStrokeCount: number;
   appliedStrokeCount: number;
   activePointCount: number;
@@ -17,6 +20,9 @@ type MarkupWorkspaceProps = {
   onSizeChange: (value: number) => void;
   onClearDraft: () => void;
   onKeepMarkup: () => void;
+  onCreateNote: () => void;
+  onUpdateNoteText: (id: string, text: string) => void;
+  onDeleteNote: (id: string) => void;
 };
 
 export function MarkupWorkspace({
@@ -24,6 +30,7 @@ export function MarkupWorkspace({
   blockLabel,
   blockId,
   deviceMode,
+  annotations,
   draftStrokeCount,
   appliedStrokeCount,
   activePointCount,
@@ -37,7 +44,10 @@ export function MarkupWorkspace({
   onColorChange,
   onSizeChange,
   onClearDraft,
-  onKeepMarkup
+  onKeepMarkup,
+  onCreateNote,
+  onUpdateNoteText,
+  onDeleteNote
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
 
@@ -73,6 +83,7 @@ export function MarkupWorkspace({
             <span>View: {deviceMode}</span>
             <span>Draft strokes: {draftStrokeCount}</span>
             <span>Kept strokes: {appliedStrokeCount}</span>
+            <span>Notes: {annotations.length}</span>
           </div>
 
           <div className="markup-workspace-toolbar" role="toolbar" aria-label="Markup tools">
@@ -103,12 +114,53 @@ export function MarkupWorkspace({
             </button>
             <button type="button" disabled className="markup-workspace-ai-attach">Attach to AI (coming later)</button>
           </div>
+
+          <section className="markup-workspace-notes" aria-label="Sticky note annotations">
+            <div className="markup-workspace-notes-header">
+              <h3>Sticky notes</h3>
+              <button type="button" onClick={onCreateNote} data-testid="markup-add-note">Add Note</button>
+            </div>
+            {annotations.length === 0 ? (
+              <p className="markup-workspace-note-empty">No saved notes on this page.</p>
+            ) : (
+              <div className="markup-workspace-note-list">
+                {annotations.map((annotation, index) => (
+                  <article className="markup-workspace-note-editor" data-testid="markup-note-editor" key={annotation.id}>
+                    <label>
+                      Note {index + 1}
+                      <textarea
+                        value={annotation.text}
+                        onChange={(event) => onUpdateNoteText(annotation.id, event.target.value)}
+                        data-testid="markup-note-text"
+                        aria-label={`Markup note ${index + 1} text`}
+                      />
+                    </label>
+                    <button type="button" onClick={() => onDeleteNote(annotation.id)} data-testid="markup-delete-note">
+                      Delete
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
         </aside>
 
         <div className="markup-workspace-canvas-area" aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
           <div className="markup-workspace-canvas-frame">
+            <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
+              {annotations.map((annotation, index) => (
+                <span
+                  key={annotation.id}
+                  className="markup-note-pin"
+                  data-testid="markup-note-pin"
+                  style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, backgroundColor: annotation.color || "#ffcf33" }}
+                >
+                  {index + 1}
+                </span>
+              ))}
+            </div>
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw. Markup is session-only, not published, and discarded when you close this workspace unless you keep it during this Markup session. Persistence, annotation schema, advanced drawing tools, and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw freehand draft markup. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>

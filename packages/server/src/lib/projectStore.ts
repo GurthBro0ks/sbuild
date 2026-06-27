@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { SBuildProject } from "@sbuild/shared";
+import { MarkupAnnotation, SBuildProject } from "@sbuild/shared";
 import { projectDir, projectFile, projectImagesDir, templateProjectFile } from "./paths.js";
 
 async function ensureDir(p: string): Promise<void> {
@@ -34,6 +34,53 @@ export function validateProjectShape(project: unknown): project is SBuildProject
   );
 }
 
+function clampUnit(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function normalizeMarkupAnnotations(value: unknown, timestamp = new Date().toISOString()): MarkupAnnotation[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((raw): MarkupAnnotation[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const annotation = raw as Record<string, unknown>;
+    if (annotation.type !== "note") return [];
+
+    const id = optionalString(annotation.id);
+    const pageId = optionalString(annotation.pageId);
+    if (!id || !pageId) return [];
+
+    return [
+      {
+        id,
+        type: "note",
+        pageId,
+        blockId: optionalString(annotation.blockId),
+        x: clampUnit(annotation.x, 0.5),
+        y: clampUnit(annotation.y, 0.5),
+        text: typeof annotation.text === "string" ? annotation.text.slice(0, 2000) : "",
+        color: optionalString(annotation.color),
+        createdAt: optionalString(annotation.createdAt) || timestamp,
+        updatedAt: optionalString(annotation.updatedAt) || timestamp
+      }
+    ];
+  });
+}
+
+export function normalizeProjectForStorage(project: SBuildProject): SBuildProject {
+  return {
+    ...project,
+    markupAnnotations: normalizeMarkupAnnotations(project.markupAnnotations)
+  };
+}
+
 export async function ensureProjectInitialized(): Promise<void> {
   await ensureDir(projectDir);
   await ensureDir(projectImagesDir);
@@ -51,7 +98,7 @@ export async function loadProject(): Promise<SBuildProject> {
   if (!validateProjectShape(parsed)) {
     throw new Error("project.json has invalid shape");
   }
-  return parsed;
+  return normalizeProjectForStorage(parsed);
 }
 
 export async function saveProject(project: SBuildProject): Promise<void> {
@@ -59,7 +106,7 @@ export async function saveProject(project: SBuildProject): Promise<void> {
     throw new Error("Refusing to save invalid project shape");
   }
   const next = {
-    ...project,
+    ...normalizeProjectForStorage(project),
     updatedAt: new Date().toISOString()
   };
   await ensureDir(path.dirname(projectFile));

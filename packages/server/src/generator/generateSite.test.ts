@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderBlock } from "./generateSite.js";
-import type { Block } from "@sbuild/shared";
+import { renderBlock, renderSiteDocument } from "./generateSite.js";
+import type { Block, SBuildProject } from "@sbuild/shared";
 
 // renderBlock is the pure HTML renderer at the heart of generateSite(). These
 // tests exercise real rendering + escaping behavior without writing to disk
@@ -76,4 +76,61 @@ test("renderBlock divider emits an hr and carries the block id/class", () => {
 test("renderBlock falls back to a safe placeholder for unknown block types", () => {
   const html = renderBlock(block("totally-unknown" as Block["type"], {}));
   assert.match(html, /Unsupported block type/);
+});
+
+test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {
+  const project: SBuildProject = {
+    version: "0.1.0",
+    updatedAt: "2026-06-27T00:00:00.000Z",
+    site: {
+      siteName: "Public Site",
+      title: "Public Site",
+      description: "Public description",
+      nav: []
+    },
+    globalStyles: {
+      headingFont: "Inter",
+      bodyFont: "Inter",
+      colors: {
+        bg: "#ffffff",
+        surface: "#f6f6f6",
+        text: "#111111",
+        accent: "#2b6dff",
+        muted: "#666666"
+      }
+    },
+    ai: {
+      provider: "disabled",
+      model: ""
+    },
+    deploy: {
+      method: "dry-run",
+      webRoot: ""
+    },
+    markupAnnotations: [
+      {
+        id: "private-note-1",
+        type: "note",
+        pageId: "page-home",
+        x: 0.5,
+        y: 0.5,
+        text: "Internal annotation only"
+      }
+    ],
+    pages: [
+      {
+        id: "page-home",
+        slug: "/",
+        title: "Home",
+        blocks: [block("text", { title: "Visible", body: "Public body" })]
+      }
+    ]
+  };
+
+  const html = renderSiteDocument(project);
+
+  assert.match(html, /Public body/);
+  assert.doesNotMatch(html, /markupAnnotations/);
+  assert.doesNotMatch(html, /private-note-1/);
+  assert.doesNotMatch(html, /Internal annotation only/);
 });
