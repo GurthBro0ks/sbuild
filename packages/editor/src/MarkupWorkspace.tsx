@@ -93,7 +93,14 @@ export function MarkupWorkspace({
 
           <div className="markup-workspace-actions">
             <button type="button" onClick={onClearDraft} disabled={!hasDraftMarkup}>Clear Draft</button>
-            <button type="button" onClick={onKeepMarkup} disabled={draftStrokeCount === 0}>Keep Markup</button>
+            <button
+              type="button"
+              onClick={onKeepMarkup}
+              disabled={draftStrokeCount === 0}
+              aria-label="Keep draft markup in this Markup session"
+            >
+              Keep in Session
+            </button>
             <button type="button" disabled className="markup-workspace-ai-attach">Attach to AI (coming later)</button>
           </div>
         </aside>
@@ -101,7 +108,7 @@ export function MarkupWorkspace({
         <div className="markup-workspace-canvas-area" aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
           <div className="markup-workspace-canvas-frame">
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw. Markup is only for AI notes and is not published. This shell keeps markup session-only; persistence, annotation schema, advanced drawing tools, and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw. Markup is session-only, not published, and discarded when you close this workspace unless you keep it during this Markup session. Persistence, annotation schema, advanced drawing tools, and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>

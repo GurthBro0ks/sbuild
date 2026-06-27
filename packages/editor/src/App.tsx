@@ -4403,13 +4403,13 @@ export function App() {
     setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes]);
     setPaintDraftStrokes([]);
     setPaintActivePoints([]);
-    setDirty(true);
     setLastAction("paint-apply-overlay");
-    setStatus("Markup kept in this session");
+    setStatus("Markup kept in this Markup session");
   }
 
   function discardPaintAndExit() {
     setPaintDraftStrokes([]);
+    setPaintAppliedStrokes([]);
     setPaintActivePoints([]);
     setPaintMode(false);
     setStatus("Discarded markup");
@@ -6264,7 +6264,7 @@ export function App() {
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
           <div className="logo" title={`sBuild ${displayVersion} - base ${SBUILD_VERSION}, commit count ${buildInfo?.commitCount ?? "?"}, server commit ${buildIdentity.serverCommit}, browser commit ${buildIdentity.browserCommit}`}>{SBUILD_APP_NAME} {displayVersion.toUpperCase()}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-          <button onClick={() => { setPaintMode((p) => !p); setPaintActivePoints([]); setStatus(paintMode ? "Markup mode off" : "Markup mode on"); if (!paintMode) setAiTopMenuOpen(false); }} className={paintMode ? "active" : ""}>Markup</button>
+          <button onClick={() => { if (paintMode) { discardPaintAndExit(); } else { setPaintMode(true); setPaintActivePoints([]); setPaintAppliedStrokes([]); setStatus("Markup mode on"); setAiTopMenuOpen(false); } }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Library opened"); }}>Images</button>
@@ -7005,7 +7005,7 @@ export function App() {
               </div>
             )})}
 
-            {(paintMode || paintAppliedStrokes.length > 0) && (
+            {paintMode && (
               <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
                 {paintAppliedStrokes.map((stroke) => (
                   <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" />

@@ -1874,19 +1874,19 @@ test("paint workspace only renders in paint mode and never in preview", () => {
 });
 
 test("paint mode entering does not auto-start stroke", () => {
-  assert.match(appSource, /setPaintMode\(\(p\) => !p\); setPaintActivePoints\(\[\]\)/);
+  assert.match(appSource, /setPaintMode\(true\); setPaintActivePoints\(\[\]\); setPaintAppliedStrokes\(\[\]\)/);
   assert.match(appSource, /if \(!paintMode \|\| previewMode\) return;/);
 });
 
 test("Markup workspace close returns to normal editor state through existing discard path", () => {
   assert.match(appSource, /onClose=\{discardPaintAndExit\}/);
-  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,180}setPaintMode\(false\)/);
+  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,220}setPaintAppliedStrokes\(\[\]\)[\s\S]{0,160}setPaintMode\(false\)/);
   assert.match(markupWorkspaceSource, /onClick=\{onClose\}/);
 });
 
 test("Markup workspace keeps first slice session-local with no project schema persistence", () => {
   assert.match(markupWorkspaceSource, /session-only/);
-  assert.match(markupWorkspaceSource, /persistence, annotation schema, advanced drawing tools, and AI attach are not implemented/);
+  assert.match(markupWorkspaceSource, /Persistence, annotation schema, advanced drawing tools, and AI attach are not implemented/);
   assert.doesNotMatch(markupWorkspaceSource, /fetchJson|saveProject|project\.pages|setProject|localStorage/);
 });
 
@@ -1894,6 +1894,8 @@ test("clear and discard remove pending strokes", () => {
   assert.match(appSource, /function clearPaintDraft\(\)/);
   assert.match(appSource, /setPaintDraftStrokes\(\[\]\)/);
   assert.match(appSource, /function discardPaintAndExit\(\)/);
+  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,120}setPaintDraftStrokes\(\[\]\)/);
+  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,160}setPaintAppliedStrokes\(\[\]\)/);
   assert.match(appSource, /setPaintMode\(false\)/);
 });
 
@@ -1904,8 +1906,19 @@ test("paint overlay applies pending and committed stroke separation", () => {
   assert.match(appSource, /paintAppliedStrokes\.map\(\(stroke\) =>/);
 });
 
-test("paint overlay visibility is paint mode or applied only", () => {
-  assert.match(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
+test("paint overlay visibility is Markup-mode only so discard cannot leak into normal editor", () => {
+  assert.match(appSource, /\{paintMode && \(/);
+  assert.doesNotMatch(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
+});
+
+test("Keep Markup is explicit and session-only without marking the project dirty", () => {
+  assert.match(markupWorkspaceSource, /Keep in Session/);
+  assert.match(markupWorkspaceSource, /aria-label="Keep draft markup in this Markup session"/);
+  assert.match(appSource, /setStatus\("Markup kept in this Markup session"\)/);
+  const keepFnIdx = appSource.indexOf("function applyPaintOverlay()");
+  assert.ok(keepFnIdx > 0, "applyPaintOverlay function exists");
+  const keepFn = appSource.substring(keepFnIdx, appSource.indexOf("function discardPaintAndExit()", keepFnIdx));
+  assert.doesNotMatch(keepFn, /setDirty\(true\)/);
 });
 
 test("paint overlay captures pointer events only in exclusive paint mode", () => {
@@ -2538,13 +2551,22 @@ test("Markup workspace shell is full-page editor chrome with click-through canva
 
 test("Markup workspace mobile close control remains reachable", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1600}\.markup-workspace-shell[\s\S]{0,120}z-index:\s*130/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1800}\.markup-workspace-header[\s\S]{0,180}flex-direction:\s*column/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}width:\s*100%/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-height:\s*40px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1800}\.markup-workspace-header[\s\S]{0,180}flex-direction:\s*row/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-width:\s*84px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-height:\s*36px/);
+});
+
+test("Markup workspace controls are compact and scrollable without trapping mobile canvas", () => {
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,260}max-height:\s*calc\(100dvh - 72px\)/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,320}overflow-y:\s*auto/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-panel[\s\S]{0,180}max-height:\s*min\(32dvh, 220px\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.markup-workspace-body[\s\S]{0,180}grid-template-rows:\s*auto minmax\(0, 1fr\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3600}\.markup-workspace-canvas-frame[\s\S]{0,180}min-height:\s*min\(38dvh, 260px\)/);
 });
 
 test("markup toolbar shows click-drag instruction", () => {
-  assert.match(markupWorkspaceSource, /Click and drag to draw\. Markup is only for AI notes and is not published\./);
+  assert.match(markupWorkspaceSource, /Click and drag to draw\./);
+  assert.match(markupWorkspaceSource, /Markup is session-only, not published, and discarded when you close this workspace/);
   assert.match(markupWorkspaceSource, /advanced drawing tools/);
   assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
 });
