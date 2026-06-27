@@ -1493,6 +1493,36 @@ button:disabled {
   border-radius: 8px;
 }
 
+.markup-workspace-note-handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px dashed color-mix(in srgb, var(--editor-border) 78%, var(--editor-text));
+  border-radius: 6px;
+  color: var(--editor-text);
+  background: color-mix(in srgb, var(--editor-panel-bg) 76%, var(--editor-bg));
+  font-size: 12px;
+  font-weight: 700;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.markup-workspace-note-handle span:last-child {
+  color: var(--editor-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.markup-workspace-note-handle.dragging {
+  cursor: grabbing;
+  border-style: solid;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.16);
+}
+
 .markup-workspace-note-editor label {
   display: grid;
   gap: 4px;
@@ -1551,6 +1581,13 @@ button:disabled {
   pointer-events: auto;
   cursor: grab;
   touch-action: none;
+}
+
+.markup-note-pin::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
 }
 
 .markup-note-pin.dragging {

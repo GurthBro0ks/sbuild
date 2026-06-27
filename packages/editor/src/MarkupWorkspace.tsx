@@ -71,7 +71,14 @@ export function MarkupWorkspace({
     );
   }
 
-  function startNoteDrag(id: string, event: PointerEvent<HTMLButtonElement>) {
+  function shouldStartNoteDrag(event: PointerEvent<HTMLElement>) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const blockedControl = target?.closest("textarea, button, input, select, a");
+    return !blockedControl || blockedControl === event.currentTarget;
+  }
+
+  function startNoteDrag(id: string, event: PointerEvent<HTMLElement>) {
+    if (!shouldStartNoteDrag(event)) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -79,13 +86,13 @@ export function MarkupWorkspace({
     moveNoteFromPointer(id, event);
   }
 
-  function dragNote(id: string, event: PointerEvent<HTMLButtonElement>) {
+  function dragNote(id: string, event: PointerEvent<HTMLElement>) {
     if (draggingNoteId !== id) return;
     event.preventDefault();
     moveNoteFromPointer(id, event);
   }
 
-  function endNoteDrag(event: PointerEvent<HTMLButtonElement>) {
+  function endNoteDrag(event: PointerEvent<HTMLElement>) {
     if (draggingNoteId) {
       moveNoteFromPointer(draggingNoteId, event);
     }
@@ -178,8 +185,24 @@ export function MarkupWorkspace({
               <div className="markup-workspace-note-list">
                 {annotations.map((annotation, index) => (
                   <article className="markup-workspace-note-editor" data-testid="markup-note-editor" key={annotation.id}>
+                    <div
+                      className={`markup-workspace-note-handle ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                      data-testid="markup-note-drag-handle"
+                      data-markup-note-id={annotation.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Move Markup note ${index + 1}`}
+                      title={`Drag to move note ${index + 1}`}
+                      onPointerDown={(event) => startNoteDrag(annotation.id, event)}
+                      onPointerMove={(event) => dragNote(annotation.id, event)}
+                      onPointerUp={endNoteDrag}
+                      onPointerCancel={endNoteDrag}
+                    >
+                      <span>Note {index + 1}</span>
+                      <span aria-hidden="true">Move</span>
+                    </div>
                     <label>
-                      Note {index + 1}
+                      Text
                       <textarea
                         value={annotation.text}
                         onChange={(event) => onUpdateNoteText(annotation.id, event.target.value)}

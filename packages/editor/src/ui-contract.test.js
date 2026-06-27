@@ -1929,6 +1929,7 @@ test("Markup sticky note controls are explicit and scoped to the workspace", () 
   assert.match(markupWorkspaceSource, /data-testid="markup-note-text"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-delete-note"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-pin"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-drag-handle"/);
   assert.match(markupWorkspaceSource, /aria-label="Sticky note annotations"/);
   assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
 });
@@ -1950,6 +1951,21 @@ test("Markup sticky note pins are draggable and report normalized coordinates", 
   assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(\(event\.clientY - rect\.top\) \/ rect\.height\)/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*pointer-events:\s*auto/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*touch-action:\s*none/);
+  assert.match(cssSource, /\.markup-note-pin::before[\s\S]*inset:\s*-8px/);
+});
+
+test("Markup note card handle broadens drag target without trapping text editing or buttons", () => {
+  assert.match(markupWorkspaceSource, /function shouldStartNoteDrag\(event: PointerEvent<HTMLElement>\)/);
+  assert.match(markupWorkspaceSource, /closest\("textarea, button, input, select, a"\)/);
+  assert.match(markupWorkspaceSource, /return !blockedControl \|\| blockedControl === event\.currentTarget/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-note-handle \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-drag-handle"/);
+  assert.match(markupWorkspaceSource, /onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /<textarea[\s\S]{0,220}data-testid="markup-note-text"/);
+  assert.match(markupWorkspaceSource, /<button type="button" onClick=\{\(\) => onDeleteNote\(annotation\.id\)\} data-testid="markup-delete-note"/);
+  assert.match(cssSource, /\.markup-workspace-note-handle[\s\S]*cursor:\s*grab/);
+  assert.match(cssSource, /\.markup-workspace-note-handle[\s\S]*touch-action:\s*none/);
 });
 
 test("Markup note move helper clamps normalized x/y and updates only the selected note", () => {
