@@ -157,6 +157,10 @@ export function MarkupWorkspace({
             {pageTitle} / {blockLabel}
             {blockId ? ` / ${blockId.slice(0, 12)}` : ""}
           </p>
+          <details className="markup-workspace-help">
+            <summary>Help</summary>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Draft freehand strokes are discarded when you close this workspace unless you keep them with the project draft. Sticky notes and kept freehand strokes are saved with the project, shown only in Markup, and not published.</p>
+          </details>
         </div>
         <div className="markup-workspace-header-actions">
           <button
@@ -320,10 +324,7 @@ export function MarkupWorkspace({
             className={`markup-workspace-canvas-frame ${armedMoveNoteId ? "move-armed" : ""}`}
             aria-label="Canvas preview area"
             data-testid="markup-workspace-canvas-area"
-          >
-            <strong>Canvas preview area</strong>
-            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Draft freehand strokes are discarded when you close this workspace unless you keep them with the project draft. Sticky notes and kept freehand strokes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
-          </div>
+          />
         </div>
       </div>
     </section>

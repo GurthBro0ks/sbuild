@@ -1893,6 +1893,9 @@ test("Markup workspace keeps only draft freehand strokes transient while saved M
   assert.match(markupWorkspaceSource, /Draft freehand strokes are discarded/);
   assert.match(markupWorkspaceSource, /Sticky notes and kept freehand strokes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
+  assert.match(markupWorkspaceSource, /<details className="markup-workspace-help">/);
+  assert.match(markupWorkspaceSource, /<summary>Help<\/summary>/);
+  assert.doesNotMatch(markupWorkspaceSource, /<strong>Canvas preview area<\/strong>/);
   assert.doesNotMatch(markupWorkspaceSource, /fetchJson|project\.pages|setProject|localStorage/);
 });
 
@@ -2752,8 +2755,12 @@ test("Markup workspace shell is full-page editor chrome with click-through canva
 test("Markup workspace mobile close control remains reachable", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1600}\.markup-workspace-shell[\s\S]{0,120}z-index:\s*130/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1800}\.markup-workspace-header[\s\S]{0,180}flex-direction:\s*row/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-width:\s*84px/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-close[\s\S]{0,160}min-height:\s*36px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2400}\.markup-workspace-header-actions[\s\S]{0,260}overflow-x:\s*auto/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-close[\s\S]{0,180}min-width:\s*88px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-close[\s\S]{0,180}min-height:\s*36px/);
+  assert.match(markupWorkspaceSource, /Save Project/);
+  assert.match(markupWorkspaceSource, /Close Markup/);
+  assert.match(markupWorkspaceSource, /Show Controls/);
 });
 
 test("Markup workspace controls are compact and scrollable without trapping mobile canvas", () => {
@@ -2761,16 +2768,23 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
   assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,320}overflow-y:\s*auto/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-panel[\s\S]{0,180}max-height:\s*min\(32dvh, 220px\)/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.markup-workspace-body[\s\S]{0,180}grid-template-rows:\s*auto minmax\(0, 1fr\)/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3600}\.markup-workspace-canvas-frame[\s\S]{0,180}min-height:\s*min\(38dvh, 260px\)/);
+  assert.match(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,160}grid-template-rows:\s*minmax\(0,\s*1fr\)/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}height:\s*100%/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,260}align-self:\s*stretch/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,120}position:\s*absolute/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,140}inset:\s*0/);
 });
 
-test("markup toolbar shows click-drag instruction", () => {
+test("markup help keeps instructions compact and out of the stage overlay", () => {
+  assert.match(markupWorkspaceSource, /<details className="markup-workspace-help">/);
+  assert.match(markupWorkspaceSource, /<summary>Help<\/summary>/);
   assert.match(markupWorkspaceSource, /Click and drag to draw freehand draft markup/);
   assert.match(markupWorkspaceSource, /choose Move on a note and click the workspace/);
   assert.match(markupWorkspaceSource, /Draft freehand strokes are discarded/);
   assert.match(markupWorkspaceSource, /Sticky notes and kept freehand strokes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
-  assert.match(markupWorkspaceSource, /Advanced drawing tools/);
+  assert.doesNotMatch(markupWorkspaceSource, /Advanced drawing tools/);
+  assert.doesNotMatch(markupWorkspaceSource, /<strong>Canvas preview area<\/strong>/);
   assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
 });
 
