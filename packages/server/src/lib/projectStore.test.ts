@@ -50,6 +50,7 @@ test("projects without Markup annotations normalize to an empty collection", () 
   const normalized = normalizeProjectForStorage(project);
 
   assert.deepEqual(normalized.markupAnnotations, []);
+  assert.deepEqual(normalized.markupFreehandStrokes, []);
 });
 
 test("Markup note annotations round trip through project normalization", () => {
@@ -125,4 +126,32 @@ test("Markup annotation normalization filters unsupported records and clamps not
   assert.equal(normalized.markupAnnotations?.[0]?.id, "note-2");
   assert.equal(normalized.markupAnnotations?.[0]?.x, 0);
   assert.equal(normalized.markupAnnotations?.[0]?.y, 1);
+});
+
+test("Markup freehand strokes normalize bounded points and style metadata", () => {
+  const points = Array.from({ length: 2005 }, (_, index) => ({ x: index === 0 ? -1 : 0.25, y: index === 1 ? 2 : 0.75 }));
+  const normalized = normalizeProjectForStorage(
+    baseProject({
+      markupFreehandStrokes: [
+        {
+          id: "stroke-1",
+          pageId: "page-home",
+          blockId: "block-1",
+          points,
+          color: "#2b6dff",
+          size: 99,
+          opacity: 2,
+          createdAt: "2026-06-28T12:00:00.000Z"
+        },
+        { id: "bad-stroke", pageId: "page-home", points: [{ x: 0.5, y: 0.5 }], color: "", size: 4 } as any
+      ]
+    })
+  );
+
+  assert.equal(normalized.markupFreehandStrokes?.length, 1);
+  assert.equal(normalized.markupFreehandStrokes?.[0]?.points.length, 2000);
+  assert.deepEqual(normalized.markupFreehandStrokes?.[0]?.points[0], { x: 0, y: 0.75 });
+  assert.deepEqual(normalized.markupFreehandStrokes?.[0]?.points[1], { x: 0.25, y: 1 });
+  assert.equal(normalized.markupFreehandStrokes?.[0]?.size, 48);
+  assert.equal(normalized.markupFreehandStrokes?.[0]?.opacity, 1);
 });

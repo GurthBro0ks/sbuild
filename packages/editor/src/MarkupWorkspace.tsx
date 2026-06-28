@@ -11,6 +11,7 @@ type MarkupWorkspaceProps = {
   saveStatusText: string;
   draftStrokeCount: number;
   appliedStrokeCount: number;
+  redoStrokeCount: number;
   activePointCount: number;
   paintTool: "brush" | "eraser";
   paintDrawMode: "free" | "line";
@@ -22,6 +23,9 @@ type MarkupWorkspaceProps = {
   onColorChange: (value: string) => void;
   onSizeChange: (value: number) => void;
   onClearDraft: () => void;
+  onClearFreeDraw: () => void;
+  onUndoDraft: () => void;
+  onRedoDraft: () => void;
   onKeepMarkup: () => void;
   onSaveProject: () => void | Promise<void>;
   onCreateNote: () => void;
@@ -39,6 +43,7 @@ export function MarkupWorkspace({
   saveStatusText,
   draftStrokeCount,
   appliedStrokeCount,
+  redoStrokeCount,
   activePointCount,
   paintTool,
   paintDrawMode,
@@ -50,6 +55,9 @@ export function MarkupWorkspace({
   onColorChange,
   onSizeChange,
   onClearDraft,
+  onClearFreeDraw,
+  onUndoDraft,
+  onRedoDraft,
   onKeepMarkup,
   onSaveProject,
   onCreateNote,
@@ -157,7 +165,7 @@ export function MarkupWorkspace({
           <div className="markup-workspace-context" data-testid="markup-workspace-context">
             <span>View: {deviceMode}</span>
             <span>Draft strokes: {draftStrokeCount}</span>
-            <span>Kept strokes: {appliedStrokeCount}</span>
+            <span>Saved free draw: {appliedStrokeCount}</span>
             <span>Notes: {annotations.length}</span>
             <span>Save: {saveStatusText}</span>
           </div>
@@ -180,6 +188,8 @@ export function MarkupWorkspace({
 
           <div className="markup-workspace-actions">
             <button type="button" onClick={onClearDraft} disabled={!hasDraftMarkup}>Clear Draft</button>
+            <button type="button" onClick={onUndoDraft} disabled={draftStrokeCount === 0}>Undo</button>
+            <button type="button" onClick={onRedoDraft} disabled={redoStrokeCount === 0}>Redo</button>
             <button
               type="button"
               onClick={onKeepMarkup}
@@ -188,6 +198,7 @@ export function MarkupWorkspace({
             >
               Keep in Session
             </button>
+            <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
             <button type="button" disabled className="markup-workspace-ai-attach">Attach to AI (coming later)</button>
           </div>
 
@@ -280,7 +291,7 @@ export function MarkupWorkspace({
             data-testid="markup-workspace-canvas-area"
           >
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Draft freehand strokes are discarded when you close this workspace unless you keep them with the project draft. Sticky notes and kept freehand strokes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>

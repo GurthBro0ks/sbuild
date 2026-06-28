@@ -1877,36 +1877,38 @@ test("paint workspace only renders in paint mode and never in preview", () => {
 });
 
 test("paint mode entering does not auto-start stroke", () => {
-  assert.match(appSource, /setPaintMode\(true\); setPaintActivePoints\(\[\]\); setPaintAppliedStrokes\(\[\]\)/);
+  assert.match(appSource, /setPaintMode\(true\); setPaintActivePoints\(\[\]\); setPaintRedoStrokes\(\[\]\)/);
+  assert.match(appSource, /function seedAppliedFreehandStrokes\(\)/);
   assert.match(appSource, /if \(!paintMode \|\| previewMode\) return;/);
 });
 
 test("Markup workspace close returns to normal editor state through existing discard path", () => {
   assert.match(appSource, /onClose=\{discardPaintAndExit\}/);
-  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,220}setPaintAppliedStrokes\(\[\]\)[\s\S]{0,160}setPaintMode\(false\)/);
+  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,220}setPaintDraftStrokes\(\[\]\)[\s\S]{0,220}setPaintMode\(false\)/);
+  assert.doesNotMatch(appSource, /function discardPaintAndExit\(\)[\s\S]{0,220}setPaintAppliedStrokes\(\[\]\)/);
   assert.match(markupWorkspaceSource, /onClick=\{onClose\}/);
 });
 
-test("Markup workspace keeps freehand strokes session-local while notes persist through project schema", () => {
-  assert.match(markupWorkspaceSource, /session-only/);
-  assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
+test("Markup workspace keeps only draft freehand strokes transient while saved Markup stays editor-only", () => {
+  assert.match(markupWorkspaceSource, /Draft freehand strokes are discarded/);
+  assert.match(markupWorkspaceSource, /Sticky notes and kept freehand strokes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
   assert.doesNotMatch(markupWorkspaceSource, /fetchJson|project\.pages|setProject|localStorage/);
 });
 
-test("clear and discard remove pending strokes", () => {
+test("clear and discard remove only draft strokes", () => {
   assert.match(appSource, /function clearPaintDraft\(\)/);
   assert.match(appSource, /setPaintDraftStrokes\(\[\]\)/);
   assert.match(appSource, /function discardPaintAndExit\(\)/);
   assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,120}setPaintDraftStrokes\(\[\]\)/);
-  assert.match(appSource, /function discardPaintAndExit\(\)[\s\S]{0,160}setPaintAppliedStrokes\(\[\]\)/);
+  assert.doesNotMatch(appSource, /function discardPaintAndExit\(\)[\s\S]{0,220}setPaintAppliedStrokes\(\[\]\)/);
   assert.match(appSource, /setPaintMode\(false\)/);
 });
 
-test("paint overlay applies pending and committed stroke separation", () => {
-  assert.match(appSource, /setPaintAppliedStrokes\(\(strokes\) => \[\.\.\.strokes, \.\.\.paintDraftStrokes\]\)/);
+test("paint overlay applies persisted and draft stroke separation", () => {
+  assert.match(appSource, /setPaintAppliedStrokes\(\(strokes\) => \[\.\.\.strokes, \.\.\.paintDraftStrokes\.map/);
   assert.match(appSource, /paintDraftStrokes\.map\(\(stroke\) =>/);
-  assert.match(appSource, /strokeDasharray="6 4"/);
+  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 0\.55\}/);
   assert.match(appSource, /paintAppliedStrokes\.map\(\(stroke\) =>/);
 });
 
@@ -1915,14 +1917,15 @@ test("paint overlay visibility is Markup-mode only so discard cannot leak into n
   assert.doesNotMatch(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
 });
 
-test("Keep Markup is explicit and session-only without marking the project dirty", () => {
+test("Keep Markup is explicit and writes kept freehand strokes into dirty project state", () => {
   assert.match(markupWorkspaceSource, /Keep in Session/);
   assert.match(markupWorkspaceSource, /aria-label="Keep draft markup in this Markup session"/);
-  assert.match(appSource, /setStatus\("Markup kept in this Markup session"\)/);
+  assert.match(appSource, /setStatus\("Free draw kept with project draft"\)/);
   const keepFnIdx = appSource.indexOf("function applyPaintOverlay()");
   assert.ok(keepFnIdx > 0, "applyPaintOverlay function exists");
   const keepFn = appSource.substring(keepFnIdx, appSource.indexOf("function discardPaintAndExit()", keepFnIdx));
-  assert.doesNotMatch(keepFn, /setDirty\(true\)/);
+  assert.match(keepFn, /markupFreehandStrokes: \[\.\.\.\(current\.markupFreehandStrokes \|\| \[\]\), \.\.\.keptStrokes\]/);
+  assert.match(keepFn, /setDirty\(true\)/);
 });
 
 test("Markup sticky note controls are explicit and scoped to the workspace", () => {
@@ -2014,18 +2017,23 @@ test("Markup note move helper clamps normalized x/y and updates only the selecte
   assert.match(markupAnnotationsSource, /updatedAt/);
 });
 
-test("App wires sticky notes through project markupAnnotations without persisting freehand strokes", () => {
+test("App wires sticky notes and freehand strokes through editor-only project markup state", () => {
   assert.match(appSource, /MarkupAnnotation/);
+  assert.match(appSource, /MarkupFreehandStroke/);
   assert.match(appSource, /currentPageMarkupAnnotations/);
+  assert.match(appSource, /currentPageFreehandStrokes/);
   assert.match(appSource, /project\?\.markupAnnotations \|\| \[\]/);
+  assert.match(appSource, /project\?\.markupFreehandStrokes \|\| \[\]/);
   assert.match(appSource, /function createMarkupNote\(\)/);
   assert.match(appSource, /function updateMarkupNoteText\(id: string, text: string\)/);
   assert.match(appSource, /function moveMarkupNote\(id: string, x: number, y: number\)/);
   assert.match(appSource, /function deleteMarkupNote\(id: string\)/);
+  assert.match(appSource, /function paintStrokeToProjectStroke/);
+  assert.match(appSource, /function clearAppliedFreeDraw\(\)/);
   assert.match(appSource, /markupAnnotations: updater\(current\.markupAnnotations \|\| \[\]\)/);
+  assert.match(appSource, /markupFreehandStrokes: \[\.\.\.\(current\.markupFreehandStrokes \|\| \[\]\), \.\.\.keptStrokes\]/);
   assert.match(appSource, /moveMarkupAnnotation\(annotations, id, x, y, timestamp\)/);
   assert.match(appSource, /setDirty\(true\)/);
-  assert.doesNotMatch(appSource, /paintDraftStrokes[\s\S]{0,120}markupAnnotations/);
 });
 
 test("paint overlay captures pointer events only in exclusive paint mode", () => {
@@ -2675,11 +2683,31 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
 test("markup toolbar shows click-drag instruction", () => {
   assert.match(markupWorkspaceSource, /Click and drag to draw freehand draft markup/);
   assert.match(markupWorkspaceSource, /choose Move on a note and click the workspace/);
-  assert.match(markupWorkspaceSource, /Freehand strokes are session-only/);
-  assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
+  assert.match(markupWorkspaceSource, /Draft freehand strokes are discarded/);
+  assert.match(markupWorkspaceSource, /Sticky notes and kept freehand strokes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
   assert.match(markupWorkspaceSource, /Advanced drawing tools/);
   assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
+});
+
+test("Markup workspace exposes draft undo redo and Clear Free Draw actions", () => {
+  assert.match(markupWorkspaceSource, /redoStrokeCount: number/);
+  assert.match(markupWorkspaceSource, /onClearFreeDraw: \(\) => void/);
+  assert.match(markupWorkspaceSource, /onUndoDraft: \(\) => void/);
+  assert.match(markupWorkspaceSource, /onRedoDraft: \(\) => void/);
+  assert.match(markupWorkspaceSource, />Undo</);
+  assert.match(markupWorkspaceSource, />Redo</);
+  assert.match(markupWorkspaceSource, />Clear Free Draw</);
+  assert.match(appSource, /onClearFreeDraw=\{clearAppliedFreeDraw\}/);
+  assert.match(appSource, /onUndoDraft=\{undoPaintDraft\}/);
+  assert.match(appSource, /onRedoDraft=\{redoPaintDraft\}/);
+});
+
+test("freehand draft strokes render visible solid translucent lines", () => {
+  assert.match(appSource, /opacity: 0\.55/);
+  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 0\.55\}/);
+  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 1\}/);
+  assert.doesNotMatch(appSource, /strokeDasharray="6 4"/);
 });
 
 test("canvas-area uses site-theme background var not editor var", () => {

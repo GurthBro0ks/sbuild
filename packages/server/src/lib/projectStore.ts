@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { MarkupAnnotation, SBuildProject } from "@sbuild/shared";
+import { MarkupAnnotation, MarkupFreehandStroke, SBuildProject } from "@sbuild/shared";
 import { projectDir, projectFile, projectImagesDir, templateProjectFile } from "./paths.js";
 
 async function ensureDir(p: string): Promise<void> {
@@ -45,6 +45,11 @@ function optionalString(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function clampStrokeSize(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 4;
+  return Math.min(48, Math.max(1, value));
+}
+
 export function normalizeMarkupAnnotations(value: unknown, timestamp = new Date().toISOString()): MarkupAnnotation[] {
   if (!Array.isArray(value)) return [];
 
@@ -74,10 +79,49 @@ export function normalizeMarkupAnnotations(value: unknown, timestamp = new Date(
   });
 }
 
+export function normalizeFreehandStrokes(value: unknown, timestamp = new Date().toISOString()): MarkupFreehandStroke[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((raw): MarkupFreehandStroke[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const stroke = raw as Record<string, unknown>;
+    const id = optionalString(stroke.id);
+    const pageId = optionalString(stroke.pageId);
+    if (!id || !pageId || !Array.isArray(stroke.points)) return [];
+
+    const points = stroke.points
+      .slice(0, 2000)
+      .flatMap((point): Array<{ x: number; y: number }> => {
+        if (!point || typeof point !== "object") return [];
+        const p = point as Record<string, unknown>;
+        return [{ x: clampUnit(p.x, 0.5), y: clampUnit(p.y, 0.5) }];
+      });
+    if (points.length < 2) return [];
+
+    const opacity = typeof stroke.opacity === "number" && Number.isFinite(stroke.opacity)
+      ? clampUnit(stroke.opacity, 1)
+      : undefined;
+
+    return [
+      {
+        id,
+        pageId,
+        blockId: optionalString(stroke.blockId),
+        points,
+        color: optionalString(stroke.color) || "#2b6dff",
+        size: clampStrokeSize(stroke.size),
+        opacity,
+        createdAt: optionalString(stroke.createdAt) || timestamp
+      }
+    ];
+  });
+}
+
 export function normalizeProjectForStorage(project: SBuildProject): SBuildProject {
   return {
     ...project,
-    markupAnnotations: normalizeMarkupAnnotations(project.markupAnnotations)
+    markupAnnotations: normalizeMarkupAnnotations(project.markupAnnotations),
+    markupFreehandStrokes: normalizeFreehandStrokes(project.markupFreehandStrokes)
   };
 }
 

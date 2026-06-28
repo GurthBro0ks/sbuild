@@ -370,6 +370,22 @@ export interface MarkupAnnotation {
   updatedAt?: string;
 }
 
+export interface MarkupFreehandPoint {
+  x: number;
+  y: number;
+}
+
+export interface MarkupFreehandStroke {
+  id: string;
+  pageId: string;
+  blockId?: string;
+  points: MarkupFreehandPoint[];
+  color: string;
+  size: number;
+  opacity?: number;
+  createdAt?: string;
+}
+
 export interface SBuildProject {
   version: string;
   updatedAt: string;
@@ -378,6 +394,7 @@ export interface SBuildProject {
   ai: SBuildAISettings;
   deploy: SBuildDeploySettings;
   markupAnnotations?: MarkupAnnotation[];
+  markupFreehandStrokes?: MarkupFreehandStroke[];
   pages: SBuildPage[];
   selectedTheme?: string;
 }

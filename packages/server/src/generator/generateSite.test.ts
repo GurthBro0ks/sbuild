@@ -117,6 +117,16 @@ test("renderSiteDocument excludes editor-only Markup annotations from public out
         text: "Internal annotation only"
       }
     ],
+    markupFreehandStrokes: [
+      {
+        id: "private-freehand-1",
+        pageId: "page-home",
+        points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }],
+        color: "#2b6dff",
+        size: 4,
+        opacity: 1
+      }
+    ],
     pages: [
       {
         id: "page-home",
@@ -131,6 +141,8 @@ test("renderSiteDocument excludes editor-only Markup annotations from public out
 
   assert.match(html, /Public body/);
   assert.doesNotMatch(html, /markupAnnotations/);
+  assert.doesNotMatch(html, /markupFreehandStrokes/);
   assert.doesNotMatch(html, /private-note-1/);
+  assert.doesNotMatch(html, /private-freehand-1/);
   assert.doesNotMatch(html, /Internal annotation only/);
 });

@@ -7,6 +7,7 @@ import {
   ImageSizeDecision,
   ImageTargetContext,
   MarkupAnnotation,
+  MarkupFreehandStroke,
   SBuildNavItem,
   SBuildPage,
   SBuildProject,
@@ -118,7 +119,7 @@ type AiChatTarget = "block" | "page" | "site";
 type PaintPoint = { x: number; y: number };
 type PaintTool = "brush" | "eraser";
 type PaintDrawMode = "free" | "line";
-type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: PaintDrawMode; color: string; size: number; points: PaintPoint[] };
+type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: PaintDrawMode; color: string; size: number; opacity?: number; points: PaintPoint[] };
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
@@ -1370,6 +1371,7 @@ export function App() {
   const [lastEditedImage, setLastEditedImage] = useState("");
   const [paintDraftStrokes, setPaintDraftStrokes] = useState<PaintStroke[]>([]);
   const [paintAppliedStrokes, setPaintAppliedStrokes] = useState<PaintStroke[]>([]);
+  const [paintRedoStrokes, setPaintRedoStrokes] = useState<PaintStroke[]>([]);
   const [paintActivePoints, setPaintActivePoints] = useState<PaintPoint[]>([]);
   const [paintTool, setPaintTool] = useState<PaintTool>("brush");
   const [paintDrawMode, setPaintDrawMode] = useState<PaintDrawMode>("free");
@@ -1862,6 +1864,10 @@ export function App() {
     () => (project?.markupAnnotations || []).filter((annotation) => annotation.type === "note" && annotation.pageId === selectedPage?.id),
     [project?.markupAnnotations, selectedPage?.id]
   );
+  const currentPageFreehandStrokes = useMemo(
+    () => (project?.markupFreehandStrokes || []).filter((stroke) => stroke.pageId === selectedPage?.id),
+    [project?.markupFreehandStrokes, selectedPage?.id]
+  );
   const rowRenderItems = useMemo(() => toRowRenderItems(selectedPage?.blocks || []), [selectedPage?.blocks]);
   const shouldStackRows = deviceMode === "phone";
   const usedImageUrls = useMemo(() => collectUsedImageUrls(project), [project]);
@@ -2154,6 +2160,7 @@ export function App() {
       setPaintMode(false);
       setPaintDraftStrokes([]);
       setPaintAppliedStrokes([]);
+      setPaintRedoStrokes([]);
       setPaintActivePoints([]);
       setLoadedProjectSource(data.loadedProjectSource || "unknown");
       setLoadedProjectUpdatedAt(data.loadedProjectUpdatedAt || "");
@@ -4343,6 +4350,59 @@ export function App() {
     return { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) };
   }
 
+  function getPaintCanvasSize() {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    return {
+      width: rect && rect.width > 0 ? rect.width : 1,
+      height: rect && rect.height > 0 ? rect.height : 1
+    };
+  }
+
+  function projectStrokeToPaintStroke(stroke: MarkupFreehandStroke): PaintStroke {
+    const { width, height } = getPaintCanvasSize();
+    return {
+      id: stroke.id,
+      tool: "brush",
+      mode: "free",
+      color: stroke.color,
+      size: stroke.size,
+      opacity: stroke.opacity ?? 1,
+      points: stroke.points.map((point) => ({
+        x: Math.round(point.x * width),
+        y: Math.round(point.y * height)
+      }))
+    };
+  }
+
+  function paintStrokeToProjectStroke(stroke: PaintStroke, pageId: string, blockId: string | undefined, createdAt: string): MarkupFreehandStroke {
+    const { width, height } = getPaintCanvasSize();
+    return {
+      id: stroke.id,
+      pageId,
+      blockId,
+      points: stroke.points.slice(0, 2000).map((point) => ({
+        x: Math.min(1, Math.max(0, point.x / width)),
+        y: Math.min(1, Math.max(0, point.y / height))
+      })),
+      color: stroke.color,
+      size: stroke.size,
+      opacity: 1,
+      createdAt
+    };
+  }
+
+  function seedAppliedFreehandStrokes() {
+    setPaintAppliedStrokes(currentPageFreehandStrokes.map(projectStrokeToPaintStroke));
+  }
+
+  useEffect(() => {
+    if (!paintMode) return;
+    seedAppliedFreehandStrokes();
+    setPaintDraftStrokes([]);
+    setPaintRedoStrokes([]);
+    setPaintActivePoints([]);
+  }, [paintMode, selectedPage?.id, project?.markupFreehandStrokes]);
+
   function beginPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -4350,7 +4410,11 @@ export function App() {
     if (paintTool === "eraser") {
       e.preventDefault();
       e.stopPropagation();
-      setPaintDraftStrokes((strokes) => strokes.slice(0, -1));
+      setPaintDraftStrokes((strokes) => {
+        const removed = strokes[strokes.length - 1];
+        if (removed) setPaintRedoStrokes((redo) => [...redo, removed]);
+        return strokes.slice(0, -1);
+      });
       setStatus("Removed last markup stroke");
       return;
     }
@@ -4388,37 +4452,92 @@ export function App() {
       mode: paintDrawMode,
       color: paintColor,
       size: paintSize,
+      opacity: 0.55,
       points: paintActivePoints
     };
     setPaintDraftStrokes((strokes) => [...strokes, stroke]);
+    setPaintRedoStrokes([]);
     setPaintActivePoints([]);
     setStatus("Markup stroke added");
   }
 
   function clearPaintDraft() {
     setPaintDraftStrokes([]);
+    setPaintRedoStrokes([]);
     setPaintActivePoints([]);
     setStatus("Markup cleared");
   }
 
+  function undoPaintDraft() {
+    setPaintDraftStrokes((strokes) => {
+      const removed = strokes[strokes.length - 1];
+      if (!removed) return strokes;
+      setPaintRedoStrokes((redo) => [...redo, removed]);
+      setStatus("Undid last draft stroke");
+      return strokes.slice(0, -1);
+    });
+  }
+
+  function redoPaintDraft() {
+    setPaintRedoStrokes((redo) => {
+      const restored = redo[redo.length - 1];
+      if (!restored) return redo;
+      setPaintDraftStrokes((strokes) => [...strokes, restored]);
+      setStatus("Redid draft stroke");
+      return redo.slice(0, -1);
+    });
+  }
+
   function applyPaintOverlay() {
-    if (paintDraftStrokes.length === 0) {
+    if (!selectedPage || paintDraftStrokes.length === 0) {
       setStatus("No markup to keep");
       return;
     }
-    setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes]);
+    const timestamp = new Date().toISOString();
+    const keptStrokes = paintDraftStrokes.map((stroke) =>
+      paintStrokeToProjectStroke(stroke, selectedPage.id, selectedBlock?.id, timestamp)
+    );
+    setProject((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        markupFreehandStrokes: [...(current.markupFreehandStrokes || []), ...keptStrokes]
+      };
+    });
+    setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes.map((stroke) => ({ ...stroke, opacity: 1 }))]);
     setPaintDraftStrokes([]);
+    setPaintRedoStrokes([]);
     setPaintActivePoints([]);
+    setDirty(true);
     setLastAction("paint-apply-overlay");
-    setStatus("Markup kept in this Markup session");
+    setStatus("Free draw kept with project draft");
   }
 
   function discardPaintAndExit() {
     setPaintDraftStrokes([]);
-    setPaintAppliedStrokes([]);
+    setPaintRedoStrokes([]);
     setPaintActivePoints([]);
     setPaintMode(false);
-    setStatus("Discarded markup");
+    setStatus("Closed Markup; unsaved draft strokes discarded");
+  }
+
+  function clearAppliedFreeDraw() {
+    if (!selectedPage) {
+      setStatus("Select a page before clearing free draw");
+      return;
+    }
+    setProject((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        markupFreehandStrokes: (current.markupFreehandStrokes || []).filter((stroke) => stroke.pageId !== selectedPage.id)
+      };
+    });
+    setPaintAppliedStrokes([]);
+    setPaintRedoStrokes([]);
+    setDirty(true);
+    setLastAction("paint-clear-free-draw");
+    setStatus("Cleared saved free draw for this page");
   }
 
   function updateMarkupAnnotations(updater: (annotations: MarkupAnnotation[]) => MarkupAnnotation[]) {
@@ -6329,7 +6448,7 @@ export function App() {
           <button onClick={() => { setLeftCollapsed((prev) => { const next = !prev; setStatus(next ? "Left panel collapsed" : "Left panel opened"); return next; }); }}>☰</button>
           <div className="logo" title={`sBuild ${displayVersion} - base ${SBUILD_VERSION}, commit count ${buildInfo?.commitCount ?? "?"}, server commit ${buildIdentity.serverCommit}, browser commit ${buildIdentity.browserCommit}`}>{SBUILD_APP_NAME} {displayVersion.toUpperCase()}</div>
           <button onClick={() => setPreviewMode((v) => !v)}>{previewMode ? "Edit" : "Preview"}</button>
-          <button onClick={() => { if (paintMode) { discardPaintAndExit(); } else { setPaintMode(true); setPaintActivePoints([]); setPaintAppliedStrokes([]); setStatus("Markup mode on"); setAiTopMenuOpen(false); } }} className={paintMode ? "active" : ""}>Markup</button>
+          <button onClick={() => { if (paintMode) { discardPaintAndExit(); } else { setPaintMode(true); setPaintActivePoints([]); setPaintRedoStrokes([]); setStatus("Markup mode on"); setAiTopMenuOpen(false); } }} className={paintMode ? "active" : ""}>Markup</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-actions">
           <button onClick={() => { setImageManagerOpen(true); setImageManagerTarget("block-bg"); setStatus("Image Library opened"); }}>Images</button>
@@ -6376,6 +6495,7 @@ export function App() {
           saveStatusText={withSavedStatusText(status, dirty)}
           draftStrokeCount={paintDraftStrokes.length}
           appliedStrokeCount={paintAppliedStrokes.length}
+          redoStrokeCount={paintRedoStrokes.length}
           activePointCount={paintActivePoints.length}
           paintTool={paintTool}
           paintDrawMode={paintDrawMode}
@@ -6387,6 +6507,9 @@ export function App() {
           onColorChange={setPaintColor}
           onSizeChange={setPaintSize}
           onClearDraft={clearPaintDraft}
+          onClearFreeDraw={clearAppliedFreeDraw}
+          onUndoDraft={undoPaintDraft}
+          onRedoDraft={redoPaintDraft}
           onKeepMarkup={applyPaintOverlay}
           onSaveProject={saveProject}
           onCreateNote={createMarkupNote}
@@ -7080,13 +7203,13 @@ export function App() {
             {paintMode && (
               <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
                 {paintAppliedStrokes.map((stroke) => (
-                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? 1} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
                 {paintDraftStrokes.map((stroke) => (
-                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />
+                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? 0.55} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
                 {paintMode && paintActivePoints.length > 1 && (
-                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeOpacity={0.55} strokeLinecap="round" strokeLinejoin="round" />
                 )}
               </svg>
             )}
