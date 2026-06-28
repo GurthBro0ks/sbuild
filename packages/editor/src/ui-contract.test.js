@@ -1908,7 +1908,7 @@ test("clear and discard remove only draft strokes", () => {
 test("paint overlay applies persisted and draft stroke separation", () => {
   assert.match(appSource, /setPaintAppliedStrokes\(\(strokes\) => \[\.\.\.strokes, \.\.\.paintDraftStrokes\.map/);
   assert.match(appSource, /paintDraftStrokes\.map\(\(stroke\) =>/);
-  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 0\.55\}/);
+  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? MARKUP_DRAFT_STROKE_OPACITY\}/);
   assert.match(appSource, /paintAppliedStrokes\.map\(\(stroke\) =>/);
 });
 
@@ -2703,9 +2703,12 @@ test("Markup workspace exposes draft undo redo and Clear Free Draw actions", () 
   assert.match(appSource, /onRedoDraft=\{redoPaintDraft\}/);
 });
 
-test("freehand draft strokes render visible solid translucent lines", () => {
-  assert.match(appSource, /opacity: 0\.55/);
-  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 0\.55\}/);
+test("freehand draft strokes render high-opacity solid lines", () => {
+  assert.match(appSource, /const MARKUP_DRAFT_STROKE_OPACITY = 0\.9/);
+  assert.match(appSource, /const MARKUP_APPLIED_STROKE_OPACITY = 1/);
+  assert.match(appSource, /opacity: MARKUP_DRAFT_STROKE_OPACITY/);
+  assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? MARKUP_DRAFT_STROKE_OPACITY\}/);
+  assert.match(appSource, /strokeOpacity=\{MARKUP_DRAFT_STROKE_OPACITY\}/);
   assert.match(appSource, /strokeOpacity=\{stroke\.opacity \?\? 1\}/);
   assert.doesNotMatch(appSource, /strokeDasharray="6 4"/);
 });

@@ -120,6 +120,8 @@ type PaintPoint = { x: number; y: number };
 type PaintTool = "brush" | "eraser";
 type PaintDrawMode = "free" | "line";
 type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: PaintDrawMode; color: string; size: number; opacity?: number; points: PaintPoint[] };
+const MARKUP_DRAFT_STROKE_OPACITY = 0.9;
+const MARKUP_APPLIED_STROKE_OPACITY = 1;
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
@@ -4452,7 +4454,7 @@ export function App() {
       mode: paintDrawMode,
       color: paintColor,
       size: paintSize,
-      opacity: 0.55,
+      opacity: MARKUP_DRAFT_STROKE_OPACITY,
       points: paintActivePoints
     };
     setPaintDraftStrokes((strokes) => [...strokes, stroke]);
@@ -4504,7 +4506,7 @@ export function App() {
         markupFreehandStrokes: [...(current.markupFreehandStrokes || []), ...keptStrokes]
       };
     });
-    setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes.map((stroke) => ({ ...stroke, opacity: 1 }))]);
+    setPaintAppliedStrokes((strokes) => [...strokes, ...paintDraftStrokes.map((stroke) => ({ ...stroke, opacity: MARKUP_APPLIED_STROKE_OPACITY }))]);
     setPaintDraftStrokes([]);
     setPaintRedoStrokes([]);
     setPaintActivePoints([]);
@@ -7206,10 +7208,10 @@ export function App() {
                   <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? 1} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
                 {paintDraftStrokes.map((stroke) => (
-                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? 0.55} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? MARKUP_DRAFT_STROKE_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
                 ))}
                 {paintMode && paintActivePoints.length > 1 && (
-                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeOpacity={0.55} strokeLinecap="round" strokeLinejoin="round" />
+                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeOpacity={MARKUP_DRAFT_STROKE_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
                 )}
               </svg>
             )}
