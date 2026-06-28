@@ -4352,13 +4352,22 @@ export function App() {
     return fonts.filter((f) => f.family.toLowerCase().includes(q)).slice(0, 50);
   }, [fonts, fontSearch]);
 
+  function getMarkupPaintStageElement(eventTarget?: EventTarget | null) {
+    const target = eventTarget instanceof Element ? eventTarget : null;
+    return target?.closest(".markup-workspace-canvas-area") || document.querySelector(".markup-workspace-canvas-area");
+  }
+
   function pointerPoint(e: React.PointerEvent<Element>): PaintPoint {
-    const rect = (e.target as HTMLElement).closest(".canvas-frame")!.getBoundingClientRect();
-    return { x: Math.round(e.clientX - rect.left), y: Math.round(e.clientY - rect.top) };
+    const stage = getMarkupPaintStageElement(e.target) || (e.target as Element).closest(".canvas-frame");
+    if (!stage) return { x: 0, y: 0 };
+    const rect = stage.getBoundingClientRect();
+    const x = Math.min(rect.width, Math.max(0, e.clientX - rect.left));
+    const y = Math.min(rect.height, Math.max(0, e.clientY - rect.top));
+    return { x: Math.round(x), y: Math.round(y) };
   }
 
   function getPaintCanvasSize() {
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = getMarkupPaintStageElement()?.getBoundingClientRect() || canvasRef.current?.getBoundingClientRect();
     return {
       width: rect && rect.width > 0 ? rect.width : 1,
       height: rect && rect.height > 0 ? rect.height : 1
@@ -6539,6 +6548,25 @@ export function App() {
           onUpdateNoteText={updateMarkupNoteText}
           onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
+          paintCaptureActive={paintExclusiveMode}
+          freehandLayer={
+            <svg
+              className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`}
+              onPointerDown={paintExclusiveMode ? beginPaint : undefined}
+              onPointerMove={paintExclusiveMode ? movePaint : undefined}
+              onPointerUp={paintExclusiveMode ? endPaint : undefined}
+            >
+              {paintAppliedStrokes.map((stroke) => (
+                renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_APPLIED_STROKE_OPACITY)
+              ))}
+              {paintDraftStrokes.map((stroke) => (
+                renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_DRAFT_STROKE_OPACITY)
+              ))}
+              {paintMode && paintActivePoints.length > 1 && (
+                renderMarkupStroke("active-stroke", paintActivePoints, paintColor, paintSize, MARKUP_DRAFT_STROKE_OPACITY, MARKUP_DRAFT_STROKE_OPACITY)
+              )}
+            </svg>
+          }
         />
       )}
 
@@ -7223,19 +7251,6 @@ export function App() {
               </div>
             )})}
 
-            {paintMode && (
-              <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
-                {paintAppliedStrokes.map((stroke) => (
-                  renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_APPLIED_STROKE_OPACITY)
-                ))}
-                {paintDraftStrokes.map((stroke) => (
-                  renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_DRAFT_STROKE_OPACITY)
-                ))}
-                {paintMode && paintActivePoints.length > 1 && (
-                  renderMarkupStroke("active-stroke", paintActivePoints, paintColor, paintSize, MARKUP_DRAFT_STROKE_OPACITY, MARKUP_DRAFT_STROKE_OPACITY)
-                )}
-              </svg>
-            )}
           </div>
         </main>
 

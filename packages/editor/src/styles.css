@@ -1230,15 +1230,14 @@ button:disabled {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 135;
-  overflow: visible;
+  z-index: 5;
+  overflow: hidden;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28));
 }
 
 .paint-overlay.capture-active {
   pointer-events: auto;
   cursor: crosshair;
-  z-index: 140;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -1339,14 +1338,14 @@ button:disabled {
   gap: 8px;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(249, 250, 252, 0.9), rgba(249, 250, 252, 0.56)),
-    color-mix(in srgb, var(--editor-bg) 72%, transparent);
+    linear-gradient(180deg, rgba(249, 250, 252, 0.38), rgba(249, 250, 252, 0.18)),
+    color-mix(in srgb, var(--editor-bg) 24%, transparent);
 }
 
 .theme-dark .markup-workspace-shell {
   background:
-    linear-gradient(180deg, rgba(28, 32, 38, 0.92), rgba(28, 32, 38, 0.58)),
-    color-mix(in srgb, var(--editor-bg) 72%, transparent);
+    linear-gradient(180deg, rgba(28, 32, 38, 0.42), rgba(28, 32, 38, 0.22)),
+    color-mix(in srgb, var(--editor-bg) 28%, transparent);
 }
 
 .markup-workspace-header,
@@ -1559,9 +1558,11 @@ button:disabled {
   display: grid;
   place-items: center;
   overflow: hidden;
+  isolation: isolate;
 }
 
-.markup-workspace-canvas-area.move-armed {
+.markup-workspace-canvas-area.move-armed,
+.markup-workspace-canvas-area.paint-armed {
   pointer-events: auto;
 }
 
@@ -1578,7 +1579,7 @@ button:disabled {
   color: var(--editor-text);
   border: 1px dashed var(--editor-border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--editor-panel-bg) 70%, transparent);
+  background: color-mix(in srgb, var(--editor-panel-bg) 26%, transparent);
   pointer-events: none;
 }
 
@@ -1592,7 +1593,7 @@ button:disabled {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 2;
+  z-index: 8;
 }
 
 .markup-note-pin {

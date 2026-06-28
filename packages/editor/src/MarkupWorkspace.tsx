@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { MarkupAnnotation } from "@sbuild/shared";
 import { clampMarkupCoordinate } from "./markupAnnotations.js";
 
@@ -32,7 +32,11 @@ type MarkupWorkspaceProps = {
   onUpdateNoteText: (id: string, text: string) => void;
   onMoveNote: (id: string, x: number, y: number) => void;
   onDeleteNote: (id: string) => void;
+  freehandLayer?: ReactNode;
+  paintCaptureActive: boolean;
 };
+
+const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17;
 
 export function MarkupWorkspace({
   pageTitle,
@@ -63,7 +67,9 @@ export function MarkupWorkspace({
   onCreateNote,
   onUpdateNoteText,
   onMoveNote,
-  onDeleteNote
+  onDeleteNote,
+  freehandLayer,
+  paintCaptureActive
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
   const workspaceStageRef = useRef<HTMLDivElement | null>(null);
@@ -73,10 +79,16 @@ export function MarkupWorkspace({
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
     const rect = workspaceStageRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const maxInsetX = Math.max(0, (rect.width - 1) / 2);
+    const maxInsetY = Math.max(0, (rect.height - 1) / 2);
+    const insetX = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetX);
+    const insetY = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetY);
+    const x = Math.min(rect.width - insetX, Math.max(insetX, event.clientX - rect.left));
+    const y = Math.min(rect.height - insetY, Math.max(insetY, event.clientY - rect.top));
     onMoveNote(
       id,
-      clampMarkupCoordinate((event.clientX - rect.left) / rect.width),
-      clampMarkupCoordinate((event.clientY - rect.top) / rect.height)
+      clampMarkupCoordinate(x / rect.width),
+      clampMarkupCoordinate(y / rect.height)
     );
   }
 
@@ -259,12 +271,13 @@ export function MarkupWorkspace({
         </aside>
 
         <div
-          className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""}`}
+          className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""} ${paintCaptureActive ? "paint-armed" : ""}`}
           aria-label="Markup note stage"
           data-testid="markup-note-stage"
           ref={workspaceStageRef}
           onPointerDown={placeArmedNote}
         >
+          {freehandLayer}
           <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
             {annotations.map((annotation, index) => (
               <button

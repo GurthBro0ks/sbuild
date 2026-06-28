@@ -1914,7 +1914,7 @@ test("paint overlay applies persisted and draft stroke separation", () => {
 });
 
 test("paint overlay visibility is Markup-mode only so discard cannot leak into normal editor", () => {
-  assert.match(appSource, /\{paintMode && \(/);
+  assert.match(appSource, /\{paintMode && !previewMode && \(/);
   assert.doesNotMatch(appSource, /\{\(paintMode \|\| paintAppliedStrokes\.length > 0\) && \(/);
 });
 
@@ -1960,8 +1960,8 @@ test("Markup sticky note pins are draggable and report normalized coordinates", 
   assert.match(markupWorkspaceSource, /onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
   assert.match(markupWorkspaceSource, /onPointerUp=\{endNoteDrag\}/);
   assert.match(markupWorkspaceSource, /setArmedMoveNoteId\(null\)/);
-  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(\(event\.clientX - rect\.left\) \/ rect\.width\)/);
-  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(\(event\.clientY - rect\.top\) \/ rect\.height\)/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(x \/ rect\.width\)/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(y \/ rect\.height\)/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*pointer-events:\s*auto/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*touch-action:\s*none/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*z-index:\s*3/);
@@ -1975,7 +1975,7 @@ test("Markup note stage, not the preview card, owns note bounds and pin position
   assert.ok(stageIdx > 0, "note stage exists");
   assert.ok(pinLayerIdx > stageIdx, "pin layer is inside note stage");
   assert.ok(previewIdx > pinLayerIdx, "preview card is rendered after the stage pin layer");
-  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\}`\}[\s\S]{0,260}ref=\{workspaceStageRef\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}[\s\S]{0,300}ref=\{workspaceStageRef\}/);
   assert.match(markupWorkspaceSource, /className="markup-note-pin-layer"[\s\S]{0,900}style=\{\{ left: `\$\{annotation\.x \* 100\}%`, top: `\$\{annotation\.y \* 100\}%`/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,180}position:\s*relative/);
   assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,120}inset:\s*0/);
@@ -1998,7 +1998,7 @@ test("Markup note Move mode places notes from the canvas without trapping text e
   assert.match(markupWorkspaceSource, /data-testid="markup-note-move"/);
   assert.match(markupWorkspaceSource, /aria-pressed=\{armedMoveNoteId === annotation\.id\}/);
   assert.match(markupWorkspaceSource, /onClick=\{\(\) => armNoteMove\(annotation\.id\)\}/);
-  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\}`\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}/);
   assert.match(markupWorkspaceSource, /onPointerDown=\{placeArmedNote\}/);
   assert.match(markupWorkspaceSource, /<textarea[\s\S]{0,220}data-testid="markup-note-text"/);
   assert.match(markupWorkspaceSource, /<button type="button" onClick=\{\(\) => onDeleteNote\(annotation\.id\)\} data-testid="markup-delete-note"/);
@@ -2298,6 +2298,15 @@ test("Markup workspace uses fixed full-page positioning and mobile z-index", () 
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.markup-workspace-shell[\s\S]*z-index:\s*130/);
 });
 
+test("Markup wash keeps the site preview readable behind controls", () => {
+  assert.match(cssSource, /rgba\(249,\s*250,\s*252,\s*0\.38\)/);
+  assert.match(cssSource, /rgba\(249,\s*250,\s*252,\s*0\.18\)/);
+  assert.match(cssSource, /color-mix\(in srgb, var\(--editor-bg\) 24%, transparent\)/);
+  assert.match(cssSource, /rgba\(28,\s*32,\s*38,\s*0\.42\)/);
+  assert.match(cssSource, /rgba\(28,\s*32,\s*38,\s*0\.22\)/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,420}background:\s*color-mix\(in srgb, var\(--editor-panel-bg\) 26%, transparent\)/);
+});
+
 test("paint overlay SVG does not use viewBox scaling", () => {
   const overlayIdx = appSource.indexOf('className={`paint-overlay');
   assert.ok(overlayIdx > 0, "paint-overlay SVG exists");
@@ -2306,14 +2315,19 @@ test("paint overlay SVG does not use viewBox scaling", () => {
   assert.doesNotMatch(overlayLine, /preserveAspectRatio/);
 });
 
-test("paint overlay covers full canvas-frame with inset 0 positioning", () => {
+test("paint overlay covers the Markup stage with inset 0 positioning", () => {
   assert.match(cssSource, /\.paint-overlay[\s\S]*position:\s*absolute/);
   assert.match(cssSource, /\.paint-overlay[\s\S]*inset:\s*0/);
+  assert.match(appSource, /freehandLayer=\{[\s\S]{0,180}<svg[\s\S]{0,120}className=\{`paint-overlay/);
+  assert.match(markupWorkspaceSource, /\{freehandLayer\}[\s\S]{0,120}<div className="markup-note-pin-layer"/);
 });
 
-test("paint overlay renders above Markup wash layer with high-contrast stroke halos", () => {
-  assert.match(cssSource, /\.paint-overlay[\s\S]{0,220}z-index:\s*135/);
-  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]{0,120}z-index:\s*140/);
+test("paint overlay is clipped inside the Markup stage with high-contrast stroke halos", () => {
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}overflow:\s*hidden/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,260}isolation:\s*isolate/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]{0,220}z-index:\s*5/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]{0,240}overflow:\s*hidden/);
+  assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,140}z-index:\s*8/);
   assert.match(appSource, /const MARKUP_STROKE_MIN_VISIBLE_OPACITY = 0\.9/);
   assert.match(appSource, /const MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET = 8/);
   assert.match(appSource, /const MARKUP_STROKE_INNER_HALO_WIDTH_OFFSET = 4/);
@@ -2324,7 +2338,10 @@ test("paint overlay renders above Markup wash layer with high-contrast stroke ha
 
 test("paint overlay captures pointer events in exclusive paint mode", () => {
   assert.match(appSource, /onPointerDown=\{paintExclusiveMode \? beginPaint : undefined\}/);
+  assert.match(markupWorkspaceSource, /paintCaptureActive: boolean/);
+  assert.match(markupWorkspaceSource, /paintCaptureActive \? "paint-armed" : ""/);
   assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*pointer-events:\s*auto/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area\.move-armed,\n\.markup-workspace-canvas-area\.paint-armed[\s\S]{0,80}pointer-events:\s*auto/);
 });
 
 test("paint mode disables contentEditable and block selection", () => {
@@ -2348,6 +2365,22 @@ test("Markup workspace is not inside paint-overlay SVG", () => {
   assert.ok(workspaceShellIdx > 0, "MarkupWorkspace exists");
   assert.ok(overlayIdx > 0, "paint-overlay exists");
   assert.ok(workspaceShellIdx < overlayIdx, "Markup workspace is before paint-overlay in DOM, not inside it");
+});
+
+test("Markup paint coordinate math uses the Markup stage instead of editor chrome", () => {
+  assert.match(appSource, /function getMarkupPaintStageElement/);
+  assert.match(appSource, /closest\("\.markup-workspace-canvas-area"\)/);
+  assert.match(appSource, /document\.querySelector\("\.markup-workspace-canvas-area"\)/);
+  assert.match(appSource, /Math\.min\(rect\.width, Math\.max\(0, e\.clientX - rect\.left\)\)/);
+  assert.match(appSource, /Math\.min\(rect\.height, Math\.max\(0, e\.clientY - rect\.top\)\)/);
+});
+
+test("Markup note movement clamps pins inside the Markup stage", () => {
+  assert.match(markupWorkspaceSource, /const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17/);
+  assert.match(markupWorkspaceSource, /const insetX = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetX\)/);
+  assert.match(markupWorkspaceSource, /const insetY = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetY\)/);
+  assert.match(markupWorkspaceSource, /Math\.min\(rect\.width - insetX, Math\.max\(insetX, event\.clientX - rect\.left\)\)/);
+  assert.match(markupWorkspaceSource, /Math\.min\(rect\.height - insetY, Math\.max\(insetY, event\.clientY - rect\.top\)\)/);
 });
 
 test("Markup workspace is outside canvas-area scroll container", () => {
