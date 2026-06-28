@@ -1491,6 +1491,12 @@ button:disabled {
   padding: 8px;
   border: 1px solid var(--editor-border);
   border-radius: 8px;
+  cursor: grab;
+}
+
+.markup-workspace-note-editor.dragging {
+  cursor: grabbing;
+  border-color: var(--editor-highlight);
 }
 
 .markup-workspace-note-handle {
@@ -1506,7 +1512,7 @@ button:disabled {
   background: color-mix(in srgb, var(--editor-panel-bg) 76%, var(--editor-bg));
   font-size: 12px;
   font-weight: 700;
-  cursor: default;
+  cursor: grab;
   touch-action: pan-y;
   user-select: auto;
 }
@@ -1543,11 +1549,13 @@ button:disabled {
 }
 
 .markup-workspace-canvas-area {
+  position: relative;
   min-width: 0;
   min-height: 0;
   pointer-events: none;
   display: grid;
   place-items: center;
+  overflow: hidden;
 }
 
 .markup-workspace-canvas-area.move-armed {
@@ -1556,6 +1564,7 @@ button:disabled {
 
 .markup-workspace-canvas-frame {
   position: relative;
+  z-index: 1;
   width: min(100%, 760px);
   min-height: 220px;
   display: grid;
@@ -1567,6 +1576,7 @@ button:disabled {
   border: 1px dashed var(--editor-border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--editor-panel-bg) 70%, transparent);
+  pointer-events: none;
 }
 
 .markup-workspace-canvas-frame.move-armed {

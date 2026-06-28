@@ -1866,6 +1866,8 @@ test("paint mode uses a focused Markup workspace shell", () => {
   assert.match(markupWorkspaceSource, /aria-labelledby="markup-workspace-title"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-workspace-close"/);
   assert.match(markupWorkspaceSource, /aria-label="Close Markup workspace"/);
+  assert.match(markupWorkspaceSource, /aria-label="Markup note stage"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-stage"/);
   assert.match(markupWorkspaceSource, /aria-label="Canvas preview area"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-workspace-context"/);
 });
@@ -1933,6 +1935,7 @@ test("Markup sticky note controls are explicit and scoped to the workspace", () 
   assert.match(markupWorkspaceSource, /data-testid="markup-note-move"/);
   assert.match(markupWorkspaceSource, /aria-label="Sticky note annotations"/);
   assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
+  assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}[\s\S]{0,260}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
 });
 
 test("Markup workspace save button invokes the existing project save flow", () => {
@@ -1944,6 +1947,10 @@ test("Markup workspace save button invokes the existing project save flow", () =
 });
 
 test("Markup sticky note pins are draggable and report normalized coordinates", () => {
+  assert.match(markupWorkspaceSource, /const workspaceStageRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.doesNotMatch(markupWorkspaceSource, /canvasFrameRef/);
+  assert.match(markupWorkspaceSource, /workspaceStageRef\.current\?\.getBoundingClientRect\(\)/);
+  assert.match(markupWorkspaceSource, /ref=\{workspaceStageRef\}/);
   assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}/);
   assert.match(markupWorkspaceSource, /onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
   assert.match(markupWorkspaceSource, /onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
@@ -1957,10 +1964,24 @@ test("Markup sticky note pins are draggable and report normalized coordinates", 
   assert.match(cssSource, /\.markup-note-pin::before[\s\S]*inset:\s*-8px/);
 });
 
+test("Markup note stage, not the preview card, owns note bounds and pin positioning", () => {
+  const stageIdx = markupWorkspaceSource.indexOf('data-testid="markup-note-stage"');
+  const pinLayerIdx = markupWorkspaceSource.indexOf('className="markup-note-pin-layer"');
+  const previewIdx = markupWorkspaceSource.indexOf('data-testid="markup-workspace-canvas-area"');
+  assert.ok(stageIdx > 0, "note stage exists");
+  assert.ok(pinLayerIdx > stageIdx, "pin layer is inside note stage");
+  assert.ok(previewIdx > pinLayerIdx, "preview card is rendered after the stage pin layer");
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\}`\}[\s\S]{0,260}ref=\{workspaceStageRef\}/);
+  assert.match(markupWorkspaceSource, /className="markup-note-pin-layer"[\s\S]{0,900}style=\{\{ left: `\$\{annotation\.x \* 100\}%`, top: `\$\{annotation\.y \* 100\}%`/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,180}position:\s*relative/);
+  assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,120}inset:\s*0/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,260}pointer-events:\s*none/);
+});
+
 test("Markup note Move mode places notes from the canvas without trapping text editing or buttons", () => {
   assert.match(markupWorkspaceSource, /const \[armedMoveNoteId, setArmedMoveNoteId\] = useState<string \| null>\(null\)/);
   assert.match(markupWorkspaceSource, /function shouldStartNoteDrag\(event: PointerEvent<HTMLElement>\)/);
-  assert.match(markupWorkspaceSource, /closest\("textarea, button, input, select, a"\)/);
+  assert.match(markupWorkspaceSource, /closest\("textarea, button, input, select, a, label"\)/);
   assert.match(markupWorkspaceSource, /return !blockedControl \|\| blockedControl === event\.currentTarget/);
   assert.match(markupWorkspaceSource, /function armNoteMove\(id: string\)/);
   assert.match(markupWorkspaceSource, /setArmedMoveNoteId\(\(currentId\) => \(currentId === id \? null : id\)\)/);
@@ -2653,7 +2674,7 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
 
 test("markup toolbar shows click-drag instruction", () => {
   assert.match(markupWorkspaceSource, /Click and drag to draw freehand draft markup/);
-  assert.match(markupWorkspaceSource, /choose Move on a note and click the canvas/);
+  assert.match(markupWorkspaceSource, /choose Move on a note and click the workspace/);
   assert.match(markupWorkspaceSource, /Freehand strokes are session-only/);
   assert.match(markupWorkspaceSource, /Sticky notes are saved with the project/);
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);

@@ -58,12 +58,12 @@ export function MarkupWorkspace({
   onDeleteNote
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
-  const canvasFrameRef = useRef<HTMLDivElement | null>(null);
+  const workspaceStageRef = useRef<HTMLDivElement | null>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
 
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
-    const rect = canvasFrameRef.current?.getBoundingClientRect();
+    const rect = workspaceStageRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     onMoveNote(
       id,
@@ -74,7 +74,7 @@ export function MarkupWorkspace({
 
   function shouldStartNoteDrag(event: PointerEvent<HTMLElement>) {
     const target = event.target instanceof HTMLElement ? event.target : null;
-    const blockedControl = target?.closest("textarea, button, input, select, a");
+    const blockedControl = target?.closest("textarea, button, input, select, a, label");
     return !blockedControl || blockedControl === event.currentTarget;
   }
 
@@ -201,7 +201,16 @@ export function MarkupWorkspace({
             ) : (
               <div className="markup-workspace-note-list">
                 {annotations.map((annotation, index) => (
-                  <article className="markup-workspace-note-editor" data-testid="markup-note-editor" key={annotation.id}>
+                    <article
+                      className={`markup-workspace-note-editor ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                      data-testid="markup-note-editor"
+                      data-markup-note-id={annotation.id}
+                      key={annotation.id}
+                      onPointerDown={(event) => startNoteDrag(annotation.id, event)}
+                      onPointerMove={(event) => dragNote(annotation.id, event)}
+                      onPointerUp={endNoteDrag}
+                      onPointerCancel={endNoteDrag}
+                    >
                     <div
                       className={`markup-workspace-note-handle ${armedMoveNoteId === annotation.id ? "move-armed" : ""}`}
                       data-testid="markup-note-drag-handle"
@@ -238,34 +247,40 @@ export function MarkupWorkspace({
           </section>
         </aside>
 
-        <div className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""}`} aria-label="Canvas preview area" data-testid="markup-workspace-canvas-area">
+        <div
+          className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""}`}
+          aria-label="Markup note stage"
+          data-testid="markup-note-stage"
+          ref={workspaceStageRef}
+          onPointerDown={placeArmedNote}
+        >
+          <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
+            {annotations.map((annotation, index) => (
+              <button
+                type="button"
+                key={annotation.id}
+                className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                data-testid="markup-note-pin"
+                data-markup-note-id={annotation.id}
+                aria-label={`Move Markup note ${index + 1}`}
+                title={`Move note ${index + 1}`}
+                style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, backgroundColor: annotation.color || "#ffcf33" }}
+                onPointerDown={(event) => startNoteDrag(annotation.id, event)}
+                onPointerMove={(event) => dragNote(annotation.id, event)}
+                onPointerUp={endNoteDrag}
+                onPointerCancel={endNoteDrag}
+              >
+                {index + 1}
+              </button>
+            ))}
+          </div>
           <div
             className={`markup-workspace-canvas-frame ${armedMoveNoteId ? "move-armed" : ""}`}
-            ref={canvasFrameRef}
-            onPointerDown={placeArmedNote}
+            aria-label="Canvas preview area"
+            data-testid="markup-workspace-canvas-area"
           >
-            <div className="markup-note-pin-layer" aria-label="Saved Markup note pins">
-              {annotations.map((annotation, index) => (
-                <button
-                  type="button"
-                  key={annotation.id}
-                  className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""}`}
-                  data-testid="markup-note-pin"
-                  data-markup-note-id={annotation.id}
-                  aria-label={`Move Markup note ${index + 1}`}
-                  title={`Move note ${index + 1}`}
-                  style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, backgroundColor: annotation.color || "#ffcf33" }}
-                  onPointerDown={(event) => startNoteDrag(annotation.id, event)}
-                  onPointerMove={(event) => dragNote(annotation.id, event)}
-                  onPointerUp={endNoteDrag}
-                  onPointerCancel={endNoteDrag}
-                >
-                  {index + 1}
-                </button>
-              ))}
-            </div>
             <strong>Canvas preview area</strong>
-            <p>Click and drag to draw freehand draft markup. Drag numbered note pins, or choose Move on a note and click the canvas. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Freehand strokes are session-only and discarded when you close this workspace unless you keep them during this Markup session. Sticky notes are saved with the project, shown only in Markup, and not published. Advanced drawing tools and AI attach are not implemented in this slice.</p>
           </div>
         </div>
       </div>
