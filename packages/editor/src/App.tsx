@@ -1415,6 +1415,8 @@ export function App() {
   const [resetPwMsgOk, setResetPwMsgOk] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(() => localStorage.getItem("sbuild_left_collapsed") === "1");
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [markupControlsCollapsed, setMarkupControlsCollapsed] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
+  const [markupStageRightInset, setMarkupStageRightInset] = useState(0);
   const [prePreviewLeftCollapsed, setPrePreviewLeftCollapsed] = useState(false);
   const [prePreviewRightCollapsed, setPrePreviewRightCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth <= 768 : false);
@@ -4419,6 +4421,31 @@ export function App() {
     setPaintActivePoints([]);
   }, [paintMode, selectedPage?.id, project?.markupFreehandStrokes]);
 
+  useEffect(() => {
+    if (!paintMode || isMobileViewport) {
+      setMarkupStageRightInset(0);
+      return;
+    }
+    function measureMarkupStageInset() {
+      const drawer = document.querySelector(".right-drawer");
+      if (!drawer) { setMarkupStageRightInset(0); return; }
+      const rect = drawer.getBoundingClientRect();
+      if (rect.width <= 0 || rect.left <= 0) { setMarkupStageRightInset(0); return; }
+      setMarkupStageRightInset(Math.max(0, Math.round(window.innerWidth - rect.left)));
+    }
+    measureMarkupStageInset();
+    window.addEventListener("resize", measureMarkupStageInset);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measureMarkupStageInset) : null;
+    if (ro) {
+      const drawer = document.querySelector(".right-drawer");
+      if (drawer) ro.observe(drawer);
+    }
+    return () => {
+      window.removeEventListener("resize", measureMarkupStageInset);
+      if (ro) ro.disconnect();
+    };
+  }, [paintMode, isMobileViewport, rightCollapsed]);
+
   function beginPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -6549,6 +6576,9 @@ export function App() {
           onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
           paintCaptureActive={paintExclusiveMode}
+          controlsCollapsed={markupControlsCollapsed}
+          onToggleControls={() => setMarkupControlsCollapsed((v) => !v)}
+          stageRightInsetPx={markupStageRightInset}
           freehandLayer={
             <svg
               className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`}

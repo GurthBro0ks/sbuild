@@ -1404,6 +1404,27 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
   gap: 8px;
+  padding-right: var(--markup-stage-right-inset, 0px);
+}
+
+.markup-workspace-body.controls-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.markup-workspace-panel.controls-collapsed {
+  display: none;
+}
+
+.markup-controls-toggle {
+  flex: 0 0 auto;
+  min-width: 96px;
+  min-height: 34px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.markup-controls-toggle[aria-pressed="true"] {
+  font-weight: 700;
 }
 
 .markup-workspace-panel {
@@ -1668,7 +1689,8 @@ button:disabled {
   }
 
   .markup-workspace-save,
-  .markup-workspace-close {
+  .markup-workspace-close,
+  .markup-controls-toggle {
     flex: 0 0 auto;
     min-width: 84px;
     min-height: 36px;

@@ -2383,6 +2383,45 @@ test("Markup note movement clamps pins inside the Markup stage", () => {
   assert.match(markupWorkspaceSource, /Math\.min\(rect\.height - insetY, Math\.max\(insetY, event\.clientY - rect\.top\)\)/);
 });
 
+test("Markup controls can be collapsed and reopened via a Hide/Show toggle", () => {
+  assert.match(markupWorkspaceSource, /controlsCollapsed: boolean/);
+  assert.match(markupWorkspaceSource, /onToggleControls: \(\) => void/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-controls-toggle"/);
+  assert.match(markupWorkspaceSource, /className="markup-controls-toggle"/);
+  assert.match(markupWorkspaceSource, /onClick=\{onToggleControls\}/);
+  assert.match(markupWorkspaceSource, /controlsCollapsed \? "Show Controls" : "Hide Controls"/);
+  assert.match(markupWorkspaceSource, /aria-pressed=\{controlsCollapsed\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-body \$\{controlsCollapsed \? "controls-collapsed" : ""\}`\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-panel \$\{controlsCollapsed \? "controls-collapsed" : ""\}`\}/);
+  assert.match(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(cssSource, /\.markup-workspace-panel\.controls-collapsed[\s\S]*display:\s*none/);
+});
+
+test("Markup stage reserves right inset for the editor props/menu panel", () => {
+  assert.match(markupWorkspaceSource, /stageRightInsetPx: number/);
+  assert.match(markupWorkspaceSource, /--markup-stage-right-inset/);
+  assert.match(markupWorkspaceSource, /Math\.max\(0, stageRightInsetPx\)/);
+  assert.match(cssSource, /\.markup-workspace-body[\s\S]*padding-right:\s*var\(--markup-stage-right-inset/);
+  assert.match(appSource, /const \[markupStageRightInset, setMarkupStageRightInset\] = useState\(0\)/);
+  assert.match(appSource, /measureMarkupStageInset/);
+  assert.match(appSource, /window\.innerWidth - rect\.left/);
+  assert.match(appSource, /stageRightInsetPx=\{markupStageRightInset\}/);
+  assert.match(appSource, /controlsCollapsed=\{markupControlsCollapsed\}/);
+  assert.match(appSource, /onToggleControls=\{\(\) => setMarkupControlsCollapsed\(\(v\) => !v\)\}/);
+});
+
+test("Markup freehand only draws from the stage-owned paint overlay, never editor chrome", () => {
+  assert.match(appSource, /onPointerDown=\{paintExclusiveMode \? beginPaint : undefined\}/);
+  assert.match(appSource, /closest\("\.markup-workspace-canvas-area"\)/);
+  assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}overflow:\s*hidden/);
+  assert.match(cssSource, /\.paint-overlay\.capture-active[\s\S]*pointer-events:\s*auto/);
+});
+
+test("Markup controls toggle textarea and buttons do not become drawing targets", () => {
+  assert.match(markupWorkspaceSource, /target\?\.closest\("textarea, button, input, select, a, label"\)/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}/);
+});
+
 test("Markup workspace is outside canvas-area scroll container", () => {
   const workspaceShellIdx = appSource.indexOf("<MarkupWorkspace");
   const canvasAreaIdx = appSource.indexOf('className="canvas-area"');

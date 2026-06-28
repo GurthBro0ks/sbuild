@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import type { MarkupAnnotation } from "@sbuild/shared";
 import { clampMarkupCoordinate } from "./markupAnnotations.js";
 
@@ -34,6 +34,9 @@ type MarkupWorkspaceProps = {
   onDeleteNote: (id: string) => void;
   freehandLayer?: ReactNode;
   paintCaptureActive: boolean;
+  controlsCollapsed: boolean;
+  onToggleControls: () => void;
+  stageRightInsetPx: number;
 };
 
 const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17;
@@ -69,7 +72,10 @@ export function MarkupWorkspace({
   onMoveNote,
   onDeleteNote,
   freehandLayer,
-  paintCaptureActive
+  paintCaptureActive,
+  controlsCollapsed,
+  onToggleControls,
+  stageRightInsetPx
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
   const workspaceStageRef = useRef<HTMLDivElement | null>(null);
@@ -138,10 +144,11 @@ export function MarkupWorkspace({
 
   return (
     <section
-      className="markup-workspace-shell"
+      className={`markup-workspace-shell ${controlsCollapsed ? "controls-collapsed" : ""}`}
       role="dialog"
       aria-labelledby="markup-workspace-title"
       data-testid="markup-workspace"
+      style={{ ["--markup-stage-right-inset" as string]: `${Math.max(0, stageRightInsetPx)}px` } as CSSProperties}
     >
       <header className="markup-workspace-header">
         <div className="markup-workspace-title-group">
@@ -152,6 +159,17 @@ export function MarkupWorkspace({
           </p>
         </div>
         <div className="markup-workspace-header-actions">
+          <button
+            type="button"
+            className="markup-controls-toggle"
+            data-testid="markup-controls-toggle"
+            onClick={onToggleControls}
+            aria-pressed={controlsCollapsed}
+            aria-label={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
+            title={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
+          >
+            {controlsCollapsed ? "Show Controls" : "Hide Controls"}
+          </button>
           <button
             type="button"
             className="markup-workspace-save"
@@ -172,8 +190,8 @@ export function MarkupWorkspace({
         </div>
       </header>
 
-      <div className="markup-workspace-body">
-        <aside className="markup-workspace-panel" aria-label="Markup tools and status">
+      <div className={`markup-workspace-body ${controlsCollapsed ? "controls-collapsed" : ""}`}>
+        <aside className={`markup-workspace-panel ${controlsCollapsed ? "controls-collapsed" : ""}`} aria-label="Markup tools and status">
           <div className="markup-workspace-context" data-testid="markup-workspace-context">
             <span>View: {deviceMode}</span>
             <span>Draft strokes: {draftStrokeCount}</span>
