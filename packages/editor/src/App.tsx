@@ -120,8 +120,13 @@ type PaintPoint = { x: number; y: number };
 type PaintTool = "brush" | "eraser";
 type PaintDrawMode = "free" | "line";
 type PaintStroke = { id: string; tool: Exclude<PaintTool, "eraser">; mode: PaintDrawMode; color: string; size: number; opacity?: number; points: PaintPoint[] };
-const MARKUP_DRAFT_STROKE_OPACITY = 0.9;
+const MARKUP_DRAFT_STROKE_OPACITY = 1;
 const MARKUP_APPLIED_STROKE_OPACITY = 1;
+const MARKUP_STROKE_MIN_VISIBLE_OPACITY = 0.9;
+const MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET = 8;
+const MARKUP_STROKE_INNER_HALO_WIDTH_OFFSET = 4;
+const MARKUP_STROKE_OUTER_HALO_OPACITY = 0.9;
+const MARKUP_STROKE_INNER_HALO_OPACITY = 0.78;
 type DragState = { blockId: string; startIndex: number; currentIndex: number } | null;
 type ContextMenuState = { visible: boolean; x: number; y: number; blockId: string; isSiteHeader?: boolean } | null;
 type ResizeDragState = { handle: "right" | "bottom"; blockId: string; startX: number; startY: number; startWidth: number; startMinHeight: number } | null;
@@ -4463,6 +4468,22 @@ export function App() {
     setStatus("Markup stroke added");
   }
 
+  function visibleMarkupStrokeOpacity(opacity: number | undefined, fallback: number) {
+    return Math.max(opacity ?? fallback, MARKUP_STROKE_MIN_VISIBLE_OPACITY);
+  }
+
+  function renderMarkupStroke(key: string, points: PaintPoint[], color: string, size: number, opacity: number | undefined, fallbackOpacity: number) {
+    const pointsValue = points.map((p) => `${p.x},${p.y}`).join(" ");
+    const visibleOpacity = visibleMarkupStrokeOpacity(opacity, fallbackOpacity);
+    return (
+      <g key={key} className="markup-freehand-stroke">
+        <polyline points={pointsValue} fill="none" stroke="#ffffff" strokeWidth={size + MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_OUTER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={pointsValue} fill="none" stroke="#0b1020" strokeWidth={size + MARKUP_STROKE_INNER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_INNER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={pointsValue} fill="none" stroke={color} strokeWidth={size} strokeOpacity={visibleOpacity} strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    );
+  }
+
   function clearPaintDraft() {
     setPaintDraftStrokes([]);
     setPaintRedoStrokes([]);
@@ -7205,13 +7226,13 @@ export function App() {
             {paintMode && (
               <svg className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`} onPointerDown={paintExclusiveMode ? beginPaint : undefined} onPointerMove={paintExclusiveMode ? movePaint : undefined} onPointerUp={paintExclusiveMode ? endPaint : undefined}>
                 {paintAppliedStrokes.map((stroke) => (
-                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? 1} strokeLinecap="round" strokeLinejoin="round" />
+                  renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_APPLIED_STROKE_OPACITY)
                 ))}
                 {paintDraftStrokes.map((stroke) => (
-                  <polyline key={stroke.id} points={stroke.points.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={stroke.color} strokeWidth={stroke.size} strokeOpacity={stroke.opacity ?? MARKUP_DRAFT_STROKE_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
+                  renderMarkupStroke(stroke.id, stroke.points, stroke.color, stroke.size, stroke.opacity, MARKUP_DRAFT_STROKE_OPACITY)
                 ))}
                 {paintMode && paintActivePoints.length > 1 && (
-                  <polyline points={paintActivePoints.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={paintColor} strokeWidth={paintSize} strokeOpacity={MARKUP_DRAFT_STROKE_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
+                  renderMarkupStroke("active-stroke", paintActivePoints, paintColor, paintSize, MARKUP_DRAFT_STROKE_OPACITY, MARKUP_DRAFT_STROKE_OPACITY)
                 )}
               </svg>
             )}
