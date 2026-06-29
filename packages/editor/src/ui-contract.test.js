@@ -2310,12 +2310,14 @@ test("Markup wash keeps the site preview readable behind controls", () => {
   assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,420}background:\s*color-mix\(in srgb, var\(--editor-panel-bg\) 26%, transparent\)/);
 });
 
-test("paint overlay SVG does not use viewBox scaling", () => {
+test("paint overlay SVG uses a stable normalized coordinate plane with non-scaling stroke width", () => {
   const overlayIdx = appSource.indexOf('className={`paint-overlay');
   assert.ok(overlayIdx > 0, "paint-overlay SVG exists");
   const overlayLine = appSource.substring(overlayIdx, overlayIdx + 300);
-  assert.doesNotMatch(overlayLine, /viewBox/);
-  assert.doesNotMatch(overlayLine, /preserveAspectRatio/);
+  assert.match(overlayLine, /viewBox="0 0 100 100"/);
+  assert.match(overlayLine, /preserveAspectRatio="none"/);
+  assert.match(appSource, /points\.map\(\(p\) => `\$\{p\.x \* 100\},\$\{p\.y \* 100\}`\)\.join\(" "\)/);
+  assert.match(appSource, /vectorEffect="non-scaling-stroke"/);
 });
 
 test("paint overlay covers the Markup stage with inset 0 positioning", () => {
@@ -2374,8 +2376,8 @@ test("Markup paint coordinate math uses the Markup stage instead of editor chrom
   assert.match(appSource, /function getMarkupPaintStageElement/);
   assert.match(appSource, /closest\("\.markup-workspace-canvas-area"\)/);
   assert.match(appSource, /document\.querySelector\("\.markup-workspace-canvas-area"\)/);
-  assert.match(appSource, /Math\.min\(rect\.width, Math\.max\(0, e\.clientX - rect\.left\)\)/);
-  assert.match(appSource, /Math\.min\(rect\.height, Math\.max\(0, e\.clientY - rect\.top\)\)/);
+  assert.match(appSource, /Math\.min\(1, Math\.max\(0, \(e\.clientX - rect\.left\) \/ rect\.width\)\)/);
+  assert.match(appSource, /Math\.min\(1, Math\.max\(0, \(e\.clientY - rect\.top\) \/ rect\.height\)\)/);
 });
 
 test("Markup note movement clamps pins inside the Markup stage", () => {
@@ -2423,6 +2425,40 @@ test("Markup freehand only draws from the stage-owned paint overlay, never edito
 test("Markup controls toggle textarea and buttons do not become drawing targets", () => {
   assert.match(markupWorkspaceSource, /target\?\.closest\("textarea, button, input, select, a, label"\)/);
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}/);
+});
+
+test("Markup freehand strokes are stored and rendered on a stable normalized content coordinate plane", () => {
+  assert.match(appSource, /type PaintPoint = \{ x: number; y: number \};/);
+  assert.match(appSource, /const x = Math\.min\(1, Math\.max\(0, \(e\.clientX - rect\.left\) \/ rect\.width\)\);/);
+  assert.match(appSource, /const y = Math\.min\(1, Math\.max\(0, \(e\.clientY - rect\.top\) \/ rect\.height\)\);/);
+  assert.match(appSource, /function clampMarkupPoint\(value: number\): number/);
+  assert.match(appSource, /points: stroke\.points\.map\(\(point\) => \(\{[\s\S]{0,80}x: clampMarkupPoint\(point\.x\),[\s\S]{0,40}y: clampMarkupPoint\(point\.y\)/);
+  assert.match(appSource, /points: stroke\.points\.slice\(0, 2000\)\.map\(\(point\) => \(\{[\s\S]{0,80}x: clampMarkupPoint\(point\.x\),[\s\S]{0,40}y: clampMarkupPoint\(point\.y\)/);
+});
+
+test("Markup freehand coordinates stay stable across controls show/hide", () => {
+  assert.doesNotMatch(appSource, /point\.x \* width/);
+  assert.doesNotMatch(appSource, /point\.y \* height/);
+  assert.doesNotMatch(appSource, /point\.x \/ width/);
+  assert.doesNotMatch(appSource, /point\.y \/ height/);
+  assert.doesNotMatch(appSource, /function getPaintCanvasSize/);
+  assert.match(appSource, /viewBox="0 0 100 100"/);
+  assert.match(appSource, /preserveAspectRatio="none"/);
+  assert.match(appSource, /points\.map\(\(p\) => `\$\{p\.x \* 100\},\$\{p\.y \* 100\}`\)\.join\(" "\)/);
+  const appliedProj = appSource.indexOf("function projectStrokeToPaintStroke");
+  const appliedBody = appSource.substring(appliedProj, appliedProj + 360);
+  assert.doesNotMatch(appliedBody, /getPaintCanvasSize/);
+  assert.doesNotMatch(appliedBody, /\* width/);
+  const keptProj = appSource.indexOf("function paintStrokeToProjectStroke");
+  const keptBody = appSource.substring(keptProj, keptProj + 360);
+  assert.doesNotMatch(keptBody, /getPaintCanvasSize/);
+  assert.doesNotMatch(keptBody, /\/ width/);
+  const strokeRender = appSource.indexOf("function renderMarkupStroke");
+  const strokeBody = appSource.substring(strokeRender, strokeRender + 1200);
+  assert.match(strokeBody, /p\.x \* 100/);
+  assert.match(strokeBody, /p\.y \* 100/);
+  const haloCount = (strokeBody.match(/vectorEffect="non-scaling-stroke"/g) || []).length;
+  assert.equal(haloCount, 3, "all three stroke polylines use non-scaling-stroke so width stays uniform");
 });
 
 test("Markup workspace is outside canvas-area scroll container", () => {

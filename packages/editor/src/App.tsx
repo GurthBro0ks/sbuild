@@ -4363,21 +4363,18 @@ export function App() {
     const stage = getMarkupPaintStageElement(e.target) || (e.target as Element).closest(".canvas-frame");
     if (!stage) return { x: 0, y: 0 };
     const rect = stage.getBoundingClientRect();
-    const x = Math.min(rect.width, Math.max(0, e.clientX - rect.left));
-    const y = Math.min(rect.height, Math.max(0, e.clientY - rect.top));
-    return { x: Math.round(x), y: Math.round(y) };
+    if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    return { x, y };
   }
 
-  function getPaintCanvasSize() {
-    const rect = getMarkupPaintStageElement()?.getBoundingClientRect() || canvasRef.current?.getBoundingClientRect();
-    return {
-      width: rect && rect.width > 0 ? rect.width : 1,
-      height: rect && rect.height > 0 ? rect.height : 1
-    };
+  function clampMarkupPoint(value: number): number {
+    if (!Number.isFinite(value)) return 0.5;
+    return Math.min(1, Math.max(0, value));
   }
 
   function projectStrokeToPaintStroke(stroke: MarkupFreehandStroke): PaintStroke {
-    const { width, height } = getPaintCanvasSize();
     return {
       id: stroke.id,
       tool: "brush",
@@ -4386,21 +4383,20 @@ export function App() {
       size: stroke.size,
       opacity: stroke.opacity ?? 1,
       points: stroke.points.map((point) => ({
-        x: Math.round(point.x * width),
-        y: Math.round(point.y * height)
+        x: clampMarkupPoint(point.x),
+        y: clampMarkupPoint(point.y)
       }))
     };
   }
 
   function paintStrokeToProjectStroke(stroke: PaintStroke, pageId: string, blockId: string | undefined, createdAt: string): MarkupFreehandStroke {
-    const { width, height } = getPaintCanvasSize();
     return {
       id: stroke.id,
       pageId,
       blockId,
       points: stroke.points.slice(0, 2000).map((point) => ({
-        x: Math.min(1, Math.max(0, point.x / width)),
-        y: Math.min(1, Math.max(0, point.y / height))
+        x: clampMarkupPoint(point.x),
+        y: clampMarkupPoint(point.y)
       })),
       color: stroke.color,
       size: stroke.size,
@@ -4509,13 +4505,13 @@ export function App() {
   }
 
   function renderMarkupStroke(key: string, points: PaintPoint[], color: string, size: number, opacity: number | undefined, fallbackOpacity: number) {
-    const pointsValue = points.map((p) => `${p.x},${p.y}`).join(" ");
+    const pointsValue = points.map((p) => `${p.x * 100},${p.y * 100}`).join(" ");
     const visibleOpacity = visibleMarkupStrokeOpacity(opacity, fallbackOpacity);
     return (
       <g key={key} className="markup-freehand-stroke">
-        <polyline points={pointsValue} fill="none" stroke="#ffffff" strokeWidth={size + MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_OUTER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
-        <polyline points={pointsValue} fill="none" stroke="#0b1020" strokeWidth={size + MARKUP_STROKE_INNER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_INNER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" />
-        <polyline points={pointsValue} fill="none" stroke={color} strokeWidth={size} strokeOpacity={visibleOpacity} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={pointsValue} fill="none" stroke="#ffffff" strokeWidth={size + MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_OUTER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <polyline points={pointsValue} fill="none" stroke="#0b1020" strokeWidth={size + MARKUP_STROKE_INNER_HALO_WIDTH_OFFSET} strokeOpacity={MARKUP_STROKE_INNER_HALO_OPACITY} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <polyline points={pointsValue} fill="none" stroke={color} strokeWidth={size} strokeOpacity={visibleOpacity} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       </g>
     );
   }
@@ -6582,6 +6578,8 @@ export function App() {
           freehandLayer={
             <svg
               className={`paint-overlay ${paintExclusiveMode ? "capture-active" : ""}`}
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
               onPointerDown={paintExclusiveMode ? beginPaint : undefined}
               onPointerMove={paintExclusiveMode ? movePaint : undefined}
               onPointerUp={paintExclusiveMode ? endPaint : undefined}
