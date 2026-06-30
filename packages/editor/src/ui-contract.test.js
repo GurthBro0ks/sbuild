@@ -12,6 +12,14 @@ const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8")
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
 
+function cssRule(selector, fromIndex = 0) {
+  const start = cssSource.indexOf(selector, fromIndex);
+  assert.ok(start >= 0, `${selector} rule exists`);
+  const end = cssSource.indexOf("\n}", start);
+  assert.ok(end > start, `${selector} rule has a closing brace`);
+  return cssSource.slice(start, end + 2);
+}
+
 test("gallery slots expose direct selection and selected-slot highlight affordances", () => {
   assert.match(appSource, /selectGallerySlot\(block\.id, index\)/);
   assert.match(appSource, /setSelectedGalleryIndex\(index\)/);
@@ -1942,7 +1950,7 @@ test("Markup sticky note controls are explicit and scoped to the workspace", () 
   assert.match(markupWorkspaceSource, /data-testid="markup-note-move"/);
   assert.match(markupWorkspaceSource, /aria-label="Sticky note annotations"/);
   assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
-  assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}[\s\S]{0,260}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,520}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
 });
 
 test("Markup workspace save button invokes the existing project save flow", () => {
@@ -1954,14 +1962,14 @@ test("Markup workspace save button invokes the existing project save flow", () =
 });
 
 test("Markup sticky note pins are draggable and report normalized coordinates", () => {
-  assert.match(markupWorkspaceSource, /const workspaceStageRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(markupWorkspaceSource, /const paintPlaneRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.doesNotMatch(markupWorkspaceSource, /canvasFrameRef/);
-  assert.match(markupWorkspaceSource, /workspaceStageRef\.current\?\.getBoundingClientRect\(\)/);
-  assert.match(markupWorkspaceSource, /ref=\{workspaceStageRef\}/);
+  assert.match(markupWorkspaceSource, /paintPlaneRef\.current\?\.getBoundingClientRect\(\)/);
+  assert.match(markupWorkspaceSource, /ref=\{paintPlaneRef\}/);
   assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}/);
-  assert.match(markupWorkspaceSource, /onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
-  assert.match(markupWorkspaceSource, /onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
-  assert.match(markupWorkspaceSource, /onPointerUp=\{endNoteDrag\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,520}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,560}onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,600}onPointerUp=\{endNoteDrag\}/);
   assert.match(markupWorkspaceSource, /setArmedMoveNoteId\(null\)/);
   assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(x \/ rect\.width\)/);
   assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(y \/ rect\.height\)/);
@@ -1978,7 +1986,7 @@ test("Markup note stage, not the preview card, owns note bounds and pin position
   assert.ok(stageIdx > 0, "note stage exists");
   assert.ok(pinLayerIdx > stageIdx, "pin layer is inside note stage");
   assert.ok(previewIdx > pinLayerIdx, "preview card is rendered after the stage pin layer");
-  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}[\s\S]{0,300}ref=\{workspaceStageRef\}/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}[\s\S]{0,360}ref=\{paintPlaneRef\}/);
   assert.match(markupWorkspaceSource, /className="markup-note-pin-layer"[\s\S]{0,900}style=\{\{ left: `\$\{annotation\.x \* 100\}%`, top: `\$\{annotation\.y \* 100\}%`/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,180}position:\s*relative/);
   assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,120}inset:\s*0/);
@@ -2382,6 +2390,8 @@ test("Markup paint coordinate math uses the Markup stage instead of editor chrom
 
 test("Markup note movement clamps pins inside the Markup stage", () => {
   assert.match(markupWorkspaceSource, /const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17/);
+  assert.match(markupWorkspaceSource, /const paintPlaneRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(markupWorkspaceSource, /paintPlaneRef\.current\?\.getBoundingClientRect\(\)/);
   assert.match(markupWorkspaceSource, /const insetX = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetX\)/);
   assert.match(markupWorkspaceSource, /const insetY = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetY\)/);
   assert.match(markupWorkspaceSource, /Math\.min\(rect\.width - insetX, Math\.max\(insetX, event\.clientX - rect\.left\)\)/);
@@ -2398,8 +2408,29 @@ test("Markup controls can be collapsed and reopened via a Hide/Show toggle", () 
   assert.match(markupWorkspaceSource, /aria-pressed=\{controlsCollapsed\}/);
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-body \$\{controlsCollapsed \? "controls-collapsed" : ""\}`\}/);
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-panel \$\{controlsCollapsed \? "controls-collapsed" : ""\}`\}/);
-  assert.match(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,180}position:\s*absolute/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,260}z-index:\s*20/);
   assert.match(cssSource, /\.markup-workspace-panel\.controls-collapsed[\s\S]*display:\s*none/);
+});
+
+test("Markup coordinate plane structure is stable across controls show and hide", () => {
+  const bodyRule = cssRule(".markup-workspace-body {");
+  const panelRule = cssRule(".markup-workspace-panel {", cssSource.indexOf(".markup-controls-toggle"));
+  const canvasRule = cssRule(".markup-workspace-canvas-area {");
+
+  assert.match(markupWorkspaceSource, /data-coordinate-plane="markup"/);
+  assert.match(markupWorkspaceSource, /ref=\{paintPlaneRef\}/);
+  assert.match(bodyRule, /position:\s*relative/);
+  assert.match(bodyRule, /display:\s*block/);
+  assert.match(bodyRule, /overflow:\s*hidden/);
+  assert.doesNotMatch(bodyRule, /grid-template-columns/);
+  assert.doesNotMatch(bodyRule, /grid-template-rows/);
+  assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,220}grid-template-columns/);
+  assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,220}grid-template-rows/);
+  assert.match(panelRule, /position:\s*absolute/);
+  assert.match(panelRule, /width:\s*min\(300px,\s*calc\(100% - 8px\)\)/);
+  assert.match(canvasRule, /width:\s*100%/);
+  assert.match(canvasRule, /height:\s*100%/);
 });
 
 test("Markup stage reserves right inset for the editor props/menu panel", () => {
@@ -2425,6 +2456,13 @@ test("Markup freehand only draws from the stage-owned paint overlay, never edito
 test("Markup controls toggle textarea and buttons do not become drawing targets", () => {
   assert.match(markupWorkspaceSource, /target\?\.closest\("textarea, button, input, select, a, label"\)/);
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}/);
+  assert.match(markupWorkspaceSource, /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
+  const panelIdx = markupWorkspaceSource.indexOf('className={`markup-workspace-panel');
+  const canvasIdx = markupWorkspaceSource.indexOf('className={`markup-workspace-canvas-area');
+  assert.ok(panelIdx > 0 && canvasIdx > panelIdx, "controls panel is a sibling before the coordinate plane");
+  const panelMarkup = markupWorkspaceSource.slice(panelIdx, canvasIdx);
+  assert.doesNotMatch(panelMarkup, /startNoteDrag\(annotation\.id, event\)/);
+  assert.doesNotMatch(panelMarkup, /dragNote\(annotation\.id, event\)/);
 });
 
 test("Markup freehand strokes are stored and rendered on a stable normalized content coordinate plane", () => {
@@ -2800,11 +2838,12 @@ test("Markup workspace mobile close control remains reachable", () => {
 });
 
 test("Markup workspace controls are compact and scrollable without trapping mobile canvas", () => {
-  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,260}max-height:\s*calc\(100dvh - 72px\)/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,300}max-height:\s*min\(100%, calc\(100dvh - 72px\)\)/);
   assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,320}overflow-y:\s*auto/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,220}z-index:\s*20/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-panel[\s\S]{0,180}max-height:\s*min\(32dvh, 220px\)/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.markup-workspace-body[\s\S]{0,180}grid-template-rows:\s*auto minmax\(0, 1fr\)/);
-  assert.match(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,160}grid-template-rows:\s*minmax\(0,\s*1fr\)/);
+  assert.doesNotMatch(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.markup-workspace-body[\s\S]{0,180}grid-template-rows/);
+  assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,160}grid-template-rows/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}height:\s*100%/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,260}align-self:\s*stretch/);
   assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,120}position:\s*absolute/);

@@ -1428,17 +1428,12 @@ button:disabled {
 }
 
 .markup-workspace-body {
+  position: relative;
   min-height: 0;
   height: 100%;
-  display: grid;
-  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-  gap: 8px;
+  display: block;
+  overflow: hidden;
   padding-right: var(--markup-stage-right-inset, 0px);
-}
-
-.markup-workspace-body.controls-collapsed {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
 }
 
 .markup-workspace-panel.controls-collapsed {
@@ -1459,10 +1454,14 @@ button:disabled {
 }
 
 .markup-workspace-panel {
-  align-self: start;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  width: min(300px, calc(100% - 8px));
   display: grid;
   gap: 8px;
-  max-height: calc(100dvh - 72px);
+  max-height: min(100%, calc(100dvh - 72px));
   overflow-y: auto;
   padding: 10px;
   border-radius: 8px;
@@ -1606,6 +1605,7 @@ button:disabled {
   position: relative;
   min-width: 0;
   min-height: 0;
+  width: 100%;
   height: 100%;
   align-self: stretch;
   justify-self: stretch;
@@ -1746,18 +1746,12 @@ button:disabled {
   }
 
   .markup-workspace-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 6px;
     overflow: hidden;
   }
 
-  .markup-workspace-body.controls-collapsed {
-    grid-template-rows: minmax(0, 1fr);
-  }
-
   .markup-workspace-panel {
-    align-self: stretch;
+    right: 0;
+    width: auto;
     max-height: min(32dvh, 220px);
     overflow-y: auto;
     padding: 8px;

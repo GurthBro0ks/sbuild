@@ -78,12 +78,12 @@ export function MarkupWorkspace({
   stageRightInsetPx
 }: MarkupWorkspaceProps) {
   const hasDraftMarkup = draftStrokeCount > 0 || activePointCount > 0;
-  const workspaceStageRef = useRef<HTMLDivElement | null>(null);
+  const paintPlaneRef = useRef<HTMLDivElement | null>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
 
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
-    const rect = workspaceStageRef.current?.getBoundingClientRect();
+    const rect = paintPlaneRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     const maxInsetX = Math.max(0, (rect.width - 1) / 2);
     const maxInsetY = Math.max(0, (rect.height - 1) / 2);
@@ -159,7 +159,7 @@ export function MarkupWorkspace({
           </p>
           <details className="markup-workspace-help">
             <summary>Help</summary>
-            <p>Click and drag to draw freehand draft markup. Drag numbered note pins or note cards, or choose Move on a note and click the workspace. Draft freehand strokes are discarded when you close this workspace unless you keep them with the project draft. Sticky notes and kept freehand strokes are saved with the project, shown only in Markup, and not published.</p>
+            <p>Click and drag to draw freehand draft markup. Drag numbered note pins, or choose Move on a note and click the workspace. Draft freehand strokes are discarded when you close this workspace unless you keep them with the project draft. Sticky notes and kept freehand strokes are saved with the project, shown only in Markup, and not published.</p>
           </details>
         </div>
         <div className="markup-workspace-header-actions">
@@ -195,7 +195,11 @@ export function MarkupWorkspace({
       </header>
 
       <div className={`markup-workspace-body ${controlsCollapsed ? "controls-collapsed" : ""}`}>
-        <aside className={`markup-workspace-panel ${controlsCollapsed ? "controls-collapsed" : ""}`} aria-label="Markup tools and status">
+        <aside
+          className={`markup-workspace-panel ${controlsCollapsed ? "controls-collapsed" : ""}`}
+          aria-label="Markup tools and status"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <div className="markup-workspace-context" data-testid="markup-workspace-context">
             <span>View: {deviceMode}</span>
             <span>Draft strokes: {draftStrokeCount}</span>
@@ -251,10 +255,6 @@ export function MarkupWorkspace({
                       data-testid="markup-note-editor"
                       data-markup-note-id={annotation.id}
                       key={annotation.id}
-                      onPointerDown={(event) => startNoteDrag(annotation.id, event)}
-                      onPointerMove={(event) => dragNote(annotation.id, event)}
-                      onPointerUp={endNoteDrag}
-                      onPointerCancel={endNoteDrag}
                     >
                     <div
                       className={`markup-workspace-note-handle ${armedMoveNoteId === annotation.id ? "move-armed" : ""}`}
@@ -295,8 +295,9 @@ export function MarkupWorkspace({
         <div
           className={`markup-workspace-canvas-area ${armedMoveNoteId ? "move-armed" : ""} ${paintCaptureActive ? "paint-armed" : ""}`}
           aria-label="Markup note stage"
+          data-coordinate-plane="markup"
           data-testid="markup-note-stage"
-          ref={workspaceStageRef}
+          ref={paintPlaneRef}
           onPointerDown={placeArmedNote}
         >
           {freehandLayer}
