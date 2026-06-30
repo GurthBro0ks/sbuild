@@ -1,6 +1,13 @@
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import type { MarkupAnnotation } from "@sbuild/shared";
-import { clampMarkupCoordinate } from "./markupAnnotations.js";
+import {
+  MARKUP_FULL_ALLOWED_REGION,
+  clampMarkupCoordinate,
+  clampMarkupPointToAllowedRegion,
+  getMarkupAllowedRegionForStage,
+  normalizeMarkupAllowedRegion,
+  type MarkupAllowedRegion
+} from "./markupAnnotations.js";
 
 type MarkupWorkspaceProps = {
   pageTitle: string;
@@ -40,6 +47,10 @@ type MarkupWorkspaceProps = {
 };
 
 const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17;
+
+function sameAllowedRegion(a: MarkupAllowedRegion, b: MarkupAllowedRegion) {
+  return a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
+}
 
 export function MarkupWorkspace({
   pageTitle,
@@ -81,20 +92,62 @@ export function MarkupWorkspace({
   const paintPlaneRef = useRef<HTMLDivElement | null>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
+  const [allowedRegion, setAllowedRegion] = useState<MarkupAllowedRegion>(MARKUP_FULL_ALLOWED_REGION);
+
+  function getPinAllowedRegion(region = allowedRegion) {
+    const rect = paintPlaneRef.current?.getBoundingClientRect();
+    const next = normalizeMarkupAllowedRegion(region);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return next;
+    const insetX = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX / rect.width, Math.max(0, (next.right - next.left) / 2));
+    const insetY = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX / rect.height, Math.max(0, (next.bottom - next.top) / 2));
+    return normalizeMarkupAllowedRegion({
+      left: next.left + insetX,
+      top: next.top + insetY,
+      right: next.right - insetX,
+      bottom: next.bottom - insetY
+    });
+  }
+
+  useEffect(() => {
+    function measureAllowedRegion() {
+      const next = getMarkupAllowedRegionForStage(paintPlaneRef.current);
+      setAllowedRegion((current) => sameAllowedRegion(current, next) ? current : next);
+    }
+
+    measureAllowedRegion();
+    const stage = paintPlaneRef.current;
+    const canvas = typeof document !== "undefined" ? document.querySelector(".canvas-frame.sbuild-site-preview") : null;
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measureAllowedRegion) : null;
+    if (resizeObserver) {
+      if (stage) resizeObserver.observe(stage);
+      if (canvas) resizeObserver.observe(canvas);
+    }
+    window.addEventListener("resize", measureAllowedRegion);
+    window.addEventListener("scroll", measureAllowedRegion, true);
+    const raf = window.requestAnimationFrame(measureAllowedRegion);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measureAllowedRegion);
+      window.removeEventListener("scroll", measureAllowedRegion, true);
+      resizeObserver?.disconnect();
+    };
+  }, [stageRightInsetPx]);
 
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
     const rect = paintPlaneRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    const maxInsetX = Math.max(0, (rect.width - 1) / 2);
-    const maxInsetY = Math.max(0, (rect.height - 1) / 2);
-    const insetX = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetX);
-    const insetY = Math.min(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetY);
-    const x = Math.min(rect.width - insetX, Math.max(insetX, event.clientX - rect.left));
-    const y = Math.min(rect.height - insetY, Math.max(insetY, event.clientY - rect.top));
+    const nextAllowedRegion = getMarkupAllowedRegionForStage(paintPlaneRef.current);
+    const point = clampMarkupPointToAllowedRegion(
+      {
+        x: (event.clientX - rect.left) / rect.width,
+        y: (event.clientY - rect.top) / rect.height
+      },
+      getPinAllowedRegion(nextAllowedRegion)
+    );
     onMoveNote(
       id,
-      clampMarkupCoordinate(x / rect.width),
-      clampMarkupCoordinate(y / rect.height)
+      clampMarkupCoordinate(point.x),
+      clampMarkupCoordinate(point.y)
     );
   }
 
@@ -142,15 +195,35 @@ export function MarkupWorkspace({
     setArmedMoveNoteId(null);
   }
 
+  function notePinStyle(annotation: MarkupAnnotation): CSSProperties {
+    const pinPosition = clampMarkupPointToAllowedRegion(
+      { x: annotation.x, y: annotation.y },
+      getPinAllowedRegion()
+    );
+    return {
+      left: `${pinPosition.x * 100}%`,
+      top: `${pinPosition.y * 100}%`,
+      backgroundColor: annotation.color || "#ffcf33"
+    };
+  }
+
+  const allowedRegionStyle = {
+    ["--markup-stage-right-inset" as string]: `${Math.max(0, stageRightInsetPx)}px`,
+    ["--markup-allowed-inset-left" as string]: `${allowedRegion.left * 100}%`,
+    ["--markup-allowed-inset-top" as string]: `${allowedRegion.top * 100}%`,
+    ["--markup-allowed-inset-right" as string]: `${(1 - allowedRegion.right) * 100}%`,
+    ["--markup-allowed-inset-bottom" as string]: `${(1 - allowedRegion.bottom) * 100}%`
+  } as CSSProperties;
+
   return (
     <section
       className={`markup-workspace-shell ${controlsCollapsed ? "controls-collapsed" : ""}`}
       role="dialog"
       aria-labelledby="markup-workspace-title"
       data-testid="markup-workspace"
-      style={{ ["--markup-stage-right-inset" as string]: `${Math.max(0, stageRightInsetPx)}px` } as CSSProperties}
+      style={allowedRegionStyle}
     >
-      <header className="markup-workspace-header">
+      <header className="markup-workspace-header" data-no-draw="true" data-no-drag="true" onPointerDown={(event) => event.stopPropagation()}>
         <div className="markup-workspace-title-group">
           <h2 id="markup-workspace-title">Markup workspace</h2>
           <p>
@@ -198,6 +271,8 @@ export function MarkupWorkspace({
         <aside
           className={`markup-workspace-panel ${controlsCollapsed ? "controls-collapsed" : ""}`}
           aria-label="Markup tools and status"
+          data-no-draw="true"
+          data-no-drag="true"
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div className="markup-workspace-context" data-testid="markup-workspace-context">
@@ -311,7 +386,7 @@ export function MarkupWorkspace({
                 data-markup-note-id={annotation.id}
                 aria-label={`Move Markup note ${index + 1}`}
                 title={`Move note ${index + 1}`}
-                style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, backgroundColor: annotation.color || "#ffcf33" }}
+                style={notePinStyle(annotation)}
                 onPointerDown={(event) => startNoteDrag(annotation.id, event)}
                 onPointerMove={(event) => dragNote(annotation.id, event)}
                 onPointerUp={endNoteDrag}

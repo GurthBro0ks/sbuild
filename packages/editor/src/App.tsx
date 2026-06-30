@@ -67,7 +67,12 @@ import {
   type ImageLibraryFilter,
   type ImageMeta
 } from "./editorBehavior.js";
-import { moveMarkupAnnotation } from "./markupAnnotations.js";
+import {
+  clampMarkupPointToAllowedRegion,
+  getMarkupAllowedRegionForStage,
+  isMarkupPointInAllowedRegion,
+  moveMarkupAnnotation
+} from "./markupAnnotations.js";
 import { MarkupWorkspace } from "./MarkupWorkspace.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
@@ -4359,14 +4364,20 @@ export function App() {
     return target?.closest(".markup-workspace-canvas-area") || document.querySelector(".markup-workspace-canvas-area");
   }
 
-  function pointerPoint(e: React.PointerEvent<Element>): PaintPoint {
+  function pointerPoint(e: React.PointerEvent<Element>, options: { requireAllowedRegion?: boolean } = {}): PaintPoint | null {
     const stage = getMarkupPaintStageElement(e.target) || (e.target as Element).closest(".canvas-frame");
-    if (!stage) return { x: 0, y: 0 };
+    if (!stage) return null;
     const rect = stage.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
-    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-    return { x, y };
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const allowedRegion = getMarkupAllowedRegionForStage(stage);
+    const point = {
+      x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
+    };
+    if (options.requireAllowedRegion && !isMarkupPointInAllowedRegion(point, allowedRegion)) {
+      return null;
+    }
+    return clampMarkupPointToAllowedRegion(point, allowedRegion);
   }
 
   function clampMarkupPoint(value: number): number {
@@ -4444,8 +4455,9 @@ export function App() {
 
   function beginPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode) return;
+    const point = pointerPoint(e, { requireAllowedRegion: true });
+    if (!point) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const point = pointerPoint(e);
     if (paintTool === "eraser") {
       e.preventDefault();
       e.stopPropagation();
@@ -4469,6 +4481,7 @@ export function App() {
   function movePaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode || paintTool === "eraser" || paintActivePoints.length === 0) return;
     const point = pointerPoint(e);
+    if (!point) return;
     e.preventDefault();
     e.stopPropagation();
     if (paintDrawMode === "line") {
@@ -4480,7 +4493,9 @@ export function App() {
 
   function endPaint(e: React.PointerEvent<SVGSVGElement>) {
     if (!paintMode || previewMode || paintTool === "eraser") return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     if (paintActivePoints.length < 2) {
       setPaintActivePoints([]);
       return;

@@ -1966,13 +1966,17 @@ test("Markup sticky note pins are draggable and report normalized coordinates", 
   assert.doesNotMatch(markupWorkspaceSource, /canvasFrameRef/);
   assert.match(markupWorkspaceSource, /paintPlaneRef\.current\?\.getBoundingClientRect\(\)/);
   assert.match(markupWorkspaceSource, /ref=\{paintPlaneRef\}/);
+  assert.match(markupWorkspaceSource, /getMarkupAllowedRegionForStage\(paintPlaneRef\.current\)/);
+  assert.match(markupWorkspaceSource, /function getPinAllowedRegion/);
+  assert.match(markupWorkspaceSource, /MARKUP_NOTE_PIN_EDGE_INSET_PX \/ rect\.width/);
+  assert.match(markupWorkspaceSource, /clampMarkupPointToAllowedRegion\(/);
   assert.match(markupWorkspaceSource, /data-markup-note-id=\{annotation\.id\}/);
   assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,520}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
   assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,560}onPointerMove=\{\(event\) => dragNote\(annotation\.id, event\)\}/);
   assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,600}onPointerUp=\{endNoteDrag\}/);
   assert.match(markupWorkspaceSource, /setArmedMoveNoteId\(null\)/);
-  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(x \/ rect\.width\)/);
-  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(y \/ rect\.height\)/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(point\.x\)/);
+  assert.match(markupWorkspaceSource, /clampMarkupCoordinate\(point\.y\)/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*pointer-events:\s*auto/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*touch-action:\s*none/);
   assert.match(cssSource, /\.markup-note-pin[\s\S]*z-index:\s*3/);
@@ -1987,9 +1991,11 @@ test("Markup note stage, not the preview card, owns note bounds and pin position
   assert.ok(pinLayerIdx > stageIdx, "pin layer is inside note stage");
   assert.ok(previewIdx > pinLayerIdx, "preview card is rendered after the stage pin layer");
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-canvas-area \$\{armedMoveNoteId \? "move-armed" : ""\} \$\{paintCaptureActive \? "paint-armed" : ""\}`\}[\s\S]{0,360}ref=\{paintPlaneRef\}/);
-  assert.match(markupWorkspaceSource, /className="markup-note-pin-layer"[\s\S]{0,900}style=\{\{ left: `\$\{annotation\.x \* 100\}%`, top: `\$\{annotation\.y \* 100\}%`/);
+  assert.match(markupWorkspaceSource, /function notePinStyle\(annotation: MarkupAnnotation\): CSSProperties/);
+  assert.match(markupWorkspaceSource, /style=\{notePinStyle\(annotation\)\}/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,180}position:\s*relative/);
   assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,120}inset:\s*0/);
+  assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,260}clip-path:\s*inset/);
   assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,260}pointer-events:\s*none/);
 });
 
@@ -2022,6 +2028,9 @@ test("Markup note Move mode places notes from the canvas without trapping text e
 test("Markup note move helper clamps normalized x/y and updates only the selected note", () => {
   assert.match(markupAnnotationsSource, /export function clampMarkupCoordinate\(value: number\): number/);
   assert.match(markupAnnotationsSource, /Math\.min\(1, Math\.max\(0, value\)\)/);
+  assert.match(markupAnnotationsSource, /export type MarkupAllowedRegion/);
+  assert.match(markupAnnotationsSource, /export function getMarkupAllowedRegionFromRects/);
+  assert.match(markupAnnotationsSource, /export function clampMarkupPointToAllowedRegion/);
   assert.match(markupAnnotationsSource, /export function moveMarkupAnnotation/);
   assert.match(markupAnnotationsSource, /annotation\.id === id/);
   assert.match(markupAnnotationsSource, /x: nextX/);
@@ -2339,7 +2348,10 @@ test("paint overlay is clipped inside the Markup stage with high-contrast stroke
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}overflow:\s*hidden/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,260}isolation:\s*isolate/);
   assert.match(cssSource, /\.paint-overlay[\s\S]{0,220}z-index:\s*5/);
-  assert.match(cssSource, /\.paint-overlay[\s\S]{0,240}overflow:\s*hidden/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]{0,360}overflow:\s*hidden/);
+  assert.match(cssSource, /\.paint-overlay[\s\S]{0,420}clip-path:\s*inset/);
+  assert.match(cssSource, /--markup-allowed-inset-top/);
+  assert.match(cssSource, /--markup-allowed-inset-left/);
   assert.match(cssSource, /\.markup-note-pin-layer[\s\S]{0,140}z-index:\s*8/);
   assert.match(appSource, /const MARKUP_STROKE_MIN_VISIBLE_OPACITY = 0\.9/);
   assert.match(appSource, /const MARKUP_STROKE_OUTER_HALO_WIDTH_OFFSET = 8/);
@@ -2384,18 +2396,64 @@ test("Markup paint coordinate math uses the Markup stage instead of editor chrom
   assert.match(appSource, /function getMarkupPaintStageElement/);
   assert.match(appSource, /closest\("\.markup-workspace-canvas-area"\)/);
   assert.match(appSource, /document\.querySelector\("\.markup-workspace-canvas-area"\)/);
+  assert.match(appSource, /getMarkupAllowedRegionForStage\(stage\)/);
+  assert.match(appSource, /isMarkupPointInAllowedRegion\(point, allowedRegion\)/);
+  assert.match(appSource, /clampMarkupPointToAllowedRegion\(point, allowedRegion\)/);
   assert.match(appSource, /Math\.min\(1, Math\.max\(0, \(e\.clientX - rect\.left\) \/ rect\.width\)\)/);
   assert.match(appSource, /Math\.min\(1, Math\.max\(0, \(e\.clientY - rect\.top\) \/ rect\.height\)\)/);
+});
+
+test("Markup allowed region is measured from the actual site preview canvas", () => {
+  assert.match(markupAnnotationsSource, /document\.querySelector\("\.canvas-frame\.sbuild-site-preview"\)/);
+  assert.match(markupAnnotationsSource, /export function getMarkupAllowedRegionFromRects/);
+  assert.match(markupAnnotationsSource, /left: \(canvasRect\.left - stageRect\.left\) \/ stageRect\.width/);
+  assert.match(markupAnnotationsSource, /top: \(canvasRect\.top - stageRect\.top\) \/ stageRect\.height/);
+  assert.match(markupAnnotationsSource, /right: \(canvasRect\.right - stageRect\.left\) \/ stageRect\.width/);
+  assert.match(markupAnnotationsSource, /bottom: \(canvasRect\.bottom - stageRect\.top\) \/ stageRect\.height/);
+  assert.match(markupAnnotationsSource, /normalizeMarkupAllowedRegion/);
+});
+
+test("Markup freehand pointerdown above the allowed canvas region fails closed", () => {
+  const beginIdx = appSource.indexOf("function beginPaint");
+  assert.ok(beginIdx > 0, "beginPaint exists");
+  const beginSection = appSource.substring(beginIdx, beginIdx + 900);
+  assert.match(beginSection, /const point = pointerPoint\(e, \{ requireAllowedRegion: true \}\)/);
+  assert.match(beginSection, /if \(!point\) return/);
+  assert.ok(beginSection.indexOf("if (!point) return") < beginSection.indexOf("setPointerCapture"), "pointer capture happens only after allowed-region check");
+});
+
+test("Markup freehand pointermove clamps strokes to the allowed canvas region", () => {
+  const pointerIdx = appSource.indexOf("function pointerPoint");
+  assert.ok(pointerIdx > 0, "pointerPoint exists");
+  const pointerSection = appSource.substring(pointerIdx, pointerIdx + 1000);
+  assert.match(pointerSection, /options: \{ requireAllowedRegion\?: boolean \} = \{\}/);
+  assert.match(pointerSection, /if \(options\.requireAllowedRegion && !isMarkupPointInAllowedRegion\(point, allowedRegion\)\)/);
+  assert.match(pointerSection, /return null/);
+  assert.match(pointerSection, /return clampMarkupPointToAllowedRegion\(point, allowedRegion\)/);
+});
+
+test("Markup note pins render and move inside the same allowed canvas region", () => {
+  assert.match(markupWorkspaceSource, /const \[allowedRegion, setAllowedRegion\] = useState<MarkupAllowedRegion>\(MARKUP_FULL_ALLOWED_REGION\)/);
+  assert.match(markupWorkspaceSource, /const nextAllowedRegion = getMarkupAllowedRegionForStage\(paintPlaneRef\.current\)/);
+  assert.match(markupWorkspaceSource, /getPinAllowedRegion\(nextAllowedRegion\)/);
+  assert.match(markupWorkspaceSource, /style=\{notePinStyle\(annotation\)\}/);
+  assert.match(markupWorkspaceSource, /setAllowedRegion\(\(current\) => sameAllowedRegion\(current, next\) \? current : next\)/);
+});
+
+test("Markup top controls are explicit no-draw and no-drag surfaces", () => {
+  assert.match(markupWorkspaceSource, /className="markup-workspace-header" data-no-draw="true" data-no-drag="true"/);
+  assert.match(markupWorkspaceSource, /className=\{`markup-workspace-panel \$\{controlsCollapsed \? "controls-collapsed" : ""\}`\}[\s\S]{0,160}data-no-draw="true"[\s\S]{0,80}data-no-drag="true"/);
+  assert.match(markupWorkspaceSource, /className="markup-workspace-header"[\s\S]{0,140}onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/);
 });
 
 test("Markup note movement clamps pins inside the Markup stage", () => {
   assert.match(markupWorkspaceSource, /const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17/);
   assert.match(markupWorkspaceSource, /const paintPlaneRef = useRef<HTMLDivElement \| null>\(null\)/);
   assert.match(markupWorkspaceSource, /paintPlaneRef\.current\?\.getBoundingClientRect\(\)/);
-  assert.match(markupWorkspaceSource, /const insetX = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetX\)/);
-  assert.match(markupWorkspaceSource, /const insetY = Math\.min\(MARKUP_NOTE_PIN_EDGE_INSET_PX, maxInsetY\)/);
-  assert.match(markupWorkspaceSource, /Math\.min\(rect\.width - insetX, Math\.max\(insetX, event\.clientX - rect\.left\)\)/);
-  assert.match(markupWorkspaceSource, /Math\.min\(rect\.height - insetY, Math\.max\(insetY, event\.clientY - rect\.top\)\)/);
+  assert.match(markupWorkspaceSource, /const nextAllowedRegion = getMarkupAllowedRegionForStage\(paintPlaneRef\.current\)/);
+  assert.match(markupWorkspaceSource, /x: \(event\.clientX - rect\.left\) \/ rect\.width/);
+  assert.match(markupWorkspaceSource, /y: \(event\.clientY - rect\.top\) \/ rect\.height/);
+  assert.match(markupWorkspaceSource, /getPinAllowedRegion\(nextAllowedRegion\)/);
 });
 
 test("Markup controls can be collapsed and reopened via a Hide/Show toggle", () => {
@@ -2467,8 +2525,9 @@ test("Markup controls toggle textarea and buttons do not become drawing targets"
 
 test("Markup freehand strokes are stored and rendered on a stable normalized content coordinate plane", () => {
   assert.match(appSource, /type PaintPoint = \{ x: number; y: number \};/);
-  assert.match(appSource, /const x = Math\.min\(1, Math\.max\(0, \(e\.clientX - rect\.left\) \/ rect\.width\)\);/);
-  assert.match(appSource, /const y = Math\.min\(1, Math\.max\(0, \(e\.clientY - rect\.top\) \/ rect\.height\)\);/);
+  assert.match(appSource, /x: Math\.min\(1, Math\.max\(0, \(e\.clientX - rect\.left\) \/ rect\.width\)\)/);
+  assert.match(appSource, /y: Math\.min\(1, Math\.max\(0, \(e\.clientY - rect\.top\) \/ rect\.height\)\)/);
+  assert.match(appSource, /return clampMarkupPointToAllowedRegion\(point, allowedRegion\)/);
   assert.match(appSource, /function clampMarkupPoint\(value: number\): number/);
   assert.match(appSource, /points: stroke\.points\.map\(\(point\) => \(\{[\s\S]{0,80}x: clampMarkupPoint\(point\.x\),[\s\S]{0,40}y: clampMarkupPoint\(point\.y\)/);
   assert.match(appSource, /points: stroke\.points\.slice\(0, 2000\)\.map\(\(point\) => \(\{[\s\S]{0,80}x: clampMarkupPoint\(point\.x\),[\s\S]{0,40}y: clampMarkupPoint\(point\.y\)/);
@@ -2847,7 +2906,8 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}height:\s*100%/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,260}align-self:\s*stretch/);
   assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,120}position:\s*absolute/);
-  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,140}inset:\s*0/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,160}top:\s*var\(--markup-allowed-inset-top/);
+  assert.match(cssSource, /\.markup-workspace-canvas-frame[\s\S]{0,220}left:\s*var\(--markup-allowed-inset-left/);
 });
 
 test("markup help keeps instructions compact and out of the stage overlay", () => {
