@@ -47,6 +47,10 @@ type MarkupWorkspaceProps = {
 };
 
 const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17;
+const MARKUP_NOTE_POPUP_MARGIN_PX = 8;
+const MARKUP_NOTE_POPUP_GAP_PX = 20;
+const MARKUP_NOTE_POPUP_WIDTH_PX = 280;
+const MARKUP_NOTE_POPUP_HEIGHT_PX = 220;
 
 function sameAllowedRegion(a: MarkupAllowedRegion, b: MarkupAllowedRegion) {
   return a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
@@ -92,6 +96,8 @@ export function MarkupWorkspace({
   const paintPlaneRef = useRef<HTMLDivElement | null>(null);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const previousAnnotationIdsRef = useRef<string[]>(annotations.map((annotation) => annotation.id));
   const [allowedRegion, setAllowedRegion] = useState<MarkupAllowedRegion>(MARKUP_FULL_ALLOWED_REGION);
 
   function getPinAllowedRegion(region = allowedRegion) {
@@ -133,6 +139,18 @@ export function MarkupWorkspace({
     };
   }, [stageRightInsetPx]);
 
+  useEffect(() => {
+    const previousIds = previousAnnotationIdsRef.current;
+    const currentIds = annotations.map((annotation) => annotation.id);
+    const addedAnnotation = annotations.find((annotation) => !previousIds.includes(annotation.id));
+    previousAnnotationIdsRef.current = currentIds;
+    if (addedAnnotation) {
+      setOpenNoteId(addedAnnotation.id);
+      return;
+    }
+    setOpenNoteId((currentId) => currentId && currentIds.includes(currentId) ? currentId : null);
+  }, [annotations]);
+
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
     const rect = paintPlaneRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
@@ -163,6 +181,7 @@ export function MarkupWorkspace({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     setArmedMoveNoteId(null);
+    setOpenNoteId(id);
     setDraggingNoteId(id);
     moveNoteFromPointer(id, event);
   }
@@ -182,6 +201,7 @@ export function MarkupWorkspace({
 
   function armNoteMove(id: string) {
     setDraggingNoteId(null);
+    setOpenNoteId(id);
     setArmedMoveNoteId((currentId) => (currentId === id ? null : id));
   }
 
@@ -189,6 +209,7 @@ export function MarkupWorkspace({
     if (!armedMoveNoteId) return;
     const target = event.target instanceof HTMLElement ? event.target : null;
     if (target?.closest(".markup-note-pin")) return;
+    if (target?.closest(".markup-note-popup")) return;
     event.preventDefault();
     event.stopPropagation();
     moveNoteFromPointer(armedMoveNoteId, event);
@@ -205,6 +226,54 @@ export function MarkupWorkspace({
       top: `${pinPosition.y * 100}%`,
       backgroundColor: annotation.color || "#ffcf33"
     };
+  }
+
+  function openNotePopup(id: string) {
+    setOpenNoteId(id);
+    setArmedMoveNoteId(null);
+  }
+
+  function stopPopupPointer(event: PointerEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function notePopupStyle(annotation: MarkupAnnotation): CSSProperties {
+    const pinPosition = clampMarkupPointToAllowedRegion(
+      { x: annotation.x, y: annotation.y },
+      getPinAllowedRegion()
+    );
+    const rect = paintPlaneRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return {
+        left: `${pinPosition.x * 100}%`,
+        top: `${pinPosition.y * 100}%`
+      };
+    }
+
+    const maxPopupWidth = Math.max(160, rect.width - MARKUP_NOTE_POPUP_MARGIN_PX * 2);
+    const maxPopupHeight = Math.max(112, rect.height - MARKUP_NOTE_POPUP_MARGIN_PX * 2);
+    const popupWidth = Math.min(MARKUP_NOTE_POPUP_WIDTH_PX, maxPopupWidth);
+    const popupHeight = Math.min(MARKUP_NOTE_POPUP_HEIGHT_PX, maxPopupHeight);
+    const anchorX = pinPosition.x * rect.width;
+    const anchorY = pinPosition.y * rect.height;
+    const preferredLeft = anchorX + MARKUP_NOTE_POPUP_GAP_PX + popupWidth + MARKUP_NOTE_POPUP_MARGIN_PX <= rect.width
+      ? anchorX + MARKUP_NOTE_POPUP_GAP_PX
+      : anchorX - popupWidth - MARKUP_NOTE_POPUP_GAP_PX;
+    const left = Math.min(
+      rect.width - popupWidth - MARKUP_NOTE_POPUP_MARGIN_PX,
+      Math.max(MARKUP_NOTE_POPUP_MARGIN_PX, preferredLeft)
+    );
+    const top = Math.min(
+      rect.height - popupHeight - MARKUP_NOTE_POPUP_MARGIN_PX,
+      Math.max(MARKUP_NOTE_POPUP_MARGIN_PX, anchorY - popupHeight / 2)
+    );
+
+    return {
+      left: `${Math.max(MARKUP_NOTE_POPUP_MARGIN_PX, left)}px`,
+      top: `${Math.max(MARKUP_NOTE_POPUP_MARGIN_PX, top)}px`,
+      ["--markup-note-popup-width" as string]: `${popupWidth}px`,
+      ["--markup-note-popup-max-height" as string]: `${popupHeight}px`
+    } as CSSProperties;
   }
 
   const allowedRegionStyle = {
@@ -337,6 +406,19 @@ export function MarkupWorkspace({
                       data-markup-note-id={annotation.id}
                     >
                       <span>Note {index + 1}</span>
+                      <span className="markup-workspace-note-preview">{annotation.text || "Empty note"}</span>
+                    </div>
+                    <div className="markup-workspace-note-row-actions">
+                      <button
+                        type="button"
+                        className="markup-workspace-note-open"
+                        data-testid="markup-note-open"
+                        data-markup-note-id={annotation.id}
+                        aria-expanded={openNoteId === annotation.id}
+                        onClick={() => openNotePopup(annotation.id)}
+                      >
+                        Open
+                      </button>
                       <button
                         type="button"
                         className="markup-workspace-note-move"
@@ -347,19 +429,10 @@ export function MarkupWorkspace({
                       >
                         Move
                       </button>
+                      <button type="button" onClick={() => onDeleteNote(annotation.id)} data-testid="markup-delete-note">
+                        Delete
+                      </button>
                     </div>
-                    <label>
-                      Text
-                      <textarea
-                        value={annotation.text}
-                        onChange={(event) => onUpdateNoteText(annotation.id, event.target.value)}
-                        data-testid="markup-note-text"
-                        aria-label={`Markup note ${index + 1} text`}
-                      />
-                    </label>
-                    <button type="button" onClick={() => onDeleteNote(annotation.id)} data-testid="markup-delete-note">
-                      Delete
-                    </button>
                   </article>
                 ))}
               </div>
@@ -384,8 +457,8 @@ export function MarkupWorkspace({
                 className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""}`}
                 data-testid="markup-note-pin"
                 data-markup-note-id={annotation.id}
-                aria-label={`Move Markup note ${index + 1}`}
-                title={`Move note ${index + 1}`}
+                aria-label={`Open Markup note ${index + 1}`}
+                title={`Open note ${index + 1}`}
                 style={notePinStyle(annotation)}
                 onPointerDown={(event) => startNoteDrag(annotation.id, event)}
                 onPointerMove={(event) => dragNote(annotation.id, event)}
@@ -395,6 +468,50 @@ export function MarkupWorkspace({
                 {index + 1}
               </button>
             ))}
+          </div>
+          <div className="markup-note-popup-layer" aria-label="Open Markup note popup">
+            {annotations.map((annotation, index) => openNoteId === annotation.id ? (
+              <article
+                className="markup-note-popup"
+                data-testid="markup-note-popup"
+                data-markup-note-id={annotation.id}
+                data-no-draw="true"
+                data-no-drag="true"
+                key={annotation.id}
+                style={notePopupStyle(annotation)}
+                onPointerDown={stopPopupPointer}
+                onPointerMove={stopPopupPointer}
+                onPointerUp={stopPopupPointer}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="markup-note-popup-header">
+                  <strong>Note {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="markup-note-popup-close"
+                    data-testid="markup-note-popup-close"
+                    aria-label={`Close Markup note ${index + 1}`}
+                    onClick={() => setOpenNoteId(null)}
+                  >
+                    Close
+                  </button>
+                </header>
+                <label className="markup-note-popup-field">
+                  Text
+                  <textarea
+                    value={annotation.text}
+                    onChange={(event) => onUpdateNoteText(annotation.id, event.target.value)}
+                    data-testid="markup-note-text"
+                    aria-label={`Markup note ${index + 1} text`}
+                  />
+                </label>
+                <div className="markup-note-popup-actions">
+                  <button type="button" onClick={() => onDeleteNote(annotation.id)} data-testid="markup-delete-note">
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ) : null)}
           </div>
           <div
             className={`markup-workspace-canvas-frame ${armedMoveNoteId ? "move-armed" : ""}`}

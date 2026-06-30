@@ -1559,9 +1559,9 @@ button:disabled {
 }
 
 .markup-workspace-note-handle {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-height: 32px;
   padding: 6px 8px;
@@ -1589,22 +1589,39 @@ button:disabled {
   font-size: 11px;
 }
 
+.markup-workspace-note-preview {
+  min-width: 0;
+  color: var(--editor-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markup-workspace-note-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.markup-workspace-note-row-actions button {
+  flex: 1 1 70px;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.markup-workspace-note-open[aria-expanded="true"] {
+  border-color: var(--editor-highlight);
+  background: color-mix(in srgb, var(--editor-highlight) 14%, var(--editor-panel-bg));
+  font-weight: 700;
+}
+
 .markup-workspace-note-move[aria-pressed="true"] {
   background: var(--editor-highlight);
   border-color: var(--editor-highlight);
   color: #ffffff;
-}
-
-.markup-workspace-note-editor label {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  font-size: 12px;
-}
-
-.markup-workspace-note-editor textarea {
-  min-height: 70px;
-  resize: vertical;
 }
 
 .markup-workspace-canvas-area {
@@ -1693,6 +1710,70 @@ button:disabled {
   cursor: grabbing;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34);
   z-index: 4;
+}
+
+.markup-note-popup-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+}
+
+.markup-note-popup {
+  position: absolute;
+  display: grid;
+  gap: 8px;
+  width: var(--markup-note-popup-width, min(280px, calc(100% - 16px)));
+  max-width: calc(100% - 16px);
+  max-height: var(--markup-note-popup-max-height, min(220px, calc(100% - 16px)));
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--editor-border) 76%, var(--editor-highlight));
+  border-radius: 8px;
+  background: var(--editor-panel-bg);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+  pointer-events: auto;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.markup-note-popup-header,
+.markup-note-popup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.markup-note-popup-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.markup-note-popup-close,
+.markup-note-popup-actions button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.markup-note-popup-field {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.markup-note-popup textarea {
+  min-height: 86px;
+  max-height: 128px;
+  resize: vertical;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 @media (max-width: 768px) {
@@ -1789,8 +1870,30 @@ button:disabled {
     min-width: 0;
   }
 
-  .markup-workspace-note-editor textarea {
-    min-height: 58px;
+  .markup-workspace-note-editor {
+    padding: 7px;
+  }
+
+  .markup-workspace-note-handle {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 5px 7px;
+  }
+
+  .markup-workspace-note-row-actions button {
+    flex: 1 1 64px;
+    min-height: 32px;
+  }
+
+  .markup-note-popup {
+    width: min(var(--markup-note-popup-width, 280px), calc(100% - 16px));
+    max-height: min(var(--markup-note-popup-max-height, 220px), 52dvh);
+    padding: 9px;
+  }
+
+  .markup-note-popup textarea {
+    min-height: 76px;
+    max-height: 116px;
+    font-size: 16px;
   }
 
   .markup-workspace-canvas-area {

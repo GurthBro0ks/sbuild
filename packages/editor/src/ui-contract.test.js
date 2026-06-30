@@ -1943,7 +1943,10 @@ test("Keep Markup is explicit and writes kept freehand strokes into dirty projec
 test("Markup sticky note controls are explicit and scoped to the workspace", () => {
   assert.match(markupWorkspaceSource, /data-testid="markup-add-note"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-editor"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-open"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-popup"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-text"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-popup-close"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-delete-note"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-pin"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-drag-handle"/);
@@ -1951,6 +1954,53 @@ test("Markup sticky note controls are explicit and scoped to the workspace", () 
   assert.match(markupWorkspaceSource, /aria-label="Sticky note annotations"/);
   assert.match(markupWorkspaceSource, /aria-label="Saved Markup note pins"/);
   assert.match(markupWorkspaceSource, /className=\{`markup-note-pin \$\{draggingNoteId === annotation\.id \? "dragging" : ""\}`\}[\s\S]{0,520}onPointerDown=\{\(event\) => startNoteDrag\(annotation\.id, event\)\}/);
+});
+
+test("Markup sticky notes edit from one clamped popup card near the pin", () => {
+  assert.match(markupWorkspaceSource, /const \[openNoteId, setOpenNoteId\] = useState<string \| null>\(null\)/);
+  assert.match(markupWorkspaceSource, /previousAnnotationIdsRef/);
+  assert.match(markupWorkspaceSource, /setOpenNoteId\(addedAnnotation\.id\)/);
+  assert.match(markupWorkspaceSource, /function openNotePopup\(id: string\)/);
+  assert.match(markupWorkspaceSource, /setOpenNoteId\(id\)/);
+  assert.match(markupWorkspaceSource, /setOpenNoteId\(id\)[\s\S]{0,160}setDraggingNoteId\(id\)/);
+  assert.match(markupWorkspaceSource, /className="markup-workspace-note-preview"/);
+  assert.match(markupWorkspaceSource, /aria-expanded=\{openNoteId === annotation\.id\}/);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => openNotePopup\(annotation\.id\)\}/);
+  assert.match(markupWorkspaceSource, /className="markup-note-popup-layer" aria-label="Open Markup note popup"/);
+  assert.match(markupWorkspaceSource, /openNoteId === annotation\.id \? \(/);
+  assert.match(markupWorkspaceSource, /className="markup-note-popup"/);
+  assert.match(markupWorkspaceSource, /style=\{notePopupStyle\(annotation\)\}/);
+  assert.match(markupWorkspaceSource, /data-no-draw="true"/);
+  assert.match(markupWorkspaceSource, /data-no-drag="true"/);
+  assert.match(markupWorkspaceSource, /onPointerDown=\{stopPopupPointer\}/);
+  assert.match(markupWorkspaceSource, /onPointerMove=\{stopPopupPointer\}/);
+  assert.match(markupWorkspaceSource, /onPointerUp=\{stopPopupPointer\}/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-popup-close"/);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => setOpenNoteId\(null\)\}/);
+  assert.match(markupWorkspaceSource, /<textarea[\s\S]{0,180}value=\{annotation\.text\}[\s\S]{0,180}onChange=\{\(event\) => onUpdateNoteText\(annotation\.id, event\.target\.value\)\}/);
+  assert.match(markupWorkspaceSource, /<button type="button" onClick=\{\(\) => onDeleteNote\(annotation\.id\)\} data-testid="markup-delete-note"/);
+  assert.match(markupWorkspaceSource, /const MARKUP_NOTE_POPUP_WIDTH_PX = 280/);
+  assert.match(markupWorkspaceSource, /const MARKUP_NOTE_POPUP_HEIGHT_PX = 220/);
+  assert.match(markupWorkspaceSource, /const popupWidth = Math\.min\(MARKUP_NOTE_POPUP_WIDTH_PX, maxPopupWidth\)/);
+  assert.match(markupWorkspaceSource, /const popupHeight = Math\.min\(MARKUP_NOTE_POPUP_HEIGHT_PX, maxPopupHeight\)/);
+  assert.match(markupWorkspaceSource, /rect\.width - popupWidth - MARKUP_NOTE_POPUP_MARGIN_PX/);
+  assert.match(markupWorkspaceSource, /rect\.height - popupHeight - MARKUP_NOTE_POPUP_MARGIN_PX/);
+  assert.match(markupWorkspaceSource, /--markup-note-popup-width/);
+  assert.match(markupWorkspaceSource, /--markup-note-popup-max-height/);
+  assert.match(cssSource, /\.markup-note-popup-layer[\s\S]{0,140}pointer-events:\s*none/);
+  const popupRule = cssRule(".markup-note-popup {");
+  assert.match(popupRule, /position:\s*absolute/);
+  assert.match(popupRule, /width:\s*var\(--markup-note-popup-width,\s*min\(280px,\s*calc\(100% - 16px\)\)\)/);
+  assert.match(popupRule, /pointer-events:\s*auto/);
+  assert.match(popupRule, /overflow:\s*auto/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.markup-note-popup[\s\S]{0,180}width:\s*min\(var\(--markup-note-popup-width,\s*280px\),\s*calc\(100% - 16px\)\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.markup-note-popup textarea[\s\S]{0,120}font-size:\s*16px/);
+
+  const panelNoteListIdx = markupWorkspaceSource.indexOf('className="markup-workspace-note-list"');
+  const stageIdx = markupWorkspaceSource.indexOf('className={`markup-workspace-canvas-area');
+  assert.ok(panelNoteListIdx > 0 && stageIdx > panelNoteListIdx, "compact note list exists before stage");
+  const compactPanelNotes = markupWorkspaceSource.slice(panelNoteListIdx, stageIdx);
+  assert.doesNotMatch(compactPanelNotes, /<textarea/, "left Markup note list stays compact and does not render per-note textareas");
 });
 
 test("Markup workspace save button invokes the existing project save flow", () => {
@@ -2009,6 +2059,7 @@ test("Markup note Move mode places notes from the canvas without trapping text e
   assert.match(markupWorkspaceSource, /function placeArmedNote\(event: PointerEvent<HTMLDivElement>\)/);
   assert.match(markupWorkspaceSource, /if \(!armedMoveNoteId\) return/);
   assert.match(markupWorkspaceSource, /target\?\.closest\("\.markup-note-pin"\)/);
+  assert.match(markupWorkspaceSource, /target\?\.closest\("\.markup-note-popup"\)/);
   assert.match(markupWorkspaceSource, /moveNoteFromPointer\(armedMoveNoteId, event\)/);
   assert.match(markupWorkspaceSource, /className=\{`markup-workspace-note-handle \$\{armedMoveNoteId === annotation\.id \? "move-armed" : ""\}`\}/);
   assert.match(markupWorkspaceSource, /data-testid="markup-note-drag-handle"/);
