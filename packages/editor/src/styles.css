@@ -1550,6 +1550,7 @@ button:disabled {
   padding: 8px;
   border: 1px solid var(--editor-border);
   border-radius: 8px;
+  background: color-mix(in srgb, var(--editor-panel-bg) 82%, var(--editor-bg));
   cursor: grab;
 }
 
@@ -1558,9 +1559,15 @@ button:disabled {
   border-color: var(--editor-highlight);
 }
 
+.markup-workspace-note-editor.active {
+  border-color: var(--editor-highlight);
+  background: color-mix(in srgb, var(--editor-highlight) 12%, var(--editor-panel-bg));
+  box-shadow: inset 3px 0 0 var(--editor-highlight);
+}
+
 .markup-workspace-note-handle {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 32px;
@@ -1597,6 +1604,29 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markup-workspace-note-preview.empty {
+  color: color-mix(in srgb, var(--editor-text-muted) 80%, var(--editor-text));
+  font-style: italic;
+}
+
+.markup-workspace-note-state {
+  justify-self: end;
+  padding: 2px 6px;
+  border: 1px solid var(--editor-border);
+  border-radius: 999px;
+  color: var(--editor-text-muted);
+  background: color-mix(in srgb, var(--editor-panel-bg) 70%, var(--editor-bg));
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.markup-workspace-note-state.unsaved {
+  border-color: color-mix(in srgb, var(--editor-warn, #b7791f) 60%, var(--editor-border));
+  color: var(--editor-text);
+  background: color-mix(in srgb, #f6ad55 20%, var(--editor-panel-bg));
 }
 
 .markup-workspace-note-row-actions {
@@ -1712,6 +1742,14 @@ button:disabled {
   z-index: 4;
 }
 
+.markup-note-pin.active {
+  border-color: #ffffff;
+  outline: 3px solid var(--editor-highlight);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--editor-highlight) 24%, transparent), 0 10px 24px rgba(0, 0, 0, 0.34);
+  z-index: 5;
+}
+
 .markup-note-popup-layer {
   position: absolute;
   inset: 0;
@@ -1722,12 +1760,12 @@ button:disabled {
 .markup-note-popup {
   position: absolute;
   display: grid;
-  gap: 8px;
-  width: var(--markup-note-popup-width, min(280px, calc(100% - 16px)));
+  gap: 10px;
+  width: var(--markup-note-popup-width, min(320px, calc(100% - 16px)));
   max-width: calc(100% - 16px);
-  max-height: var(--markup-note-popup-max-height, min(220px, calc(100% - 16px)));
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--editor-border) 76%, var(--editor-highlight));
+  max-height: var(--markup-note-popup-max-height, min(260px, calc(100% - 16px)));
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--editor-border) 58%, var(--editor-highlight));
   border-radius: 8px;
   background: var(--editor-panel-bg);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
@@ -1744,12 +1782,24 @@ button:disabled {
   gap: 8px;
 }
 
-.markup-note-popup-header strong {
+.markup-note-popup-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.markup-note-popup-title strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+.markup-note-popup-title span {
+  color: var(--editor-text-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .markup-note-popup-close,
@@ -1769,10 +1819,17 @@ button:disabled {
 }
 
 .markup-note-popup textarea {
-  min-height: 86px;
-  max-height: 128px;
+  min-height: 102px;
+  max-height: 150px;
   resize: vertical;
   font-size: 14px;
+  line-height: 1.35;
+}
+
+.markup-note-popup-save-hint {
+  margin: -2px 0 0;
+  color: var(--editor-text-muted);
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -1875,7 +1932,7 @@ button:disabled {
   }
 
   .markup-workspace-note-handle {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 5px 7px;
   }
 
@@ -1885,14 +1942,14 @@ button:disabled {
   }
 
   .markup-note-popup {
-    width: min(var(--markup-note-popup-width, 280px), calc(100% - 16px));
-    max-height: min(var(--markup-note-popup-max-height, 220px), 52dvh);
-    padding: 9px;
+    width: min(var(--markup-note-popup-width, 320px), calc(100% - 16px));
+    max-height: min(var(--markup-note-popup-max-height, 260px), 56dvh);
+    padding: 10px;
   }
 
   .markup-note-popup textarea {
-    min-height: 76px;
-    max-height: 116px;
+    min-height: 112px;
+    max-height: 34dvh;
     font-size: 16px;
   }
 

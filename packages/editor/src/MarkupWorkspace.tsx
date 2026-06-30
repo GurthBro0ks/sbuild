@@ -49,8 +49,8 @@ type MarkupWorkspaceProps = {
 const MARKUP_NOTE_PIN_EDGE_INSET_PX = 17;
 const MARKUP_NOTE_POPUP_MARGIN_PX = 8;
 const MARKUP_NOTE_POPUP_GAP_PX = 20;
-const MARKUP_NOTE_POPUP_WIDTH_PX = 280;
-const MARKUP_NOTE_POPUP_HEIGHT_PX = 220;
+const MARKUP_NOTE_POPUP_WIDTH_PX = 320;
+const MARKUP_NOTE_POPUP_HEIGHT_PX = 260;
 
 function sameAllowedRegion(a: MarkupAllowedRegion, b: MarkupAllowedRegion) {
   return a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom;
@@ -97,6 +97,7 @@ export function MarkupWorkspace({
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [armedMoveNoteId, setArmedMoveNoteId] = useState<string | null>(null);
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const [editedNoteIds, setEditedNoteIds] = useState<Set<string>>(() => new Set());
   const previousAnnotationIdsRef = useRef<string[]>(annotations.map((annotation) => annotation.id));
   const [allowedRegion, setAllowedRegion] = useState<MarkupAllowedRegion>(MARKUP_FULL_ALLOWED_REGION);
 
@@ -149,7 +150,22 @@ export function MarkupWorkspace({
       return;
     }
     setOpenNoteId((currentId) => currentId && currentIds.includes(currentId) ? currentId : null);
+    setEditedNoteIds((currentIdsSet) => {
+      const next = new Set(Array.from(currentIdsSet).filter((id) => currentIds.includes(id)));
+      return next.size === currentIdsSet.size ? currentIdsSet : next;
+    });
   }, [annotations]);
+
+  useEffect(() => {
+    if (!openNoteId) return;
+    function closeOpenNote(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenNoteId(null);
+      }
+    }
+    window.addEventListener("keydown", closeOpenNote);
+    return () => window.removeEventListener("keydown", closeOpenNote);
+  }, [openNoteId]);
 
   function moveNoteFromPointer(id: string, event: PointerEvent<HTMLElement>) {
     const rect = paintPlaneRef.current?.getBoundingClientRect();
@@ -231,6 +247,36 @@ export function MarkupWorkspace({
   function openNotePopup(id: string) {
     setOpenNoteId(id);
     setArmedMoveNoteId(null);
+  }
+
+  function previewText(annotation: MarkupAnnotation) {
+    return annotation.text.trim() || "Empty note";
+  }
+
+  function noteStatusText(annotation: MarkupAnnotation) {
+    if (editedNoteIds.has(annotation.id)) return "Unsaved";
+    if (openNoteId === annotation.id) return "Open";
+    return "Saved";
+  }
+
+  function updateNoteText(id: string, text: string) {
+    setEditedNoteIds((currentIds) => {
+      const next = new Set(currentIds);
+      next.add(id);
+      return next;
+    });
+    onUpdateNoteText(id, text);
+  }
+
+  function saveProjectAndClearNoteHint() {
+    const result = onSaveProject();
+    if (result && typeof (result as Promise<void>).then === "function") {
+      void (result as Promise<void>)
+        .then(() => setEditedNoteIds(new Set()))
+        .catch(() => undefined);
+      return;
+    }
+    setEditedNoteIds(new Set());
   }
 
   function stopPopupPointer(event: PointerEvent<HTMLElement>) {
@@ -320,7 +366,7 @@ export function MarkupWorkspace({
             type="button"
             className="markup-workspace-save"
             data-testid="markup-save-project"
-            onClick={() => void onSaveProject()}
+            onClick={() => void saveProjectAndClearNoteHint()}
           >
             Save Project
           </button>
@@ -395,9 +441,10 @@ export function MarkupWorkspace({
               <div className="markup-workspace-note-list">
                 {annotations.map((annotation, index) => (
                     <article
-                      className={`markup-workspace-note-editor ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                      className={`markup-workspace-note-editor ${draggingNoteId === annotation.id ? "dragging" : ""} ${openNoteId === annotation.id ? "active" : ""}`}
                       data-testid="markup-note-editor"
                       data-markup-note-id={annotation.id}
+                      aria-current={openNoteId === annotation.id ? "true" : undefined}
                       key={annotation.id}
                     >
                     <div
@@ -406,7 +453,8 @@ export function MarkupWorkspace({
                       data-markup-note-id={annotation.id}
                     >
                       <span>Note {index + 1}</span>
-                      <span className="markup-workspace-note-preview">{annotation.text || "Empty note"}</span>
+                      <span className={`markup-workspace-note-preview ${annotation.text.trim() ? "" : "empty"}`}>{previewText(annotation)}</span>
+                      <span className={`markup-workspace-note-state ${editedNoteIds.has(annotation.id) ? "unsaved" : ""}`}>{noteStatusText(annotation)}</span>
                     </div>
                     <div className="markup-workspace-note-row-actions">
                       <button
@@ -417,7 +465,7 @@ export function MarkupWorkspace({
                         aria-expanded={openNoteId === annotation.id}
                         onClick={() => openNotePopup(annotation.id)}
                       >
-                        Open
+                        Open card
                       </button>
                       <button
                         type="button"
@@ -454,9 +502,10 @@ export function MarkupWorkspace({
               <button
                 type="button"
                 key={annotation.id}
-                className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""}`}
+                className={`markup-note-pin ${draggingNoteId === annotation.id ? "dragging" : ""} ${openNoteId === annotation.id ? "active" : ""}`}
                 data-testid="markup-note-pin"
                 data-markup-note-id={annotation.id}
+                aria-pressed={openNoteId === annotation.id}
                 aria-label={`Open Markup note ${index + 1}`}
                 title={`Open note ${index + 1}`}
                 style={notePinStyle(annotation)}
@@ -485,7 +534,10 @@ export function MarkupWorkspace({
                 onClick={(event) => event.stopPropagation()}
               >
                 <header className="markup-note-popup-header">
-                  <strong>Note {index + 1}</strong>
+                  <div className="markup-note-popup-title">
+                    <strong>Note {index + 1}</strong>
+                    <span>{editedNoteIds.has(annotation.id) ? "Unsaved note changes" : "Saved with project"}</span>
+                  </div>
                   <button
                     type="button"
                     className="markup-note-popup-close"
@@ -500,11 +552,15 @@ export function MarkupWorkspace({
                   Text
                   <textarea
                     value={annotation.text}
-                    onChange={(event) => onUpdateNoteText(annotation.id, event.target.value)}
+                    onChange={(event) => updateNoteText(annotation.id, event.target.value)}
                     data-testid="markup-note-text"
                     aria-label={`Markup note ${index + 1} text`}
+                    placeholder="Type a note for this spot"
                   />
                 </label>
+                <p className="markup-note-popup-save-hint">
+                  {editedNoteIds.has(annotation.id) ? "Unsaved note changes. Use Save Project to persist." : "Edits stay in Markup and are persisted by Save Project."}
+                </p>
                 <div className="markup-note-popup-actions">
                   <button type="button" onClick={() => onDeleteNote(annotation.id)} data-testid="markup-delete-note">
                     Delete
