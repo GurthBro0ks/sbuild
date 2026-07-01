@@ -599,18 +599,44 @@ test("AI chat sends conversation history for follow-up context", () => {
 test("AI chat attaches Markup context only after explicit preview then Send", () => {
   assert.match(appSource, /buildMarkupAiContext/);
   assert.match(appSource, /data-testid="ai-markup-attach"/);
-  assert.match(appSource, /Markup attached/);
+  assert.match(appSource, /Markup attached for next AI message only/);
+  assert.match(appSource, /Sent only when you click Send/);
   assert.match(appSource, /data-testid="ai-markup-attached-preview"/);
   assert.match(appSource, /\.\.\.\(markupContextForSend \? \{ markupContext: markupContextForSend \} : \{\}\)/);
+});
+
+test("AI chat Markup preview is structured and privacy-explicit", () => {
+  assert.match(appSource, /ai-markup-preview-header/);
+  assert.match(appSource, /ai-markup-preview-grid/);
+  assert.match(appSource, /Selection/);
+  assert.match(appSource, /Note snippets/);
+  assert.match(appSource, /note count\/snippets included/);
+  assert.match(appSource, /freehand count:/);
+  assert.match(appSource, /Summary only; no raw stroke geometry/);
+  assert.match(appSource, /Excluded:/);
+  assert.match(appSource, /no raw stroke points/);
+  assert.match(appSource, /no full project JSON/);
+  assert.match(appSource, /no screenshots\/images/);
 });
 
 test("AI chat Markup attachment is removable and one-shot", () => {
   assert.match(appSource, /function clearMarkupAttachment/);
   assert.match(appSource, /data-testid="ai-markup-remove"/);
+  assert.match(appSource, /ai-markup-remove-btn/);
   assert.match(appSource, /setPendingMarkupContext\(null\)/);
   assert.match(appSource, /if \(markupContextForSend\) setPendingMarkupContext\(null\)/);
   assert.match(markupWorkspaceSource, /onAttachToAi/);
   assert.doesNotMatch(markupWorkspaceSource, /Attach to AI \(coming later\)/);
+});
+
+test("AI chat Markup preview has mobile fit and reachable remove/send controls", () => {
+  assert.match(cssSource, /\.ai-markup-attached-preview/);
+  assert.match(cssSource, /\.ai-markup-preview-grid[\s\S]{0,120}grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.ai-markup-attached-preview[\s\S]{0,180}max-height:\s*34dvh/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.ai-markup-preview-grid[\s\S]{0,120}grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.ai-markup-remove-btn[\s\S]{0,120}width:\s*100%/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.ai-chat-input-area[\s\S]{0,120}padding:\s*8px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.ai-chat-send[\s\S]{0,120}padding:\s*8px 12px/);
 });
 
 test("AI chat error messages are provider-aware with timeout details", () => {

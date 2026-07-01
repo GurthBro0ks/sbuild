@@ -6728,10 +6728,36 @@ export function App() {
                 )}
                 {pendingMarkupContext && (
                   <div className="ai-markup-attached-preview" data-testid="ai-markup-attached-preview">
-                    <strong>Markup attached</strong>
-                    <span>{formatMarkupAiContextPreview(pendingMarkupContext)}</span>
-                    {pendingMarkupContext.notes[0]?.snippet && <span>First note: {pendingMarkupContext.notes[0].snippet}</span>}
-                    <button type="button" onClick={clearMarkupAttachment} data-testid="ai-markup-remove">Remove Markup</button>
+                    <div className="ai-markup-preview-header">
+                      <div className="ai-markup-preview-title">
+                        <strong>Markup attached for next AI message only</strong>
+                        <span>Sent only when you click Send.</span>
+                      </div>
+                      <button type="button" className="ai-markup-remove-btn" onClick={clearMarkupAttachment} data-testid="ai-markup-remove">Remove Markup</button>
+                    </div>
+                    <div className="ai-markup-preview-grid" aria-label={formatMarkupAiContextPreview(pendingMarkupContext)}>
+                      <div className="ai-markup-preview-section">
+                        <span className="ai-markup-preview-label">Selection</span>
+                        <span>Page: {pendingMarkupContext.page ? `${pendingMarkupContext.page.title} (${pendingMarkupContext.page.id})` : "No page selected"}</span>
+                        <span>Block: {pendingMarkupContext.selectedBlock ? `${pendingMarkupContext.selectedBlock.type}${pendingMarkupContext.selectedBlock.title ? ` - ${pendingMarkupContext.selectedBlock.title}` : ""} (${pendingMarkupContext.selectedBlock.id})` : "No selected block"}</span>
+                      </div>
+                      <div className="ai-markup-preview-section">
+                        <span className="ai-markup-preview-label">Note snippets</span>
+                        <span>{pendingMarkupContext.noteCountIncluded}/{pendingMarkupContext.noteCountTotal} note count/snippets included</span>
+                        {pendingMarkupContext.notes[0]?.snippet && <span>First note: {pendingMarkupContext.notes[0].snippet}</span>}
+                      </div>
+                      <div className="ai-markup-preview-section">
+                        <span className="ai-markup-preview-label">Freehand</span>
+                        <span>freehand count: {pendingMarkupContext.freehand.strokeCount}</span>
+                        <span>Summary only; no raw stroke geometry.</span>
+                      </div>
+                    </div>
+                    <div className="ai-markup-privacy-boundary">
+                      <strong>Excluded:</strong>
+                      <span>no raw stroke points</span>
+                      <span>no full project JSON</span>
+                      <span>no screenshots/images</span>
+                    </div>
                   </div>
                 )}
                 <div className="ai-chat-messages" ref={chatMessagesRef}>
