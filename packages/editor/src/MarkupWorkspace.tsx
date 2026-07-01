@@ -435,25 +435,32 @@ export function MarkupWorkspace({
             <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
             <button type="button" onClick={onAttachToAi} disabled={!hasAttachableMarkup} className="markup-workspace-ai-attach">Attach to AI</button>
             <div className="markup-workspace-export" data-testid="markup-export">
-              <button
-                type="button"
-                onClick={() => onExportMarkup("md")}
-                disabled={!hasAttachableMarkup}
-                data-testid="markup-export-md"
-                title="Download a private Markdown summary of Markup notes for this page. Not published, not sent anywhere."
-              >
-                Export MD
-              </button>
-              <button
-                type="button"
-                onClick={() => onExportMarkup("json")}
-                disabled={!hasAttachableMarkup}
-                data-testid="markup-export-json"
-                title="Download a private JSON summary of Markup notes for this page. Not published, not sent anywhere."
-              >
-                Export JSON
-              </button>
-              <span>Private editor export. Not published.</span>
+              <div className="markup-workspace-export-buttons">
+                <button
+                  type="button"
+                  onClick={() => onExportMarkup("md")}
+                  disabled={!hasAttachableMarkup}
+                  data-testid="markup-export-md"
+                  title="Export MD. Summary only. Private editor export, not published."
+                >
+                  Export MD
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onExportMarkup("json")}
+                  disabled={!hasAttachableMarkup}
+                  data-testid="markup-export-json"
+                  title="Export JSON. Summary only. Private editor export, not published."
+                >
+                  Export JSON
+                </button>
+              </div>
+              <div className="markup-workspace-export-helper" aria-label="Markup export privacy">
+                <span>Private editor export. Not published.</span>
+                <span>Summary export only.</span>
+                <span>No raw strokes / no full project JSON.</span>
+                <span>No screenshots/images.</span>
+              </div>
             </div>
           </div>
 

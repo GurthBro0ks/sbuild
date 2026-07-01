@@ -641,6 +641,11 @@ test("Markup workspace exposes private file export controls next to Attach to AI
   assert.match(markupWorkspaceSource, /data-testid="markup-export-md"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-export-json"/);
   assert.match(markupWorkspaceSource, /Private editor export\. Not published\./);
+  assert.match(markupWorkspaceSource, /Summary export only\./);
+  assert.match(markupWorkspaceSource, /No raw strokes \/ no full project JSON\./);
+  assert.match(markupWorkspaceSource, /No screenshots\/images\./);
+  assert.match(markupWorkspaceSource, /title="Export MD\. Summary only\. Private editor export, not published\."/);
+  assert.match(markupWorkspaceSource, /title="Export JSON\. Summary only\. Private editor export, not published\."/);
   assert.match(markupWorkspaceSource, /onClick=\{\(\) => onExportMarkup\("md"\)\}/);
   assert.match(markupWorkspaceSource, /onClick=\{\(\) => onExportMarkup\("json"\)\}/);
 });
@@ -657,11 +662,20 @@ test("Markup export is explicit-click client download without server call", () =
   assert.match(appSource, /function exportMarkup\(format: MarkupExportFormat\)/);
   assert.match(appSource, /buildMarkupExportSummary/);
   assert.match(appSource, /downloadMarkupExportFile\(summary, format\)/);
+  assert.match(appSource, /format === "md" \? "Export MD started" : "Export JSON started"/);
   assert.match(markupExportSource, /new Blob/);
   assert.match(markupExportSource, /URL\.createObjectURL/);
   assert.match(markupExportSource, /document\.createElement\("a"\)/);
   assert.doesNotMatch(markupExportSource, /fetch\(/);
   assert.doesNotMatch(markupExportSource, /\/api\//);
+});
+
+test("Markup export helper and controls remain mobile-friendly", () => {
+  assert.match(cssSource, /\.markup-workspace-export-buttons[\s\S]{0,180}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.markup-workspace-export-helper[\s\S]{0,180}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-export[\s\S]{0,180}flex:\s*1 1 100%/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-export-buttons[\s\S]{0,180}grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-export-helper[\s\S]{0,120}display:\s*grid/);
 });
 
 test("AI chat Markup preview has mobile fit and reachable remove/send controls", () => {

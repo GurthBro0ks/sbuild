@@ -2889,7 +2889,7 @@ export function App() {
       return;
     }
     downloadMarkupExportFile(summary, format);
-    setStatus(`Exported private Markup ${format.toUpperCase()} summary for ${summary.page?.title || "this page"}.`);
+    setStatus(format === "md" ? "Export MD started" : "Export JSON started");
   }
 
   useEffect(() => {
