@@ -39,6 +39,8 @@ type MarkupWorkspaceProps = {
   onUpdateNoteText: (id: string, text: string) => void;
   onMoveNote: (id: string, x: number, y: number) => void;
   onDeleteNote: (id: string) => void;
+  onAttachToAi: () => void;
+  hasAttachableMarkup: boolean;
   freehandLayer?: ReactNode;
   paintCaptureActive: boolean;
   controlsCollapsed: boolean;
@@ -86,6 +88,8 @@ export function MarkupWorkspace({
   onUpdateNoteText,
   onMoveNote,
   onDeleteNote,
+  onAttachToAi,
+  hasAttachableMarkup,
   freehandLayer,
   paintCaptureActive,
   controlsCollapsed,
@@ -427,7 +431,7 @@ export function MarkupWorkspace({
               Keep in Session
             </button>
             <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
-            <button type="button" disabled className="markup-workspace-ai-attach">Attach to AI (coming later)</button>
+            <button type="button" onClick={onAttachToAi} disabled={!hasAttachableMarkup} className="markup-workspace-ai-attach">Attach to AI</button>
           </div>
 
           <section className="markup-workspace-notes" aria-label="Sticky note annotations">

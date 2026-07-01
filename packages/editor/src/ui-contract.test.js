@@ -596,6 +596,23 @@ test("AI chat sends conversation history for follow-up context", () => {
   assert.match(appSource, /role:\s*m\.role,\s*text:\s*m\.text/);
 });
 
+test("AI chat attaches Markup context only after explicit preview then Send", () => {
+  assert.match(appSource, /buildMarkupAiContext/);
+  assert.match(appSource, /data-testid="ai-markup-attach"/);
+  assert.match(appSource, /Markup attached/);
+  assert.match(appSource, /data-testid="ai-markup-attached-preview"/);
+  assert.match(appSource, /\.\.\.\(markupContextForSend \? \{ markupContext: markupContextForSend \} : \{\}\)/);
+});
+
+test("AI chat Markup attachment is removable and one-shot", () => {
+  assert.match(appSource, /function clearMarkupAttachment/);
+  assert.match(appSource, /data-testid="ai-markup-remove"/);
+  assert.match(appSource, /setPendingMarkupContext\(null\)/);
+  assert.match(appSource, /if \(markupContextForSend\) setPendingMarkupContext\(null\)/);
+  assert.match(markupWorkspaceSource, /onAttachToAi/);
+  assert.doesNotMatch(markupWorkspaceSource, /Attach to AI \(coming later\)/);
+});
+
 test("AI chat error messages are provider-aware with timeout details", () => {
   assert.match(appSource, /isTimeout/);
   assert.match(appSource, /timed out after/);
@@ -2989,7 +3006,9 @@ test("markup help keeps instructions compact and out of the stage overlay", () =
   assert.match(markupWorkspaceSource, /shown only in Markup, and not published/);
   assert.doesNotMatch(markupWorkspaceSource, /Advanced drawing tools/);
   assert.doesNotMatch(markupWorkspaceSource, /<strong>Canvas preview area<\/strong>/);
-  assert.match(markupWorkspaceSource, /Attach to AI \(coming later\)/);
+  assert.match(markupWorkspaceSource, /onAttachToAi/);
+  assert.match(markupWorkspaceSource, /disabled=\{!hasAttachableMarkup\}/);
+  assert.match(markupWorkspaceSource, />Attach to AI<\/button>/);
 });
 
 test("Markup workspace exposes draft undo redo and Clear Free Draw actions", () => {
@@ -3196,10 +3215,11 @@ test("AI Chat: input pinned at bottom with Send button", () => {
 });
 
 test("AI Chat: markup attach is optional and only active when markup exists", () => {
-  assert.match(appSource, /paintAppliedStrokes\.length > 0/);
+  assert.match(appSource, /hasAttachableMarkupContext/);
+  assert.match(appSource, /buildMarkupAiContext/);
   assert.match(appSource, /Attach Markup/);
-  const noMarkupIdx = appSource.indexOf("no markup");
-  assert.ok(noMarkupIdx < 0, "no disabled markup message in new chat UI");
+  assert.match(appSource, /Nothing to attach/);
+  assert.match(appSource, /disabled=\{!hasAttachableMarkupContext\}/);
 });
 
 test("AI Chat: clear conversation button exists", () => {

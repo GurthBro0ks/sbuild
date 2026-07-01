@@ -76,6 +76,62 @@ function safeGitCommand(cmd: string, cwd?: string): string | null {
 
 type GitDirtySummary = { modifiedTracked: number; untracked: number };
 
+const MAX_MARKUP_CONTEXT_CHARS = 8000;
+const MAX_MARKUP_CONTEXT_NOTES = 20;
+const MAX_MARKUP_CONTEXT_NOTE_CHARS = 200;
+
+function sanitizeMarkupContextText(value: unknown, maxChars: number): string {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxChars);
+}
+
+function sanitizeMarkupContextForPrompt(input: unknown): string {
+  if (!input) return "";
+  if (typeof input === "string") return sanitizeMarkupContextText(input, MAX_MARKUP_CONTEXT_CHARS);
+  if (typeof input !== "object" || Array.isArray(input)) return "";
+
+  const obj = input as Record<string, unknown>;
+  const lines: string[] = [];
+  const page = obj.page && typeof obj.page === "object" ? obj.page as Record<string, unknown> : null;
+  if (page) {
+    const pageTitle = sanitizeMarkupContextText(page.title, 120);
+    const pageId = sanitizeMarkupContextText(page.id, 80);
+    if (pageTitle || pageId) lines.push(`Page: ${pageTitle || "Untitled"}${pageId ? ` (${pageId})` : ""}`);
+  }
+  const selectedBlock = obj.selectedBlock && typeof obj.selectedBlock === "object" ? obj.selectedBlock as Record<string, unknown> : null;
+  if (selectedBlock) {
+    const blockType = sanitizeMarkupContextText(selectedBlock.type, 40);
+    const blockTitle = sanitizeMarkupContextText(selectedBlock.title, 120);
+    const blockId = sanitizeMarkupContextText(selectedBlock.id, 80);
+    if (blockType || blockTitle || blockId) lines.push(`Selected block: ${blockType || "block"}${blockTitle ? ` - ${blockTitle}` : ""}${blockId ? ` (${blockId})` : ""}`);
+  }
+  const viewportMode = sanitizeMarkupContextText(obj.viewportMode, 40);
+  if (viewportMode) lines.push(`Viewport: ${viewportMode}`);
+
+  const notes = Array.isArray(obj.notes) ? obj.notes.slice(0, MAX_MARKUP_CONTEXT_NOTES) : [];
+  for (const rawNote of notes) {
+    if (!rawNote || typeof rawNote !== "object") continue;
+    const note = rawNote as Record<string, unknown>;
+    const label = sanitizeMarkupContextText(note.label, 40) || "Note";
+    const noteId = sanitizeMarkupContextText(note.id, 80);
+    const blockId = sanitizeMarkupContextText(note.blockId, 80);
+    const snippet = sanitizeMarkupContextText(note.snippet, MAX_MARKUP_CONTEXT_NOTE_CHARS);
+    if (snippet || noteId || blockId) {
+      lines.push(`${label}${noteId ? ` ${noteId}` : ""}${blockId ? ` on block ${blockId}` : ""}: ${snippet || "(empty note)"}`);
+    }
+  }
+
+  const noteCountTotal = Number.isFinite(Number(obj.noteCountTotal)) ? Number(obj.noteCountTotal) : notes.length;
+  if (noteCountTotal > notes.length) lines.push(`Notes included: ${notes.length} of ${Math.min(noteCountTotal, MAX_MARKUP_CONTEXT_NOTES)} shown; total notes reported ${noteCountTotal}.`);
+
+  const freehand = obj.freehand && typeof obj.freehand === "object" ? obj.freehand as Record<string, unknown> : null;
+  const strokeCount = freehand && Number.isFinite(Number(freehand.strokeCount)) ? Math.max(0, Math.floor(Number(freehand.strokeCount))) : 0;
+  if (strokeCount > 0 || freehand) {
+    lines.push(`Freehand summary: ${strokeCount} saved stroke${strokeCount === 1 ? "" : "s"}; raw stroke points excluded.`);
+  }
+
+  return lines.join("\n").slice(0, MAX_MARKUP_CONTEXT_CHARS);
+}
+
 function computeDirtySummary(cwd: string): GitDirtySummary {
   const status = safeGitCommand("git status --porcelain", cwd) || "";
   const lines = status.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -1468,6 +1524,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const projectContext = (req.body?.projectContext && typeof req.body.projectContext === "object")
       ? req.body.projectContext as Partial<SBuildProject>
       : null;
+    const markupContext = sanitizeMarkupContextForPrompt(req.body?.markupContext);
     const selectedBlockId = req.body?.selectedBlockId ? String(req.body.selectedBlockId) : blockId;
     const selectedPageId = req.body?.selectedPageId ? String(req.body.selectedPageId) : "";
     if (!prompt) {
@@ -1561,6 +1618,9 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       : pageContent
         ? `\n\nCurrent ${targetKind === "site" ? "site" : "page"} content:\n${pageContent.slice(0, 4000)}\n\n`
         : "";
+    const markupContextBlock = markupContext
+      ? `\n\nOperator-attached Markup context (owner-provided, bounded, editor-only):\n${markupContext}\n\n`
+      : "";
     const isQuestion = isQuestionPrompt(prompt);
     const fieldInstruction = !isQuestion && targetKind === "block" && blockType
       ? fieldInstructionFromPrompt(prompt, blockType)
@@ -1568,7 +1628,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     const proposalInstruction = !isQuestion && targetKind === "block"
       ? `If you are proposing a direct replacement for editable block copy, return a JSON object in a fenced \`\`\`json block with {"kind":"replace-copy","replaceText":"...","targetField":"heading or subheading or body"}. Otherwise answer normally with plain text and no proposal object. `
       : "";
-    const fullPrompt = `${scopeInstruction}${brainContextBlock}${contentContext}${fieldInstruction}${proposalInstruction}${prompt}`;
+    const fullPrompt = `${scopeInstruction}${brainContextBlock}${contentContext}${markupContextBlock}${fieldInstruction}${proposalInstruction}${prompt}`;
     const llmStartedAt = Date.now();
     const result = await chatWithProviders(fullPrompt, chatHistory);
     const llmLatencyMs = Date.now() - llmStartedAt;
@@ -1584,6 +1644,7 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       contextUsed.push("whole-site");
       if (brain.selectedBlock) contextUsed.push("selected-block");
     }
+    if (markupContext) contextUsed.push("markup-context");
     if (result.provider === "local") {
       engine = "local-ollama";
       engineTimeoutMs = (await getChatProviderConfig()).fallbackTimeoutSec * 1000;

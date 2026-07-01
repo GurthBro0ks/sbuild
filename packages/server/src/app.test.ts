@@ -1639,6 +1639,54 @@ test("DELETE /api/ai/memory clears user memory", async () => {
   assert.equal(getBody.memory.summaries.length, 0);
 });
 
+test("POST /api/ai/suggest accepts optional bounded markupContext", async () => {
+  let capturedBody: unknown = null;
+  await withMockOllama({
+    tags: { models: [{ name: "qwen3:4b" }] },
+    chat: {
+      capture: (body) => { capturedBody = body; },
+      body: { message: { content: "markup-aware reply" } }
+    }
+  }, async () => {
+    await withNoOpenAIKey(async () => {
+      const response = await fetch(`${baseUrl}/api/ai/suggest`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "use the attached markup notes",
+          targetKind: "page",
+          markupContext: {
+            kind: "sbuild-markup-context",
+            page: { id: "page-1", title: "Home" },
+            selectedBlock: { id: "hero-1", type: "hero", title: "Hero" },
+            viewportMode: "desktop",
+            notes: Array.from({ length: 21 }, (_, index) => ({
+              id: `note-${index + 1}`,
+              label: `Note ${index + 1}`,
+              blockId: "hero-1",
+              snippet: index === 20 ? "should not appear" : `markup note ${index + 1}`
+            })),
+            noteCountTotal: 21,
+            freehand: { strokeCount: 2, points: [{ x: 0.12345, y: 0.6789 }] }
+          }
+        })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json() as { ok: boolean; suggestion?: string; engineContextUsed?: string[] };
+      assert.equal(body.ok, true);
+      assert.equal(body.suggestion, "markup-aware reply");
+      assert.ok(body.engineContextUsed?.includes("markup-context"));
+      const messages = (capturedBody as { messages?: Array<{ role: string; content: string }> })?.messages || [];
+      const finalUser = messages[messages.length - 1]?.content || "";
+      assert.match(finalUser, /Operator-attached Markup context/);
+      assert.match(finalUser, /markup note 20/);
+      assert.doesNotMatch(finalUser, /should not appear/);
+      assert.doesNotMatch(finalUser, /0\.12345/);
+      assert.doesNotMatch(finalUser, /0\.6789/);
+    });
+  });
+});
+
 test("POST /api/ai/suggest does not intercept model identity questions as UI state", async () => {
   await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
     await withNoOpenAIKey(async () => {

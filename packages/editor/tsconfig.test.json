@@ -8,5 +8,5 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["src/editorBehavior.ts"]
+  "include": ["src/editorBehavior.ts", "src/markupAiContext.ts"]
 }

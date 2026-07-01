@@ -73,6 +73,7 @@ import {
   isMarkupPointInAllowedRegion,
   moveMarkupAnnotation
 } from "./markupAnnotations.js";
+import { buildMarkupAiContext, formatMarkupAiContextPreview, type MarkupAiContext } from "./markupAiContext.js";
 import { MarkupWorkspace } from "./MarkupWorkspace.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
@@ -1362,6 +1363,7 @@ export function App() {
   const [status, setStatus] = useState("Loading project...");
   const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<ChatItem[]>([]);
+  const [pendingMarkupContext, setPendingMarkupContext] = useState<MarkupAiContext | null>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const [fonts, setFonts] = useState<Array<{ family: string }>>([]);
   const [fontSearch, setFontSearch] = useState("");
@@ -1882,6 +1884,8 @@ export function App() {
     () => (project?.markupFreehandStrokes || []).filter((stroke) => stroke.pageId === selectedPage?.id),
     [project?.markupFreehandStrokes, selectedPage?.id]
   );
+  const markupAttachCount = currentPageMarkupAnnotations.length + currentPageFreehandStrokes.length;
+  const hasAttachableMarkupContext = Boolean(project && selectedPage && (selectedBlock || markupAttachCount > 0));
   const rowRenderItems = useMemo(() => toRowRenderItems(selectedPage?.blocks || []), [selectedPage?.blocks]);
   const shouldStackRows = deviceMode === "phone";
   const usedImageUrls = useMemo(() => collectUsedImageUrls(project), [project]);
@@ -2837,6 +2841,29 @@ export function App() {
     }, 120);
   }
 
+  function attachMarkupToAi() {
+    const next = buildMarkupAiContext({
+      page: selectedPage ? { id: selectedPage.id, title: selectedPage.title, slug: selectedPage.slug } : null,
+      selectedBlock: selectedBlock || null,
+      viewportMode: deviceMode,
+      notes: currentPageMarkupAnnotations,
+      freehandStrokes: currentPageFreehandStrokes
+    });
+    if (!next) {
+      setStatus("Nothing to attach: no page, selected block, sticky notes, or saved freehand strokes are available.");
+      return;
+    }
+    setPendingMarkupContext(next);
+    setAiTopMenuOpen(true);
+    setAiTopMenuTab("chat");
+    setStatus("Markup attached to the next AI message. Review the preview, then click Send.");
+  }
+
+  function clearMarkupAttachment() {
+    setPendingMarkupContext(null);
+    setStatus("Markup attachment removed.");
+  }
+
   useEffect(() => {
     if (aiTopMenuTab !== "chat") return;
     scrollChatToBottom();
@@ -2957,6 +2984,7 @@ export function App() {
   async function aiAskSuggest() {
     const prompt = chatInput.trim();
     if (!prompt) return;
+    const markupContextForSend = pendingMarkupContext;
     setAiProposalPending(true);
     setAiProposal("");
     setAiStructuredProposal(null);
@@ -2978,11 +3006,13 @@ export function App() {
           pageContent: aiChatTarget !== "block" ? extractPageContent(aiChatTarget === "site" ? "site" : "page") : "",
           blockContent: aiChatTarget === "block" && selectedBlock ? extractBlockContent(selectedBlock) : undefined,
           projectContext: project || undefined,
+          ...(markupContextForSend ? { markupContext: markupContextForSend } : {}),
           selectedBlockId: aiChatTarget === "block" ? (target.blockId || selectedBlockId || "") : "",
           selectedPageId: selectedPageId || selectedPage?.id || ""
         })
       });
       if (data.ok && data.suggestion) {
+        if (markupContextForSend) setPendingMarkupContext(null);
         setAiProposal(data.suggestion);
         setAiStructuredProposal(data.proposal || null);
         const hasValidProposal = Boolean(data.proposal?.replaceText) && canEditBlocks;
@@ -3140,6 +3170,7 @@ export function App() {
     setAiHasProposal(false);
     setChatHistory([]);
     setChatInput("");
+    setPendingMarkupContext(null);
     setChatClearedAt(Date.now());
     setAiUndoSnapshot(null);
     setAiHistoryView(false);
@@ -6586,6 +6617,8 @@ export function App() {
           onUpdateNoteText={updateMarkupNoteText}
           onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
+          onAttachToAi={attachMarkupToAi}
+          hasAttachableMarkup={hasAttachableMarkupContext}
           paintCaptureActive={paintExclusiveMode}
           controlsCollapsed={markupControlsCollapsed}
           onToggleControls={() => setMarkupControlsCollapsed((v) => !v)}
@@ -6681,9 +6714,24 @@ export function App() {
                             ? "Default: focus on current page, full site context in LLM prompt"
                             : "Default: whole-site context in LLM prompt"}
                     </div>
-                    {paintAppliedStrokes.length > 0 && (
-                      <button className="ai-markup-attach-btn" title="Attach markup notes to AI request">Attach Markup ({paintAppliedStrokes.length})</button>
-                    )}
+                    <button
+                      type="button"
+                      className="ai-markup-attach-btn"
+                      title={hasAttachableMarkupContext ? "Attach bounded Markup context to the next AI request" : "Nothing to attach"}
+                      onClick={attachMarkupToAi}
+                      disabled={!hasAttachableMarkupContext}
+                      data-testid="ai-markup-attach"
+                    >
+                      Attach Markup{markupAttachCount > 0 ? ` (${markupAttachCount})` : ""}
+                    </button>
+                  </div>
+                )}
+                {pendingMarkupContext && (
+                  <div className="ai-markup-attached-preview" data-testid="ai-markup-attached-preview">
+                    <strong>Markup attached</strong>
+                    <span>{formatMarkupAiContextPreview(pendingMarkupContext)}</span>
+                    {pendingMarkupContext.notes[0]?.snippet && <span>First note: {pendingMarkupContext.notes[0].snippet}</span>}
+                    <button type="button" onClick={clearMarkupAttachment} data-testid="ai-markup-remove">Remove Markup</button>
                   </div>
                 )}
                 <div className="ai-chat-messages" ref={chatMessagesRef}>
