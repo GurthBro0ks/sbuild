@@ -40,6 +40,7 @@ type MarkupWorkspaceProps = {
   onMoveNote: (id: string, x: number, y: number) => void;
   onDeleteNote: (id: string) => void;
   onAttachToAi: () => void;
+  onExportMarkup: (format: "md" | "json") => void;
   hasAttachableMarkup: boolean;
   freehandLayer?: ReactNode;
   paintCaptureActive: boolean;
@@ -89,6 +90,7 @@ export function MarkupWorkspace({
   onMoveNote,
   onDeleteNote,
   onAttachToAi,
+  onExportMarkup,
   hasAttachableMarkup,
   freehandLayer,
   paintCaptureActive,
@@ -432,6 +434,27 @@ export function MarkupWorkspace({
             </button>
             <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
             <button type="button" onClick={onAttachToAi} disabled={!hasAttachableMarkup} className="markup-workspace-ai-attach">Attach to AI</button>
+            <div className="markup-workspace-export" data-testid="markup-export">
+              <button
+                type="button"
+                onClick={() => onExportMarkup("md")}
+                disabled={!hasAttachableMarkup}
+                data-testid="markup-export-md"
+                title="Download a private Markdown summary of Markup notes for this page. Not published, not sent anywhere."
+              >
+                Export MD
+              </button>
+              <button
+                type="button"
+                onClick={() => onExportMarkup("json")}
+                disabled={!hasAttachableMarkup}
+                data-testid="markup-export-json"
+                title="Download a private JSON summary of Markup notes for this page. Not published, not sent anywhere."
+              >
+                Export JSON
+              </button>
+              <span>Private editor export. Not published.</span>
+            </div>
           </div>
 
           <section className="markup-workspace-notes" aria-label="Sticky note annotations">

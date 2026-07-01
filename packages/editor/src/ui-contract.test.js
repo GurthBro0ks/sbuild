@@ -7,7 +7,8 @@ const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.u
 const versionIdentityBannerSource = readFileSync(new URL("./VersionIdentityBanner.tsx", import.meta.url), "utf8");
 const markupWorkspaceSource = readFileSync(new URL("./MarkupWorkspace.tsx", import.meta.url), "utf8");
 const markupAnnotationsSource = readFileSync(new URL("./markupAnnotations.ts", import.meta.url), "utf8");
-const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}\n${markupAnnotationsSource}`;
+const markupExportSource = readFileSync(new URL("./markupExport.ts", import.meta.url), "utf8");
+const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}\n${markupAnnotationsSource}\n${markupExportSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
@@ -627,6 +628,40 @@ test("AI chat Markup attachment is removable and one-shot", () => {
   assert.match(appSource, /if \(markupContextForSend\) setPendingMarkupContext\(null\)/);
   assert.match(markupWorkspaceSource, /onAttachToAi/);
   assert.doesNotMatch(markupWorkspaceSource, /Attach to AI \(coming later\)/);
+});
+
+test("Markup workspace exposes private file export controls next to Attach to AI", () => {
+  const attachIdx = markupWorkspaceSource.indexOf("Attach to AI");
+  const exportMdIdx = markupWorkspaceSource.indexOf("Export MD");
+  const exportJsonIdx = markupWorkspaceSource.indexOf("Export JSON");
+  assert.ok(attachIdx > 0, "Attach to AI button exists");
+  assert.ok(exportMdIdx > attachIdx, "Export MD appears after Attach to AI");
+  assert.ok(exportJsonIdx > exportMdIdx, "Export JSON appears after Export MD");
+  assert.match(markupWorkspaceSource, /data-testid="markup-export"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-export-md"/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-export-json"/);
+  assert.match(markupWorkspaceSource, /Private editor export\. Not published\./);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => onExportMarkup\("md"\)\}/);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => onExportMarkup\("json"\)\}/);
+});
+
+test("Markup export controls share the attachable Markup disabled condition", () => {
+  const exportSection = markupWorkspaceSource.slice(markupWorkspaceSource.indexOf('className="markup-workspace-export"'));
+  assert.match(exportSection, /disabled=\{!hasAttachableMarkup\}[\s\S]{0,360}Export MD/);
+  assert.match(exportSection, /disabled=\{!hasAttachableMarkup\}[\s\S]{0,360}Export JSON/);
+  assert.match(appSource, /onExportMarkup=\{exportMarkup\}/);
+  assert.match(appSource, /hasAttachableMarkup=\{hasAttachableMarkupContext\}/);
+});
+
+test("Markup export is explicit-click client download without server call", () => {
+  assert.match(appSource, /function exportMarkup\(format: MarkupExportFormat\)/);
+  assert.match(appSource, /buildMarkupExportSummary/);
+  assert.match(appSource, /downloadMarkupExportFile\(summary, format\)/);
+  assert.match(markupExportSource, /new Blob/);
+  assert.match(markupExportSource, /URL\.createObjectURL/);
+  assert.match(markupExportSource, /document\.createElement\("a"\)/);
+  assert.doesNotMatch(markupExportSource, /fetch\(/);
+  assert.doesNotMatch(markupExportSource, /\/api\//);
 });
 
 test("AI chat Markup preview has mobile fit and reachable remove/send controls", () => {

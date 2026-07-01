@@ -74,6 +74,7 @@ import {
   moveMarkupAnnotation
 } from "./markupAnnotations.js";
 import { buildMarkupAiContext, formatMarkupAiContextPreview, type MarkupAiContext } from "./markupAiContext.js";
+import { buildMarkupExportSummary, downloadMarkupExportFile, type MarkupExportFormat } from "./markupExport.js";
 import { MarkupWorkspace } from "./MarkupWorkspace.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
@@ -2862,6 +2863,33 @@ export function App() {
   function clearMarkupAttachment() {
     setPendingMarkupContext(null);
     setStatus("Markup attachment removed.");
+  }
+
+  function exportMarkup(format: MarkupExportFormat) {
+    const exportedAt = new Date().toISOString();
+    const summary = buildMarkupExportSummary({
+      page: selectedPage ? { id: selectedPage.id, title: selectedPage.title, slug: selectedPage.slug } : null,
+      selectedBlock: selectedBlock || null,
+      viewportMode: deviceMode,
+      notes: currentPageMarkupAnnotations,
+      freehandStrokes: currentPageFreehandStrokes,
+      exportedAt,
+      buildInfo: buildInfo
+        ? {
+            displayVersion,
+            gitCommit: buildInfo.gitCommit,
+            buildDate: buildInfo.buildDate
+          }
+        : {
+            displayVersion
+          }
+    });
+    if (!summary) {
+      setStatus("Nothing to export: no page, selected block, sticky notes, or saved freehand strokes are available.");
+      return;
+    }
+    downloadMarkupExportFile(summary, format);
+    setStatus(`Exported private Markup ${format.toUpperCase()} summary for ${summary.page?.title || "this page"}.`);
   }
 
   useEffect(() => {
@@ -6618,6 +6646,7 @@ export function App() {
           onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
           onAttachToAi={attachMarkupToAi}
+          onExportMarkup={exportMarkup}
           hasAttachableMarkup={hasAttachableMarkupContext}
           paintCaptureActive={paintExclusiveMode}
           controlsCollapsed={markupControlsCollapsed}
