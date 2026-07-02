@@ -357,34 +357,40 @@ export function MarkupWorkspace({
           </details>
         </div>
         <div className="markup-workspace-header-actions">
-          <button
-            type="button"
-            className="markup-controls-toggle"
-            data-testid="markup-controls-toggle"
-            onClick={onToggleControls}
-            aria-pressed={controlsCollapsed}
-            aria-label={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
-            title={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
-          >
-            {controlsCollapsed ? "Show Controls" : "Hide Controls"}
-          </button>
-          <button
-            type="button"
-            className="markup-workspace-save"
-            data-testid="markup-save-project"
-            onClick={() => void saveProjectAndClearNoteHint()}
-          >
-            Save Project
-          </button>
-          <button
-            type="button"
-            className="markup-workspace-close"
-            data-testid="markup-workspace-close"
-            onClick={onClose}
-            aria-label="Close Markup workspace"
-          >
-            Close Markup
-          </button>
+          <div className="markup-control-group markup-control-group-controls" aria-label="Controls">
+            <span className="markup-control-group-label">Controls</span>
+            <button
+              type="button"
+              className="markup-controls-toggle"
+              data-testid="markup-controls-toggle"
+              onClick={onToggleControls}
+              aria-pressed={controlsCollapsed}
+              aria-label={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
+              title={controlsCollapsed ? "Show Markup controls" : "Hide Markup controls"}
+            >
+              {controlsCollapsed ? "Show Controls" : "Hide Controls"}
+            </button>
+          </div>
+          <div className="markup-control-group markup-control-group-save-close" aria-label="Save/Close">
+            <span className="markup-control-group-label">Save/Close</span>
+            <button
+              type="button"
+              className="markup-workspace-save"
+              data-testid="markup-save-project"
+              onClick={() => void saveProjectAndClearNoteHint()}
+            >
+              Save Project
+            </button>
+            <button
+              type="button"
+              className="markup-workspace-close"
+              data-testid="markup-workspace-close"
+              onClick={onClose}
+              aria-label="Close Markup workspace"
+            >
+              Close Markup
+            </button>
+          </div>
         </div>
       </header>
 
@@ -405,61 +411,71 @@ export function MarkupWorkspace({
           </div>
 
           <div className="markup-workspace-toolbar" role="toolbar" aria-label="Markup tools">
-            <button type="button" onClick={() => onSelectTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
-            <button type="button" onClick={() => onSelectTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
-            <button type="button" onClick={() => onSelectDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
-            <button type="button" onClick={() => onSelectDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
-            <label className="markup-workspace-color">
-              Color
-              <input aria-label="Markup color" type="color" value={paintColor} onChange={(e) => onColorChange(e.target.value)} />
-            </label>
-            <label className="markup-workspace-size">
-              Size
-              <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => onSizeChange(Number(e.target.value))} />
-              <span>{paintSize}px</span>
-            </label>
-          </div>
-
-          <div className="markup-workspace-actions">
-            <button type="button" onClick={onClearDraft} disabled={!hasDraftMarkup}>Clear Draft</button>
-            <button type="button" onClick={onUndoDraft} disabled={draftStrokeCount === 0}>Undo</button>
-            <button type="button" onClick={onRedoDraft} disabled={redoStrokeCount === 0}>Redo</button>
-            <button
-              type="button"
-              onClick={onKeepMarkup}
-              disabled={draftStrokeCount === 0}
-              aria-label="Keep draft markup in this Markup session"
-            >
-              Keep in Session
-            </button>
-            <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
-            <button type="button" onClick={onAttachToAi} disabled={!hasAttachableMarkup} className="markup-workspace-ai-attach">Attach to AI</button>
-            <div className="markup-workspace-export" data-testid="markup-export">
-              <div className="markup-workspace-export-buttons">
-                <button
-                  type="button"
-                  onClick={() => onExportMarkup("md")}
-                  disabled={!hasAttachableMarkup}
-                  data-testid="markup-export-md"
-                  title="Export MD. Summary only. Private editor export, not published."
-                >
-                  Export MD
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onExportMarkup("json")}
-                  disabled={!hasAttachableMarkup}
-                  data-testid="markup-export-json"
-                  title="Export JSON. Summary only. Private editor export, not published."
-                >
-                  Export JSON
-                </button>
-              </div>
-              <div className="markup-workspace-export-helper" aria-label="Markup export privacy">
-                <span>Private editor export. Not published.</span>
-                <span>Summary export only.</span>
-                <span>No raw strokes / no full project JSON.</span>
-                <span>No screenshots/images.</span>
+            <div className="markup-control-group markup-control-group-notes" aria-label="Notes">
+              <span className="markup-control-group-label">Notes</span>
+              <button type="button" onClick={onCreateNote} data-testid="markup-add-note">Add Note</button>
+            </div>
+            <div className="markup-control-group markup-control-group-free-draw" aria-label="Free Draw">
+              <span className="markup-control-group-label">Free Draw</span>
+              <button type="button" onClick={() => onSelectTool("brush")} className={paintTool === "brush" ? "active" : ""}>Brush</button>
+              <button type="button" onClick={() => onSelectTool("eraser")} className={paintTool === "eraser" ? "active" : ""}>Eraser</button>
+              <button type="button" onClick={() => onSelectDrawMode("free")} className={paintDrawMode === "free" ? "active" : ""}>Free Draw</button>
+              <button type="button" onClick={() => onSelectDrawMode("line")} className={paintDrawMode === "line" ? "active" : ""}>Line</button>
+              <label className="markup-workspace-color">
+                Color
+                <input aria-label="Markup color" type="color" value={paintColor} onChange={(e) => onColorChange(e.target.value)} />
+              </label>
+              <label className="markup-workspace-size">
+                Size
+                <input aria-label="Brush size" type="range" min={1} max={24} value={paintSize} onChange={(e) => onSizeChange(Number(e.target.value))} />
+                <span>{paintSize}px</span>
+              </label>
+              <button type="button" onClick={onClearDraft} disabled={!hasDraftMarkup}>Clear Draft</button>
+              <button type="button" onClick={onUndoDraft} disabled={draftStrokeCount === 0}>Undo</button>
+              <button type="button" onClick={onRedoDraft} disabled={redoStrokeCount === 0}>Redo</button>
+              <button
+                type="button"
+                onClick={onKeepMarkup}
+                disabled={draftStrokeCount === 0}
+                aria-label="Keep draft markup in this Markup session"
+              >
+                Keep in Session
+              </button>
+              <button type="button" onClick={onClearFreeDraw} disabled={appliedStrokeCount === 0}>Clear Free Draw</button>
+            </div>
+            <div className="markup-control-group markup-control-group-ai" aria-label="AI">
+              <span className="markup-control-group-label">AI</span>
+              <button type="button" onClick={onAttachToAi} disabled={!hasAttachableMarkup} className="markup-workspace-ai-attach">Attach Markup</button>
+            </div>
+            <div className="markup-control-group markup-control-group-export" aria-label="Export">
+              <span className="markup-control-group-label">Export</span>
+              <div className="markup-workspace-export" data-testid="markup-export">
+                <div className="markup-workspace-export-buttons">
+                  <button
+                    type="button"
+                    onClick={() => onExportMarkup("md")}
+                    disabled={!hasAttachableMarkup}
+                    data-testid="markup-export-md"
+                    title="Export MD. Summary only. Private editor export, not published."
+                  >
+                    Export MD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onExportMarkup("json")}
+                    disabled={!hasAttachableMarkup}
+                    data-testid="markup-export-json"
+                    title="Export JSON. Summary only. Private editor export, not published."
+                  >
+                    Export JSON
+                  </button>
+                </div>
+                <div className="markup-workspace-export-helper" aria-label="Markup export privacy">
+                  <span>Private editor export. Not published.</span>
+                  <span>Summary export only.</span>
+                  <span>No raw strokes / no full project JSON.</span>
+                  <span>No screenshots/images.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -467,7 +483,6 @@ export function MarkupWorkspace({
           <section className="markup-workspace-notes" aria-label="Sticky note annotations">
             <div className="markup-workspace-notes-header">
               <h3>Sticky notes</h3>
-              <button type="button" onClick={onCreateNote} data-testid="markup-add-note">Add Note</button>
             </div>
             {annotations.length === 0 ? (
               <p className="markup-workspace-note-empty">No saved notes on this page.</p>

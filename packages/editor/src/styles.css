@@ -1421,6 +1421,34 @@ button:disabled {
   overflow: visible;
 }
 
+.markup-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--editor-panel-bg) 84%, var(--editor-bg));
+}
+
+.markup-control-group-label {
+  flex: 1 0 100%;
+  color: var(--editor-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.markup-control-group-controls,
+.markup-control-group-save-close {
+  flex: 0 1 auto;
+  padding: 6px;
+}
+
 .markup-workspace-save,
 .markup-workspace-close {
   min-width: 104px;
@@ -1464,11 +1492,12 @@ button:disabled {
   top: 0;
   left: 0;
   z-index: 20;
-  width: min(300px, calc(100% - 8px));
+  width: min(340px, calc(100% - 8px));
   display: grid;
   gap: 8px;
   max-height: min(100%, calc(100dvh - 72px));
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
   border-radius: 8px;
   -webkit-overflow-scrolling: touch;
@@ -1487,6 +1516,28 @@ button:disabled {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.markup-workspace-toolbar {
+  align-items: stretch;
+}
+
+.markup-workspace-toolbar > .markup-control-group {
+  flex: 1 1 100%;
+}
+
+.markup-control-group-notes,
+.markup-control-group-ai {
+  flex: 1 1 132px;
+}
+
+.markup-control-group-free-draw,
+.markup-control-group-export {
+  flex: 1 1 100%;
+}
+
+.markup-control-group button {
+  min-width: 0;
 }
 
 .markup-workspace-color,
@@ -1516,9 +1567,9 @@ button:disabled {
 
 .markup-workspace-export {
   display: grid;
-  flex: 1 1 210px;
+  flex: 1 1 100%;
   gap: 6px;
-  min-width: min(100%, 210px);
+  min-width: 0;
 }
 
 .markup-workspace-export-buttons {
@@ -1910,12 +1961,13 @@ button:disabled {
     width: 100%;
     gap: 4px;
     justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: clip;
+    flex-wrap: wrap;
+    overflow: visible;
     padding-bottom: 2px;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
+  }
+
+  .markup-workspace-header-actions .markup-control-group {
+    flex: 1 1 148px;
   }
 
   .markup-workspace-save,
@@ -1935,16 +1987,26 @@ button:disabled {
   .markup-workspace-panel {
     right: 0;
     width: auto;
-    max-height: min(32dvh, 220px);
+    max-height: min(42dvh, 300px);
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 8px;
   }
 
   .markup-workspace-toolbar button,
   .markup-workspace-actions button {
-    flex: 0 1 auto;
+    flex: 1 1 92px;
     min-width: 0;
     padding: 6px 8px;
+  }
+
+  .markup-workspace-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .markup-control-group {
+    width: 100%;
   }
 
   .markup-workspace-color,

@@ -620,6 +620,34 @@ test("AI chat Markup preview is structured and privacy-explicit", () => {
   assert.match(appSource, /no screenshots\/images/);
 });
 
+test("Markup toolbar groups accepted controls without removing reachability", () => {
+  assert.match(markupWorkspaceSource, /markup-control-group-label[\s\S]{0,80}>Notes</);
+  assert.match(markupWorkspaceSource, /markup-control-group-label[\s\S]{0,80}>Free Draw</);
+  assert.match(markupWorkspaceSource, /markup-control-group-label[\s\S]{0,80}>AI</);
+  assert.match(markupWorkspaceSource, /markup-control-group-label[\s\S]{0,80}>Export</);
+  assert.match(markupWorkspaceSource, /markup-control-group-label[\s\S]{0,80}>Save\/Close</);
+  assert.match(markupWorkspaceSource, />Add Note</);
+  assert.match(markupWorkspaceSource, />Clear Free Draw</);
+  assert.match(markupWorkspaceSource, />Undo</);
+  assert.match(markupWorkspaceSource, />Redo</);
+  assert.match(markupWorkspaceSource, /Keep in Session/);
+  assert.match(markupWorkspaceSource, />Attach Markup</);
+  assert.match(markupWorkspaceSource, /Export MD/);
+  assert.match(markupWorkspaceSource, /Export JSON/);
+  assert.match(markupWorkspaceSource, /Save Project/);
+  assert.match(markupWorkspaceSource, /Close Markup/);
+  assert.match(markupWorkspaceSource, /Show Controls/);
+  assert.match(markupWorkspaceSource, /Hide Controls/);
+});
+
+test("Markup toolbar groups wrap on mobile without horizontal overflow", () => {
+  assert.match(cssSource, /\.markup-control-group[\s\S]{0,200}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,300}overflow-x:\s*hidden/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2200}\.markup-workspace-header-actions[\s\S]{0,220}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-toolbar[\s\S]{0,180}grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2800}\.markup-control-group[\s\S]{0,120}width:\s*100%/);
+});
+
 test("AI chat Markup attachment is removable and one-shot", () => {
   assert.match(appSource, /function clearMarkupAttachment/);
   assert.match(appSource, /data-testid="ai-markup-remove"/);
@@ -630,12 +658,12 @@ test("AI chat Markup attachment is removable and one-shot", () => {
   assert.doesNotMatch(markupWorkspaceSource, /Attach to AI \(coming later\)/);
 });
 
-test("Markup workspace exposes private file export controls next to Attach to AI", () => {
-  const attachIdx = markupWorkspaceSource.indexOf("Attach to AI");
+test("Markup workspace exposes private file export controls next to Attach Markup", () => {
+  const attachIdx = markupWorkspaceSource.indexOf("Attach Markup");
   const exportMdIdx = markupWorkspaceSource.indexOf("Export MD");
   const exportJsonIdx = markupWorkspaceSource.indexOf("Export JSON");
-  assert.ok(attachIdx > 0, "Attach to AI button exists");
-  assert.ok(exportMdIdx > attachIdx, "Export MD appears after Attach to AI");
+  assert.ok(attachIdx > 0, "Attach Markup button exists");
+  assert.ok(exportMdIdx > attachIdx, "Export MD appears after Attach Markup");
   assert.ok(exportJsonIdx > exportMdIdx, "Export JSON appears after Export MD");
   assert.match(markupWorkspaceSource, /data-testid="markup-export"/);
   assert.match(markupWorkspaceSource, /data-testid="markup-export-md"/);
@@ -2647,7 +2675,7 @@ test("Markup coordinate plane structure is stable across controls show and hide"
   assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,220}grid-template-columns/);
   assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,220}grid-template-rows/);
   assert.match(panelRule, /position:\s*absolute/);
-  assert.match(panelRule, /width:\s*min\(300px,\s*calc\(100% - 8px\)\)/);
+  assert.match(panelRule, /width:\s*min\(340px,\s*calc\(100% - 8px\)\)/);
   assert.match(canvasRule, /width:\s*100%/);
   assert.match(canvasRule, /height:\s*100%/);
 });
@@ -3049,7 +3077,8 @@ test("Markup workspace shell is full-page editor chrome with click-through canva
 test("Markup workspace mobile close control remains reachable", () => {
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1600}\.markup-workspace-shell[\s\S]{0,120}z-index:\s*130/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,1800}\.markup-workspace-header[\s\S]{0,180}flex-direction:\s*row/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2400}\.markup-workspace-header-actions[\s\S]{0,260}overflow-x:\s*auto/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2400}\.markup-workspace-header-actions[\s\S]{0,260}flex-wrap:\s*wrap/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2400}\.markup-workspace-header-actions[\s\S]{0,260}overflow:\s*visible/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-close[\s\S]{0,180}min-width:\s*88px/);
   assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-close[\s\S]{0,180}min-height:\s*36px/);
   assert.match(markupWorkspaceSource, /Save Project/);
@@ -3061,7 +3090,7 @@ test("Markup workspace controls are compact and scrollable without trapping mobi
   assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,300}max-height:\s*min\(100%, calc\(100dvh - 72px\)\)/);
   assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,320}overflow-y:\s*auto/);
   assert.match(cssSource, /\.markup-workspace-panel[\s\S]{0,220}z-index:\s*20/);
-  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-panel[\s\S]{0,180}max-height:\s*min\(32dvh, 220px\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]{0,2600}\.markup-workspace-panel[\s\S]{0,180}max-height:\s*min\(42dvh, 300px\)/);
   assert.doesNotMatch(cssSource, /@media \(max-width: 768px\)[\s\S]{0,3000}\.markup-workspace-body[\s\S]{0,180}grid-template-rows/);
   assert.doesNotMatch(cssSource, /\.markup-workspace-body\.controls-collapsed[\s\S]{0,160}grid-template-rows/);
   assert.match(cssSource, /\.markup-workspace-canvas-area[\s\S]{0,220}height:\s*100%/);
@@ -3083,7 +3112,7 @@ test("markup help keeps instructions compact and out of the stage overlay", () =
   assert.doesNotMatch(markupWorkspaceSource, /<strong>Canvas preview area<\/strong>/);
   assert.match(markupWorkspaceSource, /onAttachToAi/);
   assert.match(markupWorkspaceSource, /disabled=\{!hasAttachableMarkup\}/);
-  assert.match(markupWorkspaceSource, />Attach to AI<\/button>/);
+  assert.match(markupWorkspaceSource, />Attach Markup<\/button>/);
 });
 
 test("Markup workspace exposes draft undo redo and Clear Free Draw actions", () => {
