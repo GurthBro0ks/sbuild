@@ -6260,7 +6260,7 @@ export function App() {
                 <strong>Status panel:</strong> save state {withSavedStatusText(status, dirty)}
               </p>
               <p><strong>API:</strong> {status}</p>
-              <p><strong>Selected Block:</strong> {selectedBlock?.id || "none"}</p>
+              <p><strong>Selected Block:</strong> {selectedBlock ? (blockTypeLabels[selectedBlock.type] || selectedBlock.type) : "none"}</p>
               <p><strong>Selected Type:</strong> {selectedBlock?.type || "none"}</p>
               <p><strong>Dirty:</strong> {dirty ? "yes" : "no"}</p>
               <p><strong>Project source:</strong> {loadedProjectSource}</p>
@@ -6269,22 +6269,10 @@ export function App() {
               {lastSavedAt && <p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p>}
               {projectPath && <p><strong>Project path:</strong> {projectPath}</p>}
               <p><strong>Last action:</strong> {lastAction}</p>
-              {drag && <p><strong>Drag:</strong> {drag.blockId.slice(0, 12)} {drag.startIndex}→{drag.currentIndex}</p>}
+              {drag && <p><strong>Drag:</strong> active {drag.startIndex}→{drag.currentIndex}</p>}
               {themeApplied && <p><strong>Theme:</strong> {themeApplied}</p>}
               <p><strong>Publish:</strong> dry-run (live disabled)</p>
-              <p><strong>mobile-toolbar-gap-repair active</strong></p>
-              <p><strong>action-controls-offset active</strong></p>
               <p><strong>version:</strong> {displayVersion}</p>
-              <p><strong>toolbarHeight:</strong> {debugToolbarH || "n/a"}{debugToolbarH ? "px" : ""}</p>
-              <p><strong>spacerHeight:</strong> {debugSpacerH || "n/a"}{debugSpacerH ? "px" : ""}</p>
-              <p><strong>topbarBottom:</strong> {debugToolbarBottom || "n/a"}{debugToolbarBottom ? "px" : ""}</p>
-              <p><strong>canvasControlsTop:</strong> {debugCanvasControlsTop || "n/a"}{debugCanvasControlsTop ? "px" : ""}</p>
-              <p><strong>gapPx:</strong> {isMobileViewport ? `${debugGapPx}px` : "n/a"}</p>
-              <p><strong>duplicateOffsetDetected:</strong> {isMobileViewport ? (debugDuplicateOffset ? "true" : "false") : "n/a"}</p>
-              <p><strong>measurementMissing:</strong> {isMobileViewport ? (debugMeasurementMissing ? "true" : "false") : "n/a"}</p>
-              <p><strong>topbarPaddingTop:</strong> {debugTopbarPaddingTop || "n/a"}{debugTopbarPaddingTop ? "px" : ""}</p>
-              <p><strong>statusPillClientH:</strong> {debugStatusPillH || "n/a"}{debugStatusPillH ? "px" : ""}</p>
-              <p><strong>statusTextOverflows:</strong> {isMobileViewport ? (debugStatusOverflow ? "true" : "false") : "n/a"}</p>
 
               <h4>Provider Status</h4>
               {providerStatus.length === 0 && <p>Loading providers...</p>}
@@ -7170,15 +7158,6 @@ export function App() {
               </div>
             )}
           </div>
-          {!previewMode && (
-            <p className="panel-status">
-              <strong>Canvas debug:</strong> selected {selectedBlock?.type || "none"} · {selectedBlock?.id || "none"} · mode {previewMode ? "preview" : "edit"}
-              {drag && ` · dragging ${drag.blockId.slice(0, 12)} ${drag.startIndex}→${drag.currentIndex}`}
-              {resizeStatus && ` · ${resizeStatus}`}
-              {themeApplied && ` · theme: ${themeApplied}`}
-              {!leftCollapsed ? " · left panel open" : " · left panel collapsed"}
-            </p>
-          )}
           {isMobileViewport && !previewMode && (
             <p className="panel-status mobile-edit-hint">
               <strong>Tip:</strong> Tap text to edit directly · Long-press or tap ⋯ for styles
@@ -7343,17 +7322,9 @@ export function App() {
                 data-stack-rows={shouldStackRows ? "true" : "false"}
                 data-row-columns={row.blocks.length}
               >
-                <div className="row-label">{shortRowId(row.rowId.startsWith("single:") ? undefined : row.rowId)} · {row.blocks.length} columns</div>
-                {canEditBlocks && row.blocks.length > 1 && (
-                  <div className="row-debug" aria-label="Row debug status">
-                    Row debug: mode={deviceMode} stack={shouldStackRows ? "true" : "false"} cols={row.blocks.length} template={rowTemplate}
-                  </div>
-                )}
                 <div className="row-grid" style={{ gridTemplateColumns: rowTemplate }}>
                   {row.blocks.map((block) => {
                     const index = selectedPage.blocks.findIndex((b) => b.id === block.id);
-                    const width = block.styles?.layout?.widthPercent || 100;
-                    const minH = block.styles?.layout?.minHeightPx || 120;
                     return (
                       <div
                         key={block.id}
@@ -7375,10 +7346,6 @@ export function App() {
                             <div className="block-meta-main">
                               <span className="grab-handle" title="Drag to reorder">⋮⋮</span>
                               <span className="block-friendly-label">{blockTypeLabels[block.type] || block.type}</span>
-                              <span className="block-id-debug">{block.id.slice(0, 12)}</span>
-                            </div>
-                            <div className="block-meta-badges">
-                              <span className="resize-badge">{row.rowId.startsWith("single:") ? "Single" : `${shortRowId(row.rowId)} · ${width}%`} · {minH}px</span>
                             </div>
                             <button className="context-btn" onClick={(e) => { e.stopPropagation(); openContextMenu(e, block.id); }} title="Menu">⋯</button>
                           </div>

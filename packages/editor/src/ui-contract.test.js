@@ -754,9 +754,9 @@ test("smoke script treats unauth publish 401 as expected gate behavior", () => {
   assert.match(smokeSource, /SBUILD_SMOKE_COOKIE_FILE/);
 });
 
-test("debug diagnostics include mobile-toolbar-gap-repair active marker", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair active/);
-  assert.match(appSource, /action-controls-offset active/);
+test("normal editor source does not render mobile toolbar debug markers", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-gap-repair active/);
+  assert.doesNotMatch(appSource, /action-controls-offset active/);
 });
 
 test("spacer is the single mobile toolbar offset mechanism", () => {
@@ -878,10 +878,10 @@ test("row stacking is controlled by device mode instead of physical viewport", (
   assert.match(appSource, /data-device-mode=\{deviceMode\}/);
   assert.match(appSource, /data-stack-rows=\{shouldStackRows \? "true" : "false"\}/);
   assert.match(appSource, /data-row-columns=\{row\.blocks\.length\}/);
-  assert.match(appSource, /Row debug: mode=\{deviceMode\} stack=\{shouldStackRows \? "true" : "false"\} cols=\{row\.blocks\.length\} template=\{rowTemplate\}/);
+  assert.doesNotMatch(appSource, /Row debug:/);
+  assert.doesNotMatch(appSource, /className="row-debug"/);
   assert.match(appSource, /className=\{`block-shell[\s\S]*\$\{shouldStackRows \? "mobile-row-block" : ""\}`\}/);
-  assert.match(appSource, /shortRowId\(row\.rowId\.startsWith\("single:"\) \? undefined : row\.rowId\)/);
-  assert.match(appSource, /· \{row\.blocks\.length\} columns/);
+  assert.doesNotMatch(appSource, /className="row-label"/);
 });
 
 test("phone mode keeps readable stacked row width while desktop/tablet can stay row-like", () => {
@@ -917,7 +917,6 @@ test("desktop row layout remains side-by-side capable", () => {
 
 test("mobile block header layout uses wrap-safe structure and keeps menu button tappable", () => {
   assert.match(appSource, /className="block-meta-main"/);
-  assert.match(appSource, /className="block-meta-badges"/);
   assert.match(appSource, /className="context-btn"[\s\S]*title="Menu"/);
   assert.match(cssSource, /\.block-meta[\s\S]*flex-wrap:\s*wrap/);
   assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-meta-main[\s\S]*flex-wrap:\s*wrap/);
@@ -925,11 +924,12 @@ test("mobile block header layout uses wrap-safe structure and keeps menu button 
   assert.match(cssSource, /\.context-btn[\s\S]*min-height:\s*36px/);
 });
 
-test("width and row badges are wrap-safe and do not rely on overlap-prone absolute placement", () => {
-  assert.match(cssSource, /\.resize-badge[\s\S]*max-width:\s*100%/);
-  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.resize-badge[\s\S]*white-space:\s*normal/);
-  assert.match(cssSource, /\.canvas-frame\.phone \.row-shell\.stack \.block-meta-badges[\s\S]*order:\s*3/);
-  assert.doesNotMatch(cssSource, /\.resize-badge\s*\{[^{}]*position:\s*absolute/);
+test("block chrome avoids visible resize and row debug badges", () => {
+  assert.doesNotMatch(appSource, /className="resize-badge"/);
+  assert.doesNotMatch(appSource, /className="block-id-debug"/);
+  assert.doesNotMatch(cssSource, /\.resize-badge/);
+  assert.doesNotMatch(cssSource, /\.block-id-debug/);
+  assert.doesNotMatch(cssSource, /\.block-meta-badges/);
 });
 
 test("row and layout context menu actions select context block id before applying", () => {
@@ -1651,17 +1651,17 @@ test("mobile measurement uses viewport readiness not preview device mode", () =>
   assert.doesNotMatch(appSource, /\[isMobileViewport,\s*deviceMode\]/);
 });
 
-test("debug panel shows mobile-toolbar-gap-repair active marker with gap detection", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair active/);
-  assert.match(appSource, /action-controls-offset active/);
-  assert.match(appSource, /toolbarHeight/);
-  assert.match(appSource, /spacerHeight/);
-  assert.match(appSource, /topbarBottom/);
-  assert.match(appSource, /canvasControlsTop/);
-  assert.match(appSource, /gapPx/);
-  assert.match(appSource, /duplicateOffsetDetected/);
-  assert.match(appSource, /measurementMissing/);
-  assert.match(appSource, /topbarPaddingTop/);
+test("mobile toolbar diagnostics remain internal and are not rendered in status UI", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-gap-repair active/);
+  assert.doesNotMatch(appSource, /action-controls-offset active/);
+  assert.doesNotMatch(appSource, />toolbarHeight:</);
+  assert.doesNotMatch(appSource, />spacerHeight:</);
+  assert.doesNotMatch(appSource, />topbarBottom:</);
+  assert.doesNotMatch(appSource, />canvasControlsTop:</);
+  assert.doesNotMatch(appSource, />gapPx:</);
+  assert.doesNotMatch(appSource, />duplicateOffsetDetected:</);
+  assert.doesNotMatch(appSource, />measurementMissing:</);
+  assert.doesNotMatch(appSource, />topbarPaddingTop:</);
   assert.match(appSource, /debugToolbarH/);
   assert.match(appSource, /debugSpacerH/);
   assert.match(appSource, /debugToolbarBottom/);
@@ -2324,9 +2324,9 @@ test("paint mode applies user-select lock on preview surface", () => {
   assert.match(cssSource, /user-select:\s*none/);
 });
 
-test("mobile-toolbar-gap-repair and action-controls-offset markers remain", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair/);
-  assert.match(appSource, /action-controls-offset/);
+test("mobile-toolbar-gap-repair and action-controls-offset markers are not rendered", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-gap-repair active/);
+  assert.doesNotMatch(appSource, /action-controls-offset active/);
 });
 
 test("mobile-toolbar-spacer-v3 marker is not active", () => {
@@ -2337,11 +2337,9 @@ test("isPreview helper exists as alias for previewMode", () => {
   assert.match(appSource, /const isPreview = previewMode;/);
 });
 
-test("preview mode hides canvas debug panel status", () => {
-  const canvasDebugIdx = appSource.indexOf("Canvas debug");
-  assert.ok(canvasDebugIdx > 0, "Canvas debug text exists");
-  const beforeSection = appSource.substring(Math.max(0, canvasDebugIdx - 200), canvasDebugIdx);
-  assert.match(beforeSection, /\{!previewMode &&/);
+test("normal editor does not render canvas debug panel status", () => {
+  assert.doesNotMatch(appSource, /Canvas debug:/);
+  assert.doesNotMatch(appSource, /selected \{selectedBlock\?\.type \|\| "none"\}/);
 });
 
 test("mobile preview uses single-column grid instead of 3-column", () => {
@@ -2439,9 +2437,9 @@ test("Logout button still exists after mobile preview fix", () => {
   assert.match(cssSource, /\.logout-btn/);
 });
 
-test("mobile-toolbar-gap-repair marker preserved after fix", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair/);
-  assert.match(appSource, /action-controls-offset/);
+test("mobile-toolbar-gap-repair marker remains hidden after fix", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-gap-repair active/);
+  assert.doesNotMatch(appSource, /action-controls-offset active/);
 });
 
 test("mobile-toolbar-spacer-v3 marker still absent after fix", () => {
@@ -2966,9 +2964,9 @@ test("mobile Preview read-only preserved", () => {
   assert.match(appSource, /mobile-viewport/);
 });
 
-test("mobile-toolbar-gap-repair marker still present after Website Manager", () => {
-  assert.match(appSource, /mobile-toolbar-gap-repair/);
-  assert.match(appSource, /action-controls-offset/);
+test("mobile-toolbar-gap-repair marker still hidden after Website Manager", () => {
+  assert.doesNotMatch(appSource, /mobile-toolbar-gap-repair active/);
+  assert.doesNotMatch(appSource, /action-controls-offset active/);
 });
 
 test("mobile-toolbar-spacer-v3 still absent after Website Manager", () => {
