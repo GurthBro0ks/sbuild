@@ -2099,7 +2099,7 @@ test("Markup sticky notes edit from one clamped popup card near the pin", () => 
   assert.match(markupWorkspaceSource, /className="markup-note-popup-layer" aria-label="Open Markup note popup"/);
   assert.match(markupWorkspaceSource, /openNoteId === annotation\.id \? \(/);
   assert.match(markupWorkspaceSource, /className="markup-note-popup"/);
-  assert.match(markupWorkspaceSource, /style=\{notePopupStyle\(annotation\)\}/);
+  assert.match(markupWorkspaceSource, /style=\{\{ \.\.\.notePopupStyle\(annotation\), \.\.\.noteAccentStyle\(annotation\) \}\}/);
   assert.match(markupWorkspaceSource, /data-no-draw="true"/);
   assert.match(markupWorkspaceSource, /data-no-drag="true"/);
   assert.match(markupWorkspaceSource, /onPointerDown=\{stopPopupPointer\}/);
@@ -2125,7 +2125,7 @@ test("Markup sticky notes edit from one clamped popup card near the pin", () => 
   assert.match(popupRule, /width:\s*var\(--markup-note-popup-width,\s*min\(320px,\s*calc\(100% - 16px\)\)\)/);
   assert.match(popupRule, /pointer-events:\s*auto/);
   assert.match(popupRule, /overflow:\s*auto/);
-  assert.match(cssSource, /\.markup-workspace-note-editor\.active[\s\S]{0,180}border-color:\s*var\(--editor-highlight\)/);
+  assert.match(cssSource, /\.markup-workspace-note-editor\.active[\s\S]{0,180}border-color:\s*var\(--markup-note-color,\s*var\(--editor-highlight\)\)/);
   assert.match(cssSource, /\.markup-note-pin\.active[\s\S]{0,160}outline:\s*3px solid var\(--editor-highlight\)/);
   assert.match(cssSource, /\.markup-workspace-note-state\.unsaved[\s\S]{0,220}background:/);
   assert.match(cssSource, /\.markup-note-popup-title[\s\S]{0,120}display:\s*grid/);
@@ -2138,6 +2138,64 @@ test("Markup sticky notes edit from one clamped popup card near the pin", () => 
   assert.ok(panelNoteListIdx > 0 && stageIdx > panelNoteListIdx, "compact note list exists before stage");
   const compactPanelNotes = markupWorkspaceSource.slice(panelNoteListIdx, stageIdx);
   assert.doesNotMatch(compactPanelNotes, /<textarea/, "left Markup note list stays compact and does not render per-note textareas");
+});
+
+test("Markup note colors use a fixed palette with default fallback", () => {
+  assert.match(markupAnnotationsSource, /export const DEFAULT_MARKUP_NOTE_COLOR = "#ffcf33"/);
+  assert.match(markupAnnotationsSource, /export const MARKUP_NOTE_COLOR_PALETTE/);
+  assert.match(markupAnnotationsSource, /\{ id: "yellow", label: "Yellow", value: DEFAULT_MARKUP_NOTE_COLOR \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "pink", label: "Pink", value: "#ff6fb1" \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "purple", label: "Purple", value: "#a78bfa" \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "blue", label: "Blue", value: "#60a5fa" \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "green", label: "Green", value: "#34d399" \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "orange", label: "Orange", value: "#fb923c" \}/);
+  assert.match(markupAnnotationsSource, /\{ id: "red", label: "Red", value: "#f87171" \}/);
+  assert.match(markupAnnotationsSource, /export function resolveMarkupNoteColor\(color: string \| null \| undefined\): string/);
+  assert.match(markupAnnotationsSource, /if \(!color\) return DEFAULT_MARKUP_NOTE_COLOR/);
+  assert.match(markupAnnotationsSource, /MARKUP_NOTE_COLOR_VALUES\.has\(normalized\) \? normalized : DEFAULT_MARKUP_NOTE_COLOR/);
+  assert.match(markupWorkspaceSource, /backgroundColor: resolveMarkupNoteColor\(annotation\.color\)/);
+});
+
+test("Markup note popup exposes fixed color palette without arbitrary note color input", () => {
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-color-palette"/);
+  assert.match(markupWorkspaceSource, /MARKUP_NOTE_COLOR_PALETTE\.map/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-color-option"/);
+  assert.match(markupWorkspaceSource, /aria-label=\{`\$\{color\.label\} note color`\}/);
+  assert.match(markupWorkspaceSource, /aria-pressed=\{active\}/);
+  assert.match(markupWorkspaceSource, /onClick=\{\(\) => updateNoteColor\(annotation\.id, color\.value\)\}/);
+  const popupColorIdx = markupWorkspaceSource.indexOf('data-testid="markup-note-color-palette"');
+  const popupColorSection = markupWorkspaceSource.slice(popupColorIdx, popupColorIdx + 1200);
+  assert.doesNotMatch(popupColorSection, /type="color"/);
+  assert.match(cssSource, /\.markup-note-popup-color-picker[\s\S]{0,180}grid-template-columns:\s*repeat\(7,\s*minmax\(30px,\s*1fr\)\)/);
+  assert.match(cssSource, /\.markup-note-color-button[\s\S]{0,180}min-height:\s*34px/);
+  assert.match(cssSource, /@media \(max-width: 768px\)[\s\S]*\.markup-note-popup-color-picker[\s\S]{0,120}grid-template-columns:\s*repeat\(4,\s*minmax\(42px,\s*1fr\)\)/);
+});
+
+test("Markup note color selection updates pin list and popup accents", () => {
+  assert.match(markupWorkspaceSource, /function noteAccentStyle\(annotation: MarkupAnnotation\): CSSProperties/);
+  assert.match(markupWorkspaceSource, /"--markup-note-color" as string/);
+  assert.match(markupWorkspaceSource, /style=\{noteAccentStyle\(annotation\)\}/);
+  assert.match(markupWorkspaceSource, /data-testid="markup-note-list-swatch"/);
+  assert.match(markupWorkspaceSource, /style=\{\{ \.\.\.notePopupStyle\(annotation\), \.\.\.noteAccentStyle\(annotation\) \}\}/);
+  assert.match(cssSource, /\.markup-workspace-note-swatch[\s\S]{0,180}background:\s*var\(--markup-note-color,\s*#ffcf33\)/);
+  assert.match(cssSource, /\.markup-workspace-note-editor\.active[\s\S]{0,240}box-shadow:\s*inset 3px 0 0 var\(--markup-note-color/);
+  const popupRule = cssRule(".markup-note-popup {");
+  assert.match(popupRule, /border-top:\s*4px solid var\(--markup-note-color,\s*#ffcf33\)/);
+});
+
+test("Markup note color edits mark dirty and bump updatedAt without moving pins", () => {
+  assert.match(appSource, /function updateMarkupNoteColor\(id: string, color: string\)/);
+  assert.match(appSource, /updateMarkupAnnotationColor\(annotations, id, color, timestamp\)/);
+  assert.match(appSource, /setLastAction\("markup-note-color"\)/);
+  assert.match(appSource, /setStatus\("Markup note color updated"\)/);
+  assert.match(appSource, /onUpdateNoteColor=\{updateMarkupNoteColor\}/);
+  assert.match(markupWorkspaceSource, /onUpdateNoteColor: \(id: string, color: string\) => void/);
+  assert.match(markupWorkspaceSource, /function updateNoteColor\(id: string, color: string\)/);
+  assert.match(markupWorkspaceSource, /next\.add\(id\)[\s\S]{0,120}onUpdateNoteColor\(id, color\)/);
+  assert.match(markupAnnotationsSource, /export function updateMarkupAnnotationColor/);
+  assert.match(markupAnnotationsSource, /color: nextColor/);
+  assert.match(markupAnnotationsSource, /updatedAt/);
+  assert.doesNotMatch(markupAnnotationsSource.slice(markupAnnotationsSource.indexOf("export function updateMarkupAnnotationColor")), /x: nextX|y: nextY/);
 });
 
 test("Markup workspace save button invokes the existing project save flow", () => {

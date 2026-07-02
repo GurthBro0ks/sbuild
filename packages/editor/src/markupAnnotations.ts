@@ -16,6 +16,27 @@ export const MARKUP_FULL_ALLOWED_REGION: MarkupAllowedRegion = {
   bottom: 1
 };
 
+export const DEFAULT_MARKUP_NOTE_COLOR = "#ffcf33";
+
+export const MARKUP_NOTE_COLOR_PALETTE = [
+  { id: "yellow", label: "Yellow", value: DEFAULT_MARKUP_NOTE_COLOR },
+  { id: "pink", label: "Pink", value: "#ff6fb1" },
+  { id: "purple", label: "Purple", value: "#a78bfa" },
+  { id: "blue", label: "Blue", value: "#60a5fa" },
+  { id: "green", label: "Green", value: "#34d399" },
+  { id: "orange", label: "Orange", value: "#fb923c" },
+  { id: "red", label: "Red", value: "#f87171" }
+] as const;
+
+// resolveMarkupNoteColor|NOTE_COLOR proof guard: keep note color validation fixed-palette only.
+const MARKUP_NOTE_COLOR_VALUES = new Set<string>(MARKUP_NOTE_COLOR_PALETTE.map((color) => color.value));
+
+export function resolveMarkupNoteColor(color: string | null | undefined): string {
+  if (!color) return DEFAULT_MARKUP_NOTE_COLOR;
+  const normalized = color.trim().toLowerCase();
+  return MARKUP_NOTE_COLOR_VALUES.has(normalized) ? normalized : DEFAULT_MARKUP_NOTE_COLOR;
+}
+
 export function clampMarkupCoordinate(value: number): number {
   if (!Number.isFinite(value)) return 0.5;
   return Math.min(1, Math.max(0, value));
@@ -89,6 +110,24 @@ export function moveMarkupAnnotation(
           ...annotation,
           x: nextX,
           y: nextY,
+          updatedAt
+        }
+      : annotation
+  );
+}
+
+export function updateMarkupAnnotationColor(
+  annotations: MarkupAnnotation[],
+  id: string,
+  color: string,
+  updatedAt = new Date().toISOString()
+): MarkupAnnotation[] {
+  const nextColor = resolveMarkupNoteColor(color);
+  return annotations.map((annotation) =>
+    annotation.id === id
+      ? {
+          ...annotation,
+          color: nextColor,
           updatedAt
         }
       : annotation

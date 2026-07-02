@@ -14,7 +14,8 @@ function note(index, text = `note text ${index}`) {
     blockId: `block-${index}`,
     x: 0.1,
     y: 0.2,
-    text
+    text,
+    color: "#60a5fa"
   };
 }
 
@@ -43,6 +44,19 @@ test("buildMarkupAiContext includes bounded note snippets", () => {
   });
   assert.equal(context?.notes[0].snippet, "first note with spacing");
 });
+
+test("buildMarkupAiContext omits note color from the AI attach contract", () => {
+  const context = buildMarkupAiContext({
+    page: { id: "page-1", title: "Home", slug: "/" },
+    selectedBlock: null,
+    viewportMode: "phone",
+    notes: [note(1, "colored note")],
+    freehandStrokes: []
+  });
+  assert.equal(Object.hasOwn(context?.notes[0] || {}, "color"), false);
+  assert.equal(JSON.stringify(context).includes("#60a5fa"), false);
+});
+
 
 test("buildMarkupAiContext truncates note snippets to 200 chars", () => {
   const context = buildMarkupAiContext({

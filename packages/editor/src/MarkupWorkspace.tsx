@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import type { MarkupAnnotation } from "@sbuild/shared";
 import {
+  MARKUP_NOTE_COLOR_PALETTE,
   MARKUP_FULL_ALLOWED_REGION,
   clampMarkupCoordinate,
   clampMarkupPointToAllowedRegion,
   getMarkupAllowedRegionForStage,
   normalizeMarkupAllowedRegion,
+  resolveMarkupNoteColor,
   type MarkupAllowedRegion
 } from "./markupAnnotations.js";
 
@@ -37,6 +39,7 @@ type MarkupWorkspaceProps = {
   onSaveProject: () => void | Promise<void>;
   onCreateNote: () => void;
   onUpdateNoteText: (id: string, text: string) => void;
+  onUpdateNoteColor: (id: string, color: string) => void;
   onMoveNote: (id: string, x: number, y: number) => void;
   onDeleteNote: (id: string) => void;
   onAttachToAi: () => void;
@@ -87,6 +90,7 @@ export function MarkupWorkspace({
   onSaveProject,
   onCreateNote,
   onUpdateNoteText,
+  onUpdateNoteColor,
   onMoveNote,
   onDeleteNote,
   onAttachToAi,
@@ -246,8 +250,14 @@ export function MarkupWorkspace({
     return {
       left: `${pinPosition.x * 100}%`,
       top: `${pinPosition.y * 100}%`,
-      backgroundColor: annotation.color || "#ffcf33"
+      backgroundColor: resolveMarkupNoteColor(annotation.color)
     };
+  }
+
+  function noteAccentStyle(annotation: MarkupAnnotation): CSSProperties {
+    return {
+      ["--markup-note-color" as string]: resolveMarkupNoteColor(annotation.color)
+    } as CSSProperties;
   }
 
   function openNotePopup(id: string) {
@@ -272,6 +282,15 @@ export function MarkupWorkspace({
       return next;
     });
     onUpdateNoteText(id, text);
+  }
+
+  function updateNoteColor(id: string, color: string) {
+    setEditedNoteIds((currentIds) => {
+      const next = new Set(currentIds);
+      next.add(id);
+      return next;
+    });
+    onUpdateNoteColor(id, color);
   }
 
   function saveProjectAndClearNoteHint() {
@@ -494,6 +513,7 @@ export function MarkupWorkspace({
                       data-testid="markup-note-editor"
                       data-markup-note-id={annotation.id}
                       aria-current={openNoteId === annotation.id ? "true" : undefined}
+                      style={noteAccentStyle(annotation)}
                       key={annotation.id}
                     >
                     <div
@@ -501,6 +521,11 @@ export function MarkupWorkspace({
                       data-testid="markup-note-drag-handle"
                       data-markup-note-id={annotation.id}
                     >
+                      <span
+                        className="markup-workspace-note-swatch"
+                        data-testid="markup-note-list-swatch"
+                        aria-hidden="true"
+                      />
                       <span>Note {index + 1}</span>
                       <span className={`markup-workspace-note-preview ${annotation.text.trim() ? "" : "empty"}`}>{previewText(annotation)}</span>
                       <span className={`markup-workspace-note-state ${editedNoteIds.has(annotation.id) ? "unsaved" : ""}`}>{noteStatusText(annotation)}</span>
@@ -576,7 +601,7 @@ export function MarkupWorkspace({
                 data-no-draw="true"
                 data-no-drag="true"
                 key={annotation.id}
-                style={notePopupStyle(annotation)}
+                style={{ ...notePopupStyle(annotation), ...noteAccentStyle(annotation) }}
                 onPointerDown={stopPopupPointer}
                 onPointerMove={stopPopupPointer}
                 onPointerUp={stopPopupPointer}
@@ -607,6 +632,26 @@ export function MarkupWorkspace({
                     placeholder="Type a note for this spot"
                   />
                 </label>
+                <div className="markup-note-popup-color-picker" aria-label={`Markup note ${index + 1} color`} data-testid="markup-note-color-palette">
+                  {MARKUP_NOTE_COLOR_PALETTE.map((color) => {
+                    const active = resolveMarkupNoteColor(annotation.color) === color.value;
+                    return (
+                      <button
+                        type="button"
+                        key={color.id}
+                        className="markup-note-color-button"
+                        data-testid="markup-note-color-option"
+                        aria-label={`${color.label} note color`}
+                        aria-pressed={active}
+                        title={`${color.label} note color`}
+                        style={{ ["--markup-note-color-option" as string]: color.value } as CSSProperties}
+                        onClick={() => updateNoteColor(annotation.id, color.value)}
+                      >
+                        <span>{color.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <p className="markup-note-popup-save-hint">
                   {editedNoteIds.has(annotation.id) ? "Unsaved note changes. Use Save Project to persist." : "Edits stay in Markup and are persisted by Save Project."}
                 </p>

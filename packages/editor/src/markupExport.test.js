@@ -20,7 +20,8 @@ function note(index, text = `note text ${index}`, x = 0.1234, y = 0.9876) {
     blockId: `block-${index}`,
     x,
     y,
-    text
+    text,
+    color: "#60a5fa"
   };
 }
 
@@ -61,6 +62,13 @@ test("JSON summary includes timestamp and version fields when provided", () => {
 test("JSON summary includes rounded pin coordinates", () => {
   const output = summary({ notes: [note(1, "pin", 0.126, 0.984)] });
   assert.deepEqual(output?.notes[0].pin, { x: 0.13, y: 0.98 });
+});
+
+test("JSON summary omits note color from the export contract", () => {
+  const output = summary({ notes: [note(1, "pin", 0.126, 0.984)] });
+  assert.equal(Object.hasOwn(output?.notes[0] || {}, "color"), false);
+  assert.equal(formatMarkupExportJson(output).includes('"color"'), false);
+  assert.equal(formatMarkupExportMarkdown(output).includes("#60a5fa"), false);
 });
 
 test("JSON summary caps notes at 20", () => {

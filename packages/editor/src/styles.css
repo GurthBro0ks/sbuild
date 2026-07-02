@@ -1641,14 +1641,14 @@ button:disabled {
 }
 
 .markup-workspace-note-editor.active {
-  border-color: var(--editor-highlight);
-  background: color-mix(in srgb, var(--editor-highlight) 12%, var(--editor-panel-bg));
-  box-shadow: inset 3px 0 0 var(--editor-highlight);
+  border-color: var(--markup-note-color, var(--editor-highlight));
+  background: color-mix(in srgb, var(--markup-note-color, var(--editor-highlight)) 12%, var(--editor-panel-bg));
+  box-shadow: inset 3px 0 0 var(--markup-note-color, var(--editor-highlight));
 }
 
 .markup-workspace-note-handle {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 32px;
@@ -1662,6 +1662,15 @@ button:disabled {
   cursor: grab;
   touch-action: pan-y;
   user-select: auto;
+}
+
+.markup-workspace-note-swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.48);
+  border-radius: 50%;
+  background: var(--markup-note-color, #ffcf33);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--editor-panel-bg) 78%, transparent);
 }
 
 .markup-workspace-note-handle.move-armed {
@@ -1846,10 +1855,11 @@ button:disabled {
   max-width: calc(100% - 16px);
   max-height: var(--markup-note-popup-max-height, min(260px, calc(100% - 16px)));
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--editor-border) 58%, var(--editor-highlight));
+  border: 1px solid color-mix(in srgb, var(--editor-border) 58%, var(--markup-note-color, var(--editor-highlight)));
   border-radius: 8px;
   background: var(--editor-panel-bg);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+  border-top: 4px solid var(--markup-note-color, #ffcf33);
   pointer-events: auto;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
@@ -1905,6 +1915,42 @@ button:disabled {
   resize: vertical;
   font-size: 14px;
   line-height: 1.35;
+}
+
+.markup-note-popup-color-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(30px, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--editor-panel-bg) 82%, var(--editor-bg));
+}
+
+.markup-note-color-button {
+  position: relative;
+  min-width: 30px;
+  min-height: 34px;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--editor-border) 70%, #000000);
+  border-radius: 999px;
+  background: var(--markup-note-color-option, #ffcf33);
+  color: transparent;
+  touch-action: manipulation;
+}
+
+.markup-note-color-button[aria-pressed="true"] {
+  border-color: var(--editor-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--markup-note-color-option, #ffcf33) 38%, transparent);
+}
+
+.markup-note-color-button span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .markup-note-popup-save-hint {
@@ -2044,7 +2090,7 @@ button:disabled {
   }
 
   .markup-workspace-note-handle {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     padding: 5px 7px;
   }
 
@@ -2063,6 +2109,14 @@ button:disabled {
     min-height: 112px;
     max-height: 34dvh;
     font-size: 16px;
+  }
+
+  .markup-note-popup-color-picker {
+    grid-template-columns: repeat(4, minmax(42px, 1fr));
+  }
+
+  .markup-note-color-button {
+    min-height: 40px;
   }
 
   .markup-workspace-canvas-area {

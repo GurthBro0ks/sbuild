@@ -71,7 +71,8 @@ import {
   clampMarkupPointToAllowedRegion,
   getMarkupAllowedRegionForStage,
   isMarkupPointInAllowedRegion,
-  moveMarkupAnnotation
+  moveMarkupAnnotation,
+  updateMarkupAnnotationColor
 } from "./markupAnnotations.js";
 import { buildMarkupAiContext, formatMarkupAiContextPreview, type MarkupAiContext } from "./markupAiContext.js";
 import { buildMarkupExportSummary, downloadMarkupExportFile, type MarkupExportFormat } from "./markupExport.js";
@@ -4715,6 +4716,13 @@ export function App() {
     setStatus("Markup note updated");
   }
 
+  function updateMarkupNoteColor(id: string, color: string) {
+    const timestamp = new Date().toISOString();
+    updateMarkupAnnotations((annotations) => updateMarkupAnnotationColor(annotations, id, color, timestamp));
+    setLastAction("markup-note-color");
+    setStatus("Markup note color updated");
+  }
+
   function moveMarkupNote(id: string, x: number, y: number) {
     const timestamp = new Date().toISOString();
     updateMarkupAnnotations((annotations) => moveMarkupAnnotation(annotations, id, x, y, timestamp));
@@ -6643,6 +6651,7 @@ export function App() {
           onSaveProject={saveProject}
           onCreateNote={createMarkupNote}
           onUpdateNoteText={updateMarkupNoteText}
+          onUpdateNoteColor={updateMarkupNoteColor}
           onMoveNote={moveMarkupNote}
           onDeleteNote={deleteMarkupNote}
           onAttachToAi={attachMarkupToAi}
