@@ -1039,6 +1039,64 @@ test("properties tab renders when site part is selected without block", () => {
   assert.match(appSource, /rightTab === "properties" && \(selectedBlock \|\| selectedSitePart\)/);
 });
 
+test("missing selected block id does not fall back to first block", () => {
+  assert.match(appSource, /const selectedBlock = selectedPage\?\.blocks\.find\(\(b\) => b\.id === selectedBlockId\);/);
+  assert.doesNotMatch(appSource, /\|\| selectedPage\?\.blocks\[0\]/);
+  assert.doesNotMatch(appSource, /selectedBlock[\s\S]{0,80}blocks\[0\]/);
+});
+
+test("properties tab shows empty state when no block or site part is selected", () => {
+  assert.match(appSource, /rightTab === "properties" && !selectedBlock && !selectedSitePart/);
+  assert.match(appSource, /Select a block to edit its properties\./);
+});
+
+test("selected toolbar actions are disabled without a selected block", () => {
+  const controlsIdx = appSource.indexOf('<span className="canvas-controls-label">Selected</span>');
+  assert.ok(controlsIdx > 0, "Selected toolbar group exists");
+  const section = appSource.substring(controlsIdx, controlsIdx + 600);
+  assert.match(section, /disabled=\{!selectedBlock\}[\s\S]{0,80}Duplicate/);
+  assert.match(section, /disabled=\{!selectedBlock\}[\s\S]{0,80}Delete/);
+  assert.match(section, /disabled=\{!selectedBlock\}[\s\S]{0,80}Up/);
+  assert.match(section, /disabled=\{!selectedBlock\}[\s\S]{0,80}Down/);
+});
+
+test("block delete confirms before mutating and cancel leaves selection unchanged", () => {
+  const deleteIdx = appSource.indexOf("function deleteBlock(blockId?: string)");
+  assert.ok(deleteIdx > 0, "deleteBlock exists");
+  const section = appSource.substring(deleteIdx, deleteIdx + 900);
+  assert.match(section, /window\.confirm\(`Delete this \$\{label\} block\? This cannot be undone\.`\)/);
+  assert.match(section, /setStatus\("Delete cancelled"\)/);
+  assert.match(section, /setContextMenu\(null\);\s*return;/);
+  assert.ok(section.indexOf("window.confirm") < section.indexOf("patchCurrentPage"), "confirm runs before mutation");
+});
+
+test("block delete confirm removes selected block and chooses deterministic next selection", () => {
+  const deleteIdx = appSource.indexOf("function deleteBlock(blockId?: string)");
+  assert.ok(deleteIdx > 0, "deleteBlock exists");
+  const section = appSource.substring(deleteIdx, deleteIdx + 1000);
+  assert.match(section, /const idx = selectedPage\.blocks\.findIndex\(\(b\) => b\.id === targetId\)/);
+  assert.match(section, /const next = selectedPage\.blocks\.filter\(\(b\) => b\.id !== targetId\)/);
+  assert.match(section, /patchCurrentPage\(\{ \.\.\.selectedPage, blocks: next \}\)/);
+  assert.match(section, /const nextId = next\[idx\]\?\.id \|\| next\[idx - 1\]\?\.id \|\| ""/);
+  assert.match(section, /setSelectedBlockId\(nextId\)/);
+});
+
+test("toolbar and context menu delete both use the confirmed deleteBlock path", () => {
+  assert.match(appSource, /onClick=\{\(\) => deleteBlock\(\)\} disabled=\{!selectedBlock\}>Delete/);
+  assert.match(appSource, /deleteBlock\(contextMenu\.blockId\); setContextMenu\(null\)/);
+});
+
+test("selected duplicate and move actions still target the selected block when present", () => {
+  assert.match(appSource, /function duplicateBlock\(blockId\?: string\)[\s\S]{0,160}const targetId = blockId \|\| selectedBlock\?\.id/);
+  assert.match(appSource, /setSelectedBlockId\(copy\.id\)/);
+  assert.match(appSource, /function moveBlock\(direction: "up" \| "down", blockId\?: string\)[\s\S]{0,160}const targetId = blockId \|\| selectedBlock\?\.id/);
+  assert.match(appSource, /patchCurrentPage\(\{ \.\.\.selectedPage, blocks: move\(selectedPage\.blocks, index, to\) \}\)/);
+});
+
+test("block delete remains editor-local with no server delete endpoint", () => {
+  assert.doesNotMatch(appSource, /\/api\/.*delete.*block/i);
+});
+
 test("preview mode disables contentEditable on hero and text blocks", () => {
   assert.match(appSource, /contentEditable=\{editable\}/);
   assert.match(appSource, /HeroBlock[\s\S]*<EditableText tag="h1"[\s\S]*editable=\{!isPreview\}/);

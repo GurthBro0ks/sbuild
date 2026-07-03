@@ -1877,7 +1877,7 @@ export function App() {
   };
 
   const selectedPage = useMemo(() => project?.pages.find((p) => p.id === selectedPageId) || project?.pages[0], [project, selectedPageId]);
-  const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId) || selectedPage?.blocks[0];
+  const selectedBlock = selectedPage?.blocks.find((b) => b.id === selectedBlockId);
   const currentPageMarkupAnnotations = useMemo(
     () => (project?.markupAnnotations || []).filter((annotation) => annotation.type === "note" && annotation.pageId === selectedPage?.id),
     [project?.markupAnnotations, selectedPage?.id]
@@ -4169,9 +4169,19 @@ export function App() {
     if (!selectedPage) return;
     const targetId = blockId || selectedBlock?.id;
     if (!targetId) return;
+    const idx = selectedPage.blocks.findIndex((b) => b.id === targetId);
+    const target = selectedPage.blocks[idx];
+    if (!target) return;
+    const label = blockTypeLabels[target.type] || target.type;
+    if (!window.confirm(`Delete this ${label} block? This cannot be undone.`)) {
+      setStatus("Delete cancelled");
+      setContextMenu(null);
+      return;
+    }
     const next = selectedPage.blocks.filter((b) => b.id !== targetId);
     patchCurrentPage({ ...selectedPage, blocks: next });
-    setSelectedBlockId(next[0]?.id || "");
+    const nextId = next[idx]?.id || next[idx - 1]?.id || "";
+    setSelectedBlockId(nextId);
     setSelectedGalleryIndex(null);
     setLastAction("delete-block");
     setContextMenu(null);
@@ -5222,6 +5232,11 @@ export function App() {
               </div>
               </>
               )}
+            </div>
+          )}
+          {rightTab === "properties" && !selectedBlock && !selectedSitePart && (
+            <div className="panel">
+              <p className="hint">Select a block to edit its properties.</p>
             </div>
           )}
 
@@ -7151,10 +7166,10 @@ export function App() {
             {!previewMode && (
               <div className="canvas-controls-group">
                 <span className="canvas-controls-label">Selected</span>
-                <button onClick={() => duplicateBlock()}>Duplicate</button>
-                <button onClick={() => deleteBlock()}>Delete</button>
-                <button onClick={() => moveBlock("up")}>Up</button>
-                <button onClick={() => moveBlock("down")}>Down</button>
+                <button onClick={() => duplicateBlock()} disabled={!selectedBlock}>Duplicate</button>
+                <button onClick={() => deleteBlock()} disabled={!selectedBlock}>Delete</button>
+                <button onClick={() => moveBlock("up")} disabled={!selectedBlock}>Up</button>
+                <button onClick={() => moveBlock("down")} disabled={!selectedBlock}>Down</button>
               </div>
             )}
           </div>
