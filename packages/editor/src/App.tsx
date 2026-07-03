@@ -1673,6 +1673,20 @@ export function App() {
     setWebsiteManagerError("");
   }
 
+  function clearPageScopedSelection() {
+    setSelectedBlockId("");
+    setSelectedSitePart(null);
+    setSelectedNavIndex(null);
+    setSelectedGalleryIndex(null);
+    setContextMenu(null);
+    lastFocusedTextBlockId.current = "";
+  }
+
+  function selectPage(pageId: string) {
+    setSelectedPageId(pageId);
+    clearPageScopedSelection();
+  }
+
   function handleCreatePage() {
     if (!project) return;
     if (!newPageName.trim()) {
@@ -1692,7 +1706,7 @@ export function App() {
     const nextPages = [...project.pages, page];
     const navItems = buildNavItems(nextPages);
     setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
-    setSelectedPageId(page.id);
+    selectPage(page.id);
     setDirty(true);
     setStatus("Page created");
     setNewPageFlowOpen(false);
@@ -1708,7 +1722,7 @@ export function App() {
     const nextPages = [...project.pages, dup];
     const navItems = buildNavItems(nextPages);
     setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
-    setSelectedPageId(dup.id);
+    selectPage(dup.id);
     setDirty(true);
     setStatus("Page duplicated");
     setWebsiteManagerOpen(false);
@@ -1722,8 +1736,14 @@ export function App() {
     }
     const pageName = project.pages.find((p) => p.id === pageId)?.title || "this page";
     if (!window.confirm(`Delete "${pageName}"? This cannot be undone.`)) return;
+    const deletedPageIndex = project.pages.findIndex((p) => p.id === pageId);
     const { pages: nextPages, fallbackId } = deletePageHelper(project.pages, pageId);
-    if (selectedPageId === pageId && fallbackId) setSelectedPageId(fallbackId);
+    const fallbackPageId = nextPages[deletedPageIndex]?.id || nextPages[deletedPageIndex - 1]?.id || nextPages[0]?.id || fallbackId;
+    if (selectedPageId === pageId && fallbackPageId) {
+      selectPage(fallbackPageId);
+    } else {
+      clearPageScopedSelection();
+    }
     const navItems = buildNavItems(nextPages);
     setProject({ ...project, pages: nextPages, site: { ...project.site, nav: navItems }, updatedAt: new Date().toISOString() });
     setDirty(true);
@@ -7085,9 +7105,10 @@ export function App() {
           <section>
             <h3>Pages</h3>
             {project.pages.map((page) => (
-              <button key={page.id} className={`page-list-item ${page.id === selectedPage.id ? "selected" : ""}`} onClick={() => setSelectedPageId(page.id)}>
+              <button key={page.id} className={`page-list-item ${page.id === selectedPage.id ? "selected" : ""}`} onClick={() => selectPage(page.id)}>
                 <span>{page.title}</span>
-                <span className="page-slug-hint">{page.slug}</span>
+                <span className="page-slug-hint">Path: {page.slug}</span>
+                <span className="page-nav-hint">{page.showInNav !== false ? "In nav" : "Hidden from nav"}</span>
               </button>
             ))}
             <div className="button-row compact">
@@ -7287,7 +7308,7 @@ export function App() {
                           const targetSlug = href.startsWith("/") ? href : "/" + href;
                           const targetPage = project.pages.find((p) => p.slug === targetSlug);
                           if (targetPage) {
-                            setSelectedPageId(targetPage.id);
+                            selectPage(targetPage.id);
                           }
                         }
                         return;
@@ -7858,12 +7879,12 @@ export function App() {
                 <div key={page.id} className={`wm-page-row ${page.id === selectedPage.id ? "selected" : ""}`}>
                   <div className="wm-page-info">
                     <strong>{page.title}</strong>
-                    <span className="page-slug-hint">{page.slug}</span>
+                    <span className="page-slug-hint">Path: {page.slug}</span>
                     {page.parentId && <span className="page-parent-hint">Parent: {project.pages.find((p) => p.id === page.parentId)?.title || "unknown"}</span>}
                     <span className="page-nav-hint">{page.showInNav !== false ? "In nav" : "Hidden from nav"}</span>
                   </div>
                   <div className="wm-page-actions">
-                    <button onClick={() => { setSelectedPageId(page.id); setWebsiteManagerOpen(false); }}>Open</button>
+                    <button onClick={() => { selectPage(page.id); setWebsiteManagerOpen(false); }}>Open</button>
                     <button onClick={() => { const n = window.prompt("New page name:", page.title); if (n) handleRenamePage(page.id, n); }}>Rename</button>
                     <button onClick={() => { const s = window.prompt("New slug:", page.slug); if (s) handleUpdatePageSlug(page.id, s); }}>Slug</button>
                     <button onClick={() => handleToggleShowInNav(page.id)}>{page.showInNav !== false ? "Hide from nav" : "Show in nav"}</button>

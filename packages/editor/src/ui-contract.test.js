@@ -2966,10 +2966,15 @@ test("page create uses helper from shared package", () => {
   assert.match(appSource, /import[\s\S]*migrateLegacyProject[\s\S]*from "@sbuild\/shared"/);
 });
 
-test("page list items show slug hint", () => {
+test("page list items show title, path, and nav state", () => {
   assert.match(appSource, /page-list-item/);
+  assert.match(appSource, /<span>\{page\.title\}<\/span>/);
   assert.match(appSource, /page-slug-hint/);
+  assert.match(appSource, /Path: \{page\.slug\}/);
+  assert.match(appSource, /page-nav-hint/);
+  assert.match(appSource, /page\.showInNav !== false \? "In nav" : "Hidden from nav"/);
   assert.match(cssSource, /\.page-slug-hint/);
+  assert.match(cssSource, /\.page-nav-hint/);
   assert.match(cssSource, /\.page-list-item/);
 });
 
@@ -2986,9 +2991,35 @@ test("delete page confirms before deleting", () => {
   assert.match(appSource, /confirm\(`Delete/);
 });
 
-test("delete page selects fallback when deleting selected page", () => {
-  assert.match(appSource, /fallbackId/);
-  assert.match(appSource, /setSelectedPageId\(fallbackId\)/);
+test("page switch clears stale selected block and site part state", () => {
+  const clearSection = appSource.match(/function clearPageScopedSelection\(\) \{[\s\S]*?\n  \}/);
+  assert.ok(clearSection, "clearPageScopedSelection helper exists");
+  assert.match(clearSection[0], /setSelectedBlockId\(""\)/);
+  assert.match(clearSection[0], /setSelectedSitePart\(null\)/);
+  assert.match(clearSection[0], /setSelectedNavIndex\(null\)/);
+  assert.match(clearSection[0], /setSelectedGalleryIndex\(null\)/);
+  assert.match(clearSection[0], /lastFocusedTextBlockId\.current = ""/);
+  assert.match(appSource, /function selectPage\(pageId: string\) \{[\s\S]{0,120}setSelectedPageId\(pageId\);[\s\S]{0,120}clearPageScopedSelection\(\);/);
+});
+
+test("page list and Website Manager use the safe page selection helper", () => {
+  assert.match(appSource, /className=\{`page-list-item[\s\S]{0,180}onClick=\{\(\) => selectPage\(page\.id\)\}/);
+  assert.match(appSource, /<button onClick=\{\(\) => \{ selectPage\(page\.id\); setWebsiteManagerOpen\(false\); \}\}>Open<\/button>/);
+  assert.match(appSource, /if \(targetPage\) \{[\s\S]{0,80}selectPage\(targetPage\.id\);/);
+});
+
+test("delete selected page chooses next page before previous fallback", () => {
+  assert.match(appSource, /const deletedPageIndex = project\.pages\.findIndex\(\(p\) => p\.id === pageId\)/);
+  assert.match(appSource, /const fallbackPageId = nextPages\[deletedPageIndex\]\?\.id \|\| nextPages\[deletedPageIndex - 1\]\?\.id \|\| nextPages\[0\]\?\.id \|\| fallbackId/);
+  assert.match(appSource, /if \(selectedPageId === pageId && fallbackPageId\) \{[\s\S]{0,80}selectPage\(fallbackPageId\);/);
+});
+
+test("delete last selected page falls back to previous page", () => {
+  assert.match(appSource, /nextPages\[deletedPageIndex - 1\]\?\.id/);
+});
+
+test("delete page clears stale selected block and site part after delete", () => {
+  assert.match(appSource, /if \(selectedPageId === pageId && fallbackPageId\) \{[\s\S]{0,80}selectPage\(fallbackPageId\);[\s\S]{0,80}\} else \{[\s\S]{0,80}clearPageScopedSelection\(\);/);
 });
 
 test("delete page keeps Website Manager open after confirm", () => {
@@ -3068,7 +3099,7 @@ test("right panel header tab row is not clipped by parent overflow", () => {
 });
 
 test("preview mode nav links navigate by page slug", () => {
-  const navClickSection = appSource.match(/onClick=\{\(e\)[\s\S]*?if \(previewMode\) \{[\s\S]*?setSelectedPageId\(targetPage\.id\)[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(!isMobileViewport\)/);
+  const navClickSection = appSource.match(/onClick=\{\(e\)[\s\S]*?if \(previewMode\) \{[\s\S]*?selectPage\(targetPage\.id\)[\s\S]*?return;[\s\S]*?\}[\s\S]*?if \(!isMobileViewport\)/);
   assert.ok(navClickSection, "previewMode branch in nav onClick selects page by slug");
   assert.match(appSource, /targetSlug = href\.startsWith\("\/"\) \? href : "\/" \+ href/);
   assert.match(appSource, /project\.pages\.find\(\(p\) => p\.slug === targetSlug\)/);
