@@ -1266,7 +1266,7 @@ function HelpGuide({ onClose }: { onClose: () => void }) {
           <p><strong>Website Theme</strong> (in the left panel) affects the website preview and content only.</p>
           <p><strong>Builder UI Theme</strong> (in Settings &rarr; General) affects only the editor chrome &mdash; topbar, panels, buttons.</p>
           <p><strong>Selected block styles</strong> override theme defaults for individual blocks.</p>
-          <p><strong>Reset selected block colors</strong> resets one block. <strong>Reset blocks to this theme</strong> resets all blocks on the current page/site.</p>
+          <p><strong>Reset selected block colors</strong> resets one block. <strong>Reset blocks to this theme</strong> resets all blocks on all pages.</p>
         </div>
       ),
     },

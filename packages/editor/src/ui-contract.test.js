@@ -21,6 +21,15 @@ function cssRule(selector, fromIndex = 0) {
   return cssSource.slice(start, end + 2);
 }
 
+function editorTokensUsedInCss() {
+  return Array.from(new Set(Array.from(cssSource.matchAll(/var\(\s*(--editor-[a-zA-Z0-9-]+)/g), (match) => match[1]))).sort();
+}
+
+function editorTokensDefinedInRule(selector) {
+  const rule = cssRule(selector);
+  return new Set(Array.from(rule.matchAll(/(--editor-[a-zA-Z0-9-]+)\s*:/g), (match) => match[1]));
+}
+
 test("gallery slots expose direct selection and selected-slot highlight affordances", () => {
   assert.match(appSource, /selectGallerySlot\(block\.id, index\)/);
   assert.match(appSource, /setSelectedGalleryIndex\(index\)/);
@@ -272,6 +281,15 @@ test("builder UI theme helper explains editor chrome versus website preview", ()
   assert.match(appSource, /changes only the editor/);
   assert.match(appSource, /changes only the page preview/);
   assert.match(appSource, /topbar.*left.*right.*panels.*buttons.*Builder/i);
+});
+
+test("editor chrome tokens used in CSS are defined in base and dark themes", () => {
+  const usedTokens = editorTokensUsedInCss();
+  const baseTokens = editorTokensDefinedInRule("html, body");
+  const darkTokens = editorTokensDefinedInRule(".sbuild-editor-shell.theme-dark");
+
+  assert.deepEqual(usedTokens.filter((token) => !baseTokens.has(token)), [], "base editor chrome token block defines every used --editor-* token");
+  assert.deepEqual(usedTokens.filter((token) => !darkTokens.has(token)), [], "dark editor chrome token block defines every used --editor-* token");
 });
 
 test("style persistence updates selected block part and triggers dirty", () => {
