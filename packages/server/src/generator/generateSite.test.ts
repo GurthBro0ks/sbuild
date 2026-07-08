@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderBlock, renderSiteDocument } from "./generateSite.js";
+import { renderBlock, renderSiteDocument, renderSiteStyles } from "./generateSite.js";
 import type { Block, SBuildProject } from "@sbuild/shared";
 
 // renderBlock is the pure HTML renderer at the heart of generateSite(). These
@@ -8,6 +8,46 @@ import type { Block, SBuildProject } from "@sbuild/shared";
 // (generateSite() itself targets a fixed production dist directory).
 function block(type: Block["type"], data: any, id = `blk-${type}`): Block {
   return { id, type, data };
+}
+
+function projectWithBlocks(blocks: Block[]): SBuildProject {
+  return {
+    version: "0.1.0",
+    updatedAt: "2026-07-08T00:00:00.000Z",
+    site: {
+      siteName: "Public Site",
+      title: "Public Site",
+      description: "Public description",
+      nav: []
+    },
+    globalStyles: {
+      headingFont: "Inter",
+      bodyFont: "Inter",
+      colors: {
+        bg: "#ffffff",
+        surface: "#f6f6f6",
+        text: "#111111",
+        accent: "#2b6dff",
+        muted: "#666666"
+      }
+    },
+    ai: {
+      provider: "disabled",
+      model: ""
+    },
+    deploy: {
+      method: "dry-run",
+      webRoot: ""
+    },
+    pages: [
+      {
+        id: "page-home",
+        slug: "/",
+        title: "Home",
+        blocks
+      }
+    ]
+  };
 }
 
 test("renderBlock hero renders heading, subheading, and CTA", () => {
@@ -76,6 +116,59 @@ test("renderBlock divider emits an hr and carries the block id/class", () => {
 test("renderBlock falls back to a safe placeholder for unknown block types", () => {
   const html = renderBlock(block("totally-unknown" as Block["type"], {}));
   assert.match(html, /Unsupported block type/);
+});
+
+test("renderSiteStyles emits block background preset styles", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("hero", { heading: "Welcome" }, "hero-bg"),
+        styles: { backgroundStyle: "glass" }
+      }
+    ])
+  );
+
+  assert.match(css, /\.block-hero-bg\{/);
+  assert.match(css, /backdrop-filter:blur\(12px\);/);
+  assert.match(css, /background:rgba\(255,255,255,0\.08\);/);
+  assert.match(css, /border:1px solid rgba\(255,255,255,0\.15\);/);
+});
+
+test("renderSiteStyles emits block border preset styles", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("text", { title: "About", body: "Body" }, "text-border"),
+        styles: { borderStyle: "dashed" }
+      }
+    ])
+  );
+
+  assert.match(css, /\.block-text-border\{/);
+  assert.match(css, /border:2px dashed rgba\(0,0,0,\.08\);/);
+});
+
+test("renderSiteStyles keeps unsupported preset families out of this slice", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("text", { title: "About", body: "Body" }, "text-supported-only"),
+        styles: {
+          backgroundStyle: "soft",
+          borderStyle: "thin",
+          [["shadow", "Style"].join("")]: "neon",
+          [["text", "Effect"].join("")]: "outline",
+          [["button", "Style"].join("")]: "glow"
+        } as Block["styles"]
+      }
+    ])
+  );
+
+  assert.match(css, /box-shadow:0 8px 32px rgba\(0,0,0,0\.08\);/);
+  assert.match(css, /border:1px solid rgba\(0,0,0,\.08\);/);
+  assert.doesNotMatch(css, /0 0 24px rgba\(0,255,170,0\.35\)/);
+  assert.doesNotMatch(css, /text-shadow/);
+  assert.doesNotMatch(css, /\.block-text-supported-only \.btn/);
 });
 
 test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {

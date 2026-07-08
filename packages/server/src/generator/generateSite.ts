@@ -16,6 +16,50 @@ function styleClassForBlock(block: Block): string {
   return `block-${block.id}`;
 }
 
+const backgroundStylePresets: Record<string, string[]> = {
+  clean: [],
+  glass: [
+    "backdrop-filter:blur(12px);",
+    "-webkit-backdrop-filter:blur(12px);",
+    "background:rgba(255,255,255,0.08);",
+    "border:1px solid rgba(255,255,255,0.15);"
+  ],
+  neon: [
+    "box-shadow:0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1);",
+    "border:1px solid rgba(0,255,170,0.4);"
+  ],
+  soft: [
+    "box-shadow:0 8px 32px rgba(0,0,0,0.08);",
+    "border-radius:16px;",
+    "border:1px solid rgba(0,0,0,0.04);"
+  ],
+  bold: [
+    "box-shadow:0 12px 40px rgba(0,0,0,0.18);",
+    "border-radius:8px;",
+    "border:2px solid var(--accent);"
+  ],
+  terminal: [
+    "background:#0c0c0c;",
+    "color:#33ff33;",
+    "border:1px solid #3e5a3e;",
+    "font-family:monospace;",
+    "box-shadow:inset 0 0 20px rgba(51,255,51,0.05);"
+  ],
+  "image-overlay": [
+    "background:linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7));",
+    "color:#ffffff;"
+  ]
+};
+
+const borderStylePresets: Record<string, string> = {
+  none: "border:none;",
+  thin: "border:1px solid rgba(0,0,0,.08);",
+  accent: "border:2px solid var(--accent);",
+  double: "border:3px double rgba(0,0,0,.08);",
+  dashed: "border:2px dashed rgba(0,0,0,.08);",
+  "glow-edge": "border:1px solid rgba(0,255,170,0.5);"
+};
+
 export function renderBlock(block: Block): string {
   const idAttr = `id="${escapeHtml(block.id)}"`;
   const cls = `class="block ${styleClassForBlock(block)} type-${block.type}"`;
@@ -92,6 +136,9 @@ function blockCss(project: SBuildProject): string {
     if ((styles.effects || []).includes("glow")) base.push(`text-shadow:0 0 12px rgba(46,128,255,0.6);`);
     if ((styles.effects || []).includes("gradient-text")) base.push(`background:linear-gradient(90deg,#1f5fff,#3ddc97);-webkit-background-clip:text;color:transparent;`);
     if ((styles.effects || []).includes("parallax")) base.push(`background-attachment:fixed;`);
+    base.push(...(backgroundStylePresets[styles.backgroundStyle || ""] || []));
+    const borderStyle = borderStylePresets[styles.borderStyle || ""];
+    if (borderStyle) base.push(borderStyle);
 
     lines.push(`${selectors[0]}{${base.join("")}}`);
     if ((styles.effects || []).includes("hover-grow")) {
@@ -109,6 +156,29 @@ function blockCss(project: SBuildProject): string {
     }
   }
   return lines.join("\n");
+}
+
+export function renderSiteStyles(project: SBuildProject): string {
+  return `:root{--bg:${project.globalStyles.colors.bg};--surface:${project.globalStyles.colors.surface};--text:${project.globalStyles.colors.text};--accent:${project.globalStyles.colors.accent};--muted:${project.globalStyles.colors.muted};}
+*{box-sizing:border-box}
+body{margin:0;font-family:'${project.globalStyles.bodyFont}',sans-serif;background:var(--bg);color:var(--text)}
+h1,h2,h3{font-family:'${project.globalStyles.headingFont}',serif;margin:0 0 12px}
+p{line-height:1.6}
+.site-header{position:sticky;top:0;display:flex;justify-content:space-between;gap:16px;padding:14px 20px;background:var(--surface);border-bottom:1px solid rgba(0,0,0,.08)}
+.site-header nav{display:flex;gap:12px;flex-wrap:wrap}
+.site-header a{text-decoration:none;color:var(--text);font-weight:700}
+main{max-width:1000px;margin:20px auto;padding:0 16px;display:flex;flex-direction:column;gap:18px}
+.block{background:var(--surface);border-radius:14px;padding:18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.gallery img,.type-image img{width:100%;border-radius:10px}
+.btn{display:inline-block;background:var(--accent);color:#fff;padding:10px 16px;border-radius:999px;text-decoration:none;font-weight:700}
+footer{padding:28px;text-align:center;color:var(--muted)}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.01)}}
+@keyframes marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+${blockCss(project)}
+`;
 }
 
 async function copyProjectImages(): Promise<void> {
@@ -164,26 +234,7 @@ export async function generateSite(project: SBuildProject): Promise<{ outputDir:
 
   const html = renderSiteDocument(project);
 
-  const styles = `:root{--bg:${project.globalStyles.colors.bg};--surface:${project.globalStyles.colors.surface};--text:${project.globalStyles.colors.text};--accent:${project.globalStyles.colors.accent};--muted:${project.globalStyles.colors.muted};}
-*{box-sizing:border-box}
-body{margin:0;font-family:'${project.globalStyles.bodyFont}',sans-serif;background:var(--bg);color:var(--text)}
-h1,h2,h3{font-family:'${project.globalStyles.headingFont}',serif;margin:0 0 12px}
-p{line-height:1.6}
-.site-header{position:sticky;top:0;display:flex;justify-content:space-between;gap:16px;padding:14px 20px;background:var(--surface);border-bottom:1px solid rgba(0,0,0,.08)}
-.site-header nav{display:flex;gap:12px;flex-wrap:wrap}
-.site-header a{text-decoration:none;color:var(--text);font-weight:700}
-main{max-width:1000px;margin:20px auto;padding:0 16px;display:flex;flex-direction:column;gap:18px}
-.block{background:var(--surface);border-radius:14px;padding:18px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
-.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
-.gallery img,.type-image img{width:100%;border-radius:10px}
-.btn{display:inline-block;background:var(--accent);color:#fff;padding:10px 16px;border-radius:999px;text-decoration:none;font-weight:700}
-footer{padding:28px;text-align:center;color:var(--muted)}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.01)}}
-@keyframes marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-${blockCss(project)}
-`;
+  const styles = renderSiteStyles(project);
 
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://${project.site.domain || "example.com"}/</loc></url>\n</urlset>`;
   const robots = "User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n";
