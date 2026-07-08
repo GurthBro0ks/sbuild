@@ -192,6 +192,74 @@ html, body, #root {
   padding: 5px 8px;
 }
 
+.publish-readiness-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: var(--editor-surface);
+  color: var(--editor-text);
+}
+
+.publish-readiness-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publish-readiness-header h4 {
+  margin: 0 0 4px;
+}
+
+.publish-readiness-mode,
+.publish-readiness-badge {
+  flex: 0 0 auto;
+  border: 1px solid var(--editor-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--editor-panel-bg);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.publish-readiness-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.publish-readiness-item {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--editor-border);
+  border-radius: 8px;
+  background: var(--editor-panel-bg);
+}
+
+.publish-readiness-label {
+  font-weight: 700;
+}
+
+.publish-readiness-value {
+  min-width: 0;
+  color: var(--editor-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.publish-readiness-blocked .publish-readiness-badge,
+.publish-readiness-warn .publish-readiness-badge {
+  border-color: color-mix(in srgb, var(--editor-warning) 46%, var(--editor-border));
+  color: var(--editor-warning);
+}
+
 .build-identity-status {
   font-weight: 700;
 }

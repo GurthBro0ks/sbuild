@@ -5,13 +5,15 @@ import test from "node:test";
 const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const behaviorSource = readFileSync(new URL("./editorBehavior.ts", import.meta.url), "utf8");
 const versionIdentityBannerSource = readFileSync(new URL("./VersionIdentityBanner.tsx", import.meta.url), "utf8");
+const publishReadinessPanelSource = readFileSync(new URL("./PublishReadinessPanel.tsx", import.meta.url), "utf8");
 const markupWorkspaceSource = readFileSync(new URL("./MarkupWorkspace.tsx", import.meta.url), "utf8");
 const markupAnnotationsSource = readFileSync(new URL("./markupAnnotations.ts", import.meta.url), "utf8");
 const markupExportSource = readFileSync(new URL("./markupExport.ts", import.meta.url), "utf8");
-const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${markupWorkspaceSource}\n${markupAnnotationsSource}\n${markupExportSource}`;
+const editorSource = `${appSource}\n${behaviorSource}\n${versionIdentityBannerSource}\n${publishReadinessPanelSource}\n${markupWorkspaceSource}\n${markupAnnotationsSource}\n${markupExportSource}`;
 const cssSource = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const layoutHelpersSource = readFileSync(new URL("../../shared/src/layoutHelpers.ts", import.meta.url), "utf8");
 const smokeSource = readFileSync(new URL("../../../scripts/smoke-sbuild.sh", import.meta.url), "utf8");
+const serverAppTestSource = readFileSync(new URL("../../server/src/app.test.ts", import.meta.url), "utf8");
 
 function cssRule(selector, fromIndex = 0) {
   const start = cssSource.indexOf(selector, fromIndex);
@@ -458,6 +460,10 @@ test("publish endpoint remains dry-run", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
+  assert.match(appSource, />Run publish dry-run<\/button>/);
+  assert.match(appSource, /Running publish dry-run/);
+  assert.match(appSource, /Dry-run complete: no public changes made/);
+  assert.doesNotMatch(appSource, /Published/);
 });
 
 test("provider and key panels expose provider-specific chat key status", () => {
@@ -813,7 +819,7 @@ test("mobile topbar keeps explicit grouped rows for density and action visibilit
   assert.match(appSource, /topbar-mobile-row topbar-mobile-row-main/);
   assert.match(appSource, /topbar-mobile-row topbar-mobile-row-actions/);
   assert.match(appSource, /topbar-mobile-row topbar-mobile-row-status/);
-  assert.match(appSource, />Publish<\/button>/);
+  assert.match(appSource, />Run publish dry-run<\/button>/);
   assert.match(appSource, /previewMode \? "Edit" : "Preview"/);
   assert.match(appSource, />Markup<\/button>/);
 });
@@ -1981,6 +1987,9 @@ test("publish remains dry-run", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
+  assert.match(appSource, /Run publish dry-run/);
+  assert.match(appSource, /Dry-run complete: no public changes made/);
+  assert.doesNotMatch(appSource, /Published/);
 });
 
 test("preview mode hides right panel on desktop", () => {
@@ -2533,6 +2542,7 @@ test("publish login gate smoke expectations remain correct", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /\/api\/publish/);
   assert.match(appSource, /dryRun/);
+  assert.match(appSource, /Run publish dry-run/);
   assert.match(smokeSource, /PUBLISH_UNAUTH_STATUS/);
   assert.match(smokeSource, /unauth \/api\/publish expected 401/);
 });
@@ -3083,6 +3093,31 @@ test("mobile-toolbar-spacer-v3 still absent after Website Manager", () => {
 test("publishAllowed false remains correct", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /dryRun/);
+  assert.match(appSource, /!buildInfo\?\.publishAllowed/);
+  assert.match(publishReadinessPanelSource, /Dry-run only - Live publish disabled/);
+});
+
+test("Publish Readiness panel appears in Deploy settings with dry-run checklist", () => {
+  assert.match(appSource, /settingsTab === "deploy"[\s\S]{0,220}<PublishReadinessPanel/);
+  assert.match(publishReadinessPanelSource, /Publish Readiness/);
+  assert.match(publishReadinessPanelSource, /Dry-run only - Live publish disabled/);
+  assert.match(publishReadinessPanelSource, /Live publish disabled\. Publish runs are dry-run only\./);
+  assert.match(publishReadinessPanelSource, /No public changes are made by dry-run/);
+  assert.match(publishReadinessPanelSource, /Owner approval required before live publish/);
+  assert.match(publishReadinessPanelSource, /repoDirty/);
+  assert.match(publishReadinessPanelSource, /editorDistExists/);
+  assert.match(publishReadinessPanelSource, /Unsaved changes present/);
+  assert.doesNotMatch(publishReadinessPanelSource, /project\.json/);
+  assert.doesNotMatch(publishReadinessPanelSource, /freehand/i);
+});
+
+test("Publish Readiness does not add a server route or weaken auth expectations", () => {
+  assert.doesNotMatch(appSource, /\/api\/publish-readiness/);
+  assert.doesNotMatch(publishReadinessPanelSource, /fetchJson/);
+  assert.match(serverAppTestSource, /auth: unauth GET \/api\/project returns 401/);
+  assert.match(serverAppTestSource, /fetch\(`\$\{server\.baseUrl\}\/api\/project`\)/);
+  assert.match(serverAppTestSource, /assert\.equal\(res\.status, 401\)/);
+  assert.match(smokeSource, /unauth \/api\/publish expected 401/);
 });
 
 test("template options include all five starter templates", () => {

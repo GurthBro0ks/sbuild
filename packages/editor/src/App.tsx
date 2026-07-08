@@ -77,6 +77,7 @@ import {
 import { buildMarkupAiContext, formatMarkupAiContextPreview, type MarkupAiContext } from "./markupAiContext.js";
 import { buildMarkupExportSummary, downloadMarkupExportFile, type MarkupExportFormat } from "./markupExport.js";
 import { MarkupWorkspace } from "./MarkupWorkspace.js";
+import { PublishReadinessPanel } from "./PublishReadinessPanel.js";
 import { VersionIdentityBanner } from "./VersionIdentityBanner.js";
 
 type DeviceMode = "desktop" | "tablet" | "phone";
@@ -3922,9 +3923,13 @@ export function App() {
   }
 
   async function runPublish() {
-    setStatus("Publishing...");
+    setStatus("Running publish dry-run...");
     const data = await fetchJson<{ ok: boolean; dryRun?: boolean; target?: string }>("/api/publish", { method: "POST", body: "{}" });
-    if (data.ok) { setStatus(data.dryRun ? `Dry-run publish complete → ${data.target}` : `Published → ${data.target}`); setLastAction("publish"); }
+    if (data.ok) {
+      const isDryRun = data.dryRun || !buildInfo?.publishAllowed;
+      setStatus(isDryRun ? `Dry-run complete: no public changes made → ${data.target}` : `Live publish complete → ${data.target}`);
+      setLastAction("publish");
+    }
   }
 
   async function chat() {
@@ -6629,7 +6634,7 @@ export function App() {
           <button onClick={() => void saveProject()}>Save</button>
           <button onClick={() => void revertProject()} disabled={!dirty}>Revert</button>
           <button onClick={() => void runBuild()}>Build</button>
-          <button onClick={() => void runPublish()}>Publish</button>
+          <button onClick={() => void runPublish()}>Run publish dry-run</button>
         </div>
         <div className="topbar-mobile-row topbar-mobile-row-status">
           <div ref={statusPillRef} className="topbar-status" data-status-row="topbar-status-pill">
@@ -7670,9 +7675,12 @@ export function App() {
               {secretStatusMsg && <p className="panel-status">{secretStatusMsg}</p>}
             </div>}
             {settingsTab === "deploy" && <div>
-              <p className="panel-status"><strong>Live publish disabled</strong></p>
-              <p>SBUILD_ALLOW_PUBLISH: {"false"}</p>
-              <p>Publish target: dry-run preview</p>
+              <PublishReadinessPanel
+                buildInfo={buildInfo}
+                buildInfoStatus={buildInfoStatus}
+                dirty={dirty}
+                previewAvailable={Boolean(selectedPage)}
+              />
             </div>}
             {settingsTab === "account" && <div>
               <p><strong>Account Management</strong></p>
