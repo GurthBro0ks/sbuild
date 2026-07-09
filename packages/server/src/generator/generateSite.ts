@@ -60,6 +60,34 @@ const borderStylePresets: Record<string, string> = {
   "glow-edge": "border:1px solid rgba(0,255,170,0.5);"
 };
 
+// Mirrors editor SHADOW_STYLE_PRESETS (App.tsx) — keep values in sync with that table.
+const shadowStylePresets: Record<string, string> = {
+  none: "",
+  soft: "box-shadow:0 4px 16px rgba(0,0,0,0.06);",
+  lifted: "box-shadow:0 12px 24px rgba(0,0,0,0.12);",
+  strong: "box-shadow:0 16px 48px rgba(0,0,0,0.22);",
+  neon: "box-shadow:0 0 24px rgba(0,255,170,0.35), 0 0 8px rgba(0,255,170,0.2);",
+  inner: "box-shadow:inset 0 2px 12px rgba(0,0,0,0.08);"
+};
+
+// Mirrors editor TEXT_EFFECT_PRESETS (App.tsx) — keep values in sync with that table.
+const textEffectPresets: Record<string, string[]> = {
+  none: [],
+  "subtle-glow": ["text-shadow:0 0 8px rgba(255,255,255,0.35);"],
+  "strong-glow": ["text-shadow:0 0 16px rgba(0,255,170,0.6);"],
+  outline: ["-webkit-text-stroke:1px currentColor;", "color:transparent;"],
+  shadow: ["text-shadow:2px 2px 4px rgba(0,0,0,0.35);"]
+};
+
+// Mirrors editor BUTTON_STYLE_PRESETS (App.tsx); var(--sbuild-accent) there maps to var(--accent) here.
+const buttonStylePresets: Record<string, string[]> = {
+  solid: ["background:var(--accent);", "color:#ffffff;", "border:none;"],
+  outline: ["background:transparent;", "color:var(--accent);", "border:2px solid var(--accent);"],
+  ghost: ["background:transparent;", "color:var(--accent);", "border:1px solid rgba(0,0,0,0.1);"],
+  pill: ["background:var(--accent);", "color:#ffffff;", "border:none;", "border-radius:999px;"],
+  glow: ["background:var(--accent);", "color:#ffffff;", "border:none;", "box-shadow:0 0 16px rgba(0,255,170,0.45);"]
+};
+
 export function renderBlock(block: Block): string {
   const idAttr = `id="${escapeHtml(block.id)}"`;
   const cls = `class="block ${styleClassForBlock(block)} type-${block.type}"`;
@@ -139,8 +167,15 @@ function blockCss(project: SBuildProject): string {
     base.push(...(backgroundStylePresets[styles.backgroundStyle || ""] || []));
     const borderStyle = borderStylePresets[styles.borderStyle || ""];
     if (borderStyle) base.push(borderStyle);
+    const shadowStyle = shadowStylePresets[styles.shadowStyle || ""];
+    if (shadowStyle) base.push(shadowStyle);
+    base.push(...(textEffectPresets[styles.textEffect || ""] || []));
 
     lines.push(`${selectors[0]}{${base.join("")}}`);
+    const buttonStyle = buttonStylePresets[styles.buttonStyle || ""];
+    if (buttonStyle && buttonStyle.length) {
+      lines.push(`.${styleClassForBlock(block)} .btn{${buttonStyle.join("")}}`);
+    }
     if ((styles.effects || []).includes("hover-grow")) {
       lines.push(`.${styleClassForBlock(block)}{transition:transform .2s ease;}`);
       lines.push(`.${styleClassForBlock(block)}:hover{transform:scale(1.02);}`);

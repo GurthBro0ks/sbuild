@@ -148,7 +148,7 @@ test("renderSiteStyles emits block border preset styles", () => {
   assert.match(css, /border:2px dashed rgba\(0,0,0,\.08\);/);
 });
 
-test("renderSiteStyles keeps unsupported preset families out of this slice", () => {
+test("renderSiteStyles keeps styles.parts out of this slice", () => {
   const css = renderSiteStyles(
     projectWithBlocks([
       {
@@ -156,9 +156,10 @@ test("renderSiteStyles keeps unsupported preset families out of this slice", () 
         styles: {
           backgroundStyle: "soft",
           borderStyle: "thin",
-          [["shadow", "Style"].join("")]: "neon",
-          [["text", "Effect"].join("")]: "outline",
-          [["button", "Style"].join("")]: "glow"
+          shadowStyle: "neon",
+          textEffect: "outline",
+          buttonStyle: "glow",
+          parts: { heading: { textColor: "#ff00ff" } }
         } as Block["styles"]
       }
     ])
@@ -166,9 +167,50 @@ test("renderSiteStyles keeps unsupported preset families out of this slice", () 
 
   assert.match(css, /box-shadow:0 8px 32px rgba\(0,0,0,0\.08\);/);
   assert.match(css, /border:1px solid rgba\(0,0,0,\.08\);/);
-  assert.doesNotMatch(css, /0 0 24px rgba\(0,255,170,0\.35\)/);
-  assert.doesNotMatch(css, /text-shadow/);
-  assert.doesNotMatch(css, /\.block-text-supported-only \.btn/);
+  assert.match(css, /0 0 24px rgba\(0,255,170,0\.35\)/);
+  assert.match(css, /-webkit-text-stroke:1px currentColor;/);
+  assert.doesNotMatch(css, /#ff00ff/);
+});
+
+test("renderSiteStyles emits block shadowStyle preset styles", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("text", { title: "About", body: "Body" }, "text-shadow"),
+        styles: { shadowStyle: "lifted" }
+      }
+    ])
+  );
+
+  assert.match(css, /\.block-text-shadow\{/);
+  assert.match(css, /box-shadow:0 12px 24px rgba\(0,0,0,0\.12\);/);
+});
+
+test("renderSiteStyles emits block textEffect preset styles", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("hero", { heading: "Welcome" }, "hero-text-effect"),
+        styles: { textEffect: "strong-glow" }
+      }
+    ])
+  );
+
+  assert.match(css, /\.block-hero-text-effect\{/);
+  assert.match(css, /text-shadow:0 0 16px rgba\(0,255,170,0\.6\);/);
+});
+
+test("renderSiteStyles emits block buttonStyle preset styles scoped to the block's .btn", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      {
+        ...block("hero", { heading: "Welcome", ctaLabel: "Shop" }, "hero-btn"),
+        styles: { buttonStyle: "outline" }
+      }
+    ])
+  );
+
+  assert.match(css, /\.block-hero-btn \.btn\{background:transparent;color:var\(--accent\);border:2px solid var\(--accent\);\}/);
 });
 
 test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {
