@@ -3,6 +3,8 @@ import path from "node:path";
 import { Block, SBuildProject } from "@sbuild/shared";
 import { distDir, projectImagesDir } from "../lib/paths.js";
 
+type GeneratedPage = SBuildProject["pages"][number];
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -14,6 +16,61 @@ function escapeHtml(value: string): string {
 
 function styleClassForBlock(block: Block): string {
   return `block-${block.id}`;
+}
+
+function siteBaseUrl(project: SBuildProject): string {
+  const rawDomain = String(project.site.domain || "example.com").trim();
+  const stripped = rawDomain.replace(/^https?:\/\//i, "").replace(/\/+$/g, "");
+  return `https://${stripped || "example.com"}`;
+}
+
+function safeRouteSegments(page: GeneratedPage, index: number): string[] {
+  const raw = String(page.slug || (index === 0 ? "/" : `/${page.id || `page-${index + 1}`}`)).trim();
+  const pathOnly = (raw.split(/[?#]/)[0] || "/").replace(/^https?:\/\/[^/]+/i, "");
+  const withLeadingSlash = pathOnly.startsWith("/") ? pathOnly : `/${pathOnly}`;
+  const normalized = path.posix.normalize(withLeadingSlash);
+  if (normalized === "/" || normalized === ".") return [];
+  return normalized
+    .split("/")
+    .filter(Boolean)
+    .filter((segment) => segment !== "." && segment !== "..")
+    .map((segment) => segment.replace(/[^A-Za-z0-9._~-]/g, "-") || "page");
+}
+
+function routePathForPage(page: GeneratedPage, index: number): string {
+  const segments = safeRouteSegments(page, index);
+  if (segments.length === 0) return "/";
+  return `/${segments.join("/")}/`;
+}
+
+function outputRelativePathForPage(page: GeneratedPage, index: number): string {
+  const segments = safeRouteSegments(page, index);
+  if (segments.length === 0) return "index.html";
+  return path.join(...segments, "index.html");
+}
+
+function generatedPages(project: SBuildProject): GeneratedPage[] {
+  return project.pages.length ? project.pages : [
+    {
+      id: "home",
+      slug: "/",
+      title: project.site.title || project.site.siteName || "Home",
+      blocks: []
+    }
+  ];
+}
+
+function canonicalUrlForPage(project: SBuildProject, page: GeneratedPage, index: number): string {
+  return `${siteBaseUrl(project)}${routePathForPage(page, index)}`;
+}
+
+function titleForPage(project: SBuildProject, page: GeneratedPage, index: number): string {
+  const siteTitle = project.site.title || project.site.siteName || "Untitled Site";
+  if (routePathForPage(page, index) === "/") return siteTitle;
+  const pageTitle = page.title || siteTitle;
+  return project.site.siteName && pageTitle !== project.site.siteName
+    ? `${pageTitle} | ${project.site.siteName}`
+    : pageTitle;
 }
 
 const backgroundStylePresets: Record<string, string[]> = {
@@ -136,7 +193,7 @@ export function renderBlock(block: Block): string {
 
 function blockCss(project: SBuildProject): string {
   const lines: string[] = [];
-  const blocks = project.pages[0]?.blocks || [];
+  const blocks = generatedPages(project).flatMap((page) => page.blocks || []);
   for (const block of blocks) {
     const styles = block.styles || {};
     const selectors = [`.${styleClassForBlock(block)}`];
@@ -239,17 +296,27 @@ async function copyProjectImages(): Promise<void> {
   }
 }
 
-export function renderSiteDocument(project: SBuildProject): string {
-  const home = project.pages.find((p) => p.slug === "/") || project.pages[0];
-  const blocksHtml = home.blocks.map((b) => renderBlock(b)).join("\n");
+export function renderSiteDocument(project: SBuildProject, page: GeneratedPage = generatedPages(project)[0]): string {
+  const pageIndex = Math.max(0, generatedPages(project).findIndex((candidate) => candidate.id === page.id));
+  const canonicalUrl = canonicalUrlForPage(project, page, pageIndex);
+  const documentTitle = titleForPage(project, page, pageIndex);
+  const description = project.site.description || "";
+  const blocksHtml = page.blocks.map((b) => renderBlock(b)).join("\n");
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(project.site.title)}</title>
-<meta name="description" content="${escapeHtml(project.site.description)}" />
+<title>${escapeHtml(documentTitle)}</title>
+<meta name="description" content="${escapeHtml(description)}" />
+<link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="${escapeHtml(project.site.siteName)}" />
+<meta property="og:title" content="${escapeHtml(documentTitle)}" />
+<meta property="og:description" content="${escapeHtml(description)}" />
+<meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
+<meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
@@ -263,30 +330,48 @@ export function renderSiteDocument(project: SBuildProject): string {
 </html>`;
 }
 
+export function renderSitemap(project: SBuildProject): string {
+  const urls = generatedPages(project)
+    .map((page, index) => `  <url><loc>${escapeHtml(canonicalUrlForPage(project, page, index))}</loc></url>`)
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`;
+}
+
+export function renderRobotsTxt(project: SBuildProject): string {
+  return `User-agent: *\nAllow: /\nSitemap: ${siteBaseUrl(project)}/sitemap.xml\n`;
+}
+
+export function renderGeneratedSiteFiles(project: SBuildProject): Array<{ relativePath: string; contents: string }> {
+  const htmlFiles = generatedPages(project).map((page, index) => ({
+    relativePath: outputRelativePathForPage(page, index),
+    contents: renderSiteDocument(project, page)
+  }));
+
+  return [
+    ...htmlFiles,
+    { relativePath: path.join("assets", "styles.css"), contents: renderSiteStyles(project) },
+    { relativePath: "sitemap.xml", contents: renderSitemap(project) },
+    { relativePath: "robots.txt", contents: renderRobotsTxt(project) }
+  ];
+}
+
 export async function generateSite(project: SBuildProject): Promise<{ outputDir: string; files: string[] }> {
   await fs.mkdir(distDir, { recursive: true });
   await fs.mkdir(path.join(distDir, "assets"), { recursive: true });
 
-  const html = renderSiteDocument(project);
+  const files: string[] = [];
 
-  const styles = renderSiteStyles(project);
-
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://${project.site.domain || "example.com"}/</loc></url>\n</urlset>`;
-  const robots = "User-agent: *\nAllow: /\nSitemap: /sitemap.xml\n";
-
-  await fs.writeFile(path.join(distDir, "index.html"), html, "utf8");
-  await fs.writeFile(path.join(distDir, "assets", "styles.css"), styles, "utf8");
-  await fs.writeFile(path.join(distDir, "sitemap.xml"), sitemap, "utf8");
-  await fs.writeFile(path.join(distDir, "robots.txt"), robots, "utf8");
+  for (const file of renderGeneratedSiteFiles(project)) {
+    const relativePath = file.relativePath;
+    const absolutePath = path.join(distDir, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, file.contents, "utf8");
+    files.push(absolutePath);
+  }
   await copyProjectImages();
 
   return {
     outputDir: distDir,
-    files: [
-      path.join(distDir, "index.html"),
-      path.join(distDir, "assets", "styles.css"),
-      path.join(distDir, "sitemap.xml"),
-      path.join(distDir, "robots.txt")
-    ]
+    files
   };
 }

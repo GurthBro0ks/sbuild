@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderBlock, renderSiteDocument, renderSiteStyles } from "./generateSite.js";
+import {
+  renderBlock,
+  renderGeneratedSiteFiles,
+  renderRobotsTxt,
+  renderSiteDocument,
+  renderSiteStyles,
+  renderSitemap
+} from "./generateSite.js";
 import { makeBlock, makeProject, makeTwoPageProject } from "./__fixtures__/syntheticProject.js";
 import type { Block, BlockStyles } from "@sbuild/shared";
 
@@ -20,6 +27,42 @@ function projectWithBlocks(blocks: Block[]) {
       description: "Public description",
       nav: []
     }
+  });
+}
+
+function makeThreePageProject() {
+  return makeProject({
+    site: {
+      siteName: "Blackfish Farms",
+      title: "Blackfish Farms",
+      description: "Local farm stand and seasonal produce.",
+      domain: "blackfishfarms.com",
+      nav: [
+        { id: "nav-home", label: "Home", href: "/" },
+        { id: "nav-about", label: "About", href: "/about" },
+        { id: "nav-contact", label: "Contact", href: "/contact" }
+      ]
+    },
+    pages: [
+      {
+        id: "page-home",
+        slug: "/",
+        title: "Home",
+        blocks: [makeBlock("text", { id: "home-body", data: { title: "Home", body: "Home page body." } })]
+      },
+      {
+        id: "page-about",
+        slug: "/about",
+        title: "About",
+        blocks: [makeBlock("text", { id: "about-body", data: { title: "About", body: "About page body." } })]
+      },
+      {
+        id: "page-contact",
+        slug: "/contact",
+        title: "Contact",
+        blocks: [makeBlock("contact", { id: "contact-body", data: { title: "Contact", phone: "555-0100", email: "hello@example.test", address: "100 Farm Road" } })]
+      }
+    ]
   });
 }
 
@@ -381,7 +424,7 @@ test("renderSiteStyles preserves legacy block fields when preset styles are pres
   assert.ok(css.includes("border:1px solid rgba(0,0,0,.08);"));
 });
 
-test("renderSiteStyles pins the current page0-only per-block CSS boundary", () => {
+test("renderSiteStyles includes per-block CSS from every generated page", () => {
   const css = renderSiteStyles(
     makeTwoPageProject(
       [
@@ -401,8 +444,118 @@ test("renderSiteStyles pins the current page0-only per-block CSS boundary", () =
 
   assert.match(css, /\.block-page0-styled-block\{/);
   assert.ok(css.includes("box-shadow:0 8px 32px rgba(0,0,0,0.08);"));
-  assert.doesNotMatch(css, /\.block-page1-styled-block\{/);
-  assert.doesNotMatch(css, /box-shadow:0 12px 40px rgba\(0,0,0,0\.18\);/);
+  assert.match(css, /\.block-page1-styled-block\{/);
+  assert.ok(css.includes("box-shadow:0 12px 40px rgba(0,0,0,0.18);"));
+});
+
+test("renderGeneratedSiteFiles preserves one-page output as index.html", () => {
+  const files = renderGeneratedSiteFiles(projectWithBlocks([block("text", { title: "Only", body: "One page body." })]));
+  const htmlFiles = files.filter((file) => file.relativePath.endsWith(".html"));
+
+  assert.deepEqual(htmlFiles.map((file) => file.relativePath), ["index.html"]);
+  assert.match(htmlFiles[0].contents, /One page body\./);
+});
+
+test("renderGeneratedSiteFiles emits multi-page static output from page slugs", () => {
+  const files = renderGeneratedSiteFiles(makeThreePageProject());
+  const paths = files.map((file) => file.relativePath).sort();
+
+  assert.deepEqual(paths, [
+    "about/index.html",
+    "assets/styles.css",
+    "contact/index.html",
+    "index.html",
+    "robots.txt",
+    "sitemap.xml"
+  ]);
+  assert.match(files.find((file) => file.relativePath === "index.html")?.contents || "", /Home page body\./);
+  assert.match(files.find((file) => file.relativePath === "about/index.html")?.contents || "", /About page body\./);
+  assert.match(files.find((file) => file.relativePath === "contact/index.html")?.contents || "", /555-0100/);
+});
+
+test("renderSitemap differs between one-page and multi-page projects", () => {
+  const onePage = renderSitemap(makeProject({ site: { domain: "blackfishfarms.com" } }));
+  const multiPage = renderSitemap(makeThreePageProject());
+
+  assert.notEqual(onePage, multiPage);
+  assert.equal((onePage.match(/<loc>/g) || []).length, 1);
+  assert.equal((multiPage.match(/<loc>/g) || []).length, 3);
+  assert.match(multiPage, /<loc>https:\/\/blackfishfarms\.com\/<\/loc>/);
+  assert.match(multiPage, /<loc>https:\/\/blackfishfarms\.com\/about\/<\/loc>/);
+  assert.match(multiPage, /<loc>https:\/\/blackfishfarms\.com\/contact\/<\/loc>/);
+});
+
+test("renderRobotsTxt emits an absolute public Sitemap URL", () => {
+  const robots = renderRobotsTxt(makeThreePageProject());
+
+  assert.match(robots, /^User-agent: \*/);
+  assert.match(robots, /Sitemap: https:\/\/blackfishfarms\.com\/sitemap\.xml/);
+  assert.doesNotMatch(robots, /Sitemap: \/sitemap\.xml/);
+});
+
+test("renderSiteDocument emits canonical and OG metadata per generated page", () => {
+  const project = makeThreePageProject();
+  const aboutPage = project.pages[1];
+  const html = renderSiteDocument(project, aboutPage);
+
+  assert.match(html, /<title>About \| Blackfish Farms<\/title>/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/blackfishfarms\.com\/about\/" \/>/);
+  assert.match(html, /<meta property="og:type" content="website" \/>/);
+  assert.match(html, /<meta property="og:site_name" content="Blackfish Farms" \/>/);
+  assert.match(html, /<meta property="og:title" content="About \| Blackfish Farms" \/>/);
+  assert.match(html, /<meta property="og:description" content="Local farm stand and seasonal produce\." \/>/);
+  assert.match(html, /<meta property="og:url" content="https:\/\/blackfishfarms\.com\/about\/" \/>/);
+  assert.match(html, /<meta name="twitter:card" content="summary" \/>/);
+});
+
+test("renderSiteDocument defers favicon and manifest references when unsupported", () => {
+  const html = renderSiteDocument(makeThreePageProject());
+
+  assert.doesNotMatch(html, /rel="icon"/);
+  assert.doesNotMatch(html, /rel="manifest"/);
+  assert.doesNotMatch(html, /favicon/);
+  assert.doesNotMatch(html, /manifest\.webmanifest/);
+});
+
+test("renderGeneratedSiteFiles has no leakage of editor API admin auth markup or private tokens", () => {
+  const project = {
+    ...makeThreePageProject(),
+    markupAnnotations: [
+      {
+        id: "private-note-1",
+        type: "note",
+        pageId: "page-home",
+        x: 0.5,
+        y: 0.5,
+        text: "Internal annotation only"
+      }
+    ],
+    markupFreehandStrokes: [
+      {
+        id: "private-freehand-1",
+        pageId: "page-home",
+        points: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.4 }],
+        color: "#2b6dff",
+        size: 4,
+        opacity: 1
+      }
+    ]
+  } satisfies ReturnType<typeof makeProject>;
+
+  const output = renderGeneratedSiteFiles(project).map((file) => file.contents).join("\n");
+
+  assert.doesNotMatch(output, /\/api\//);
+  assert.doesNotMatch(output, /api\/project/);
+  assert.doesNotMatch(output, /admin/i);
+  assert.doesNotMatch(output, /auth/i);
+  assert.doesNotMatch(output, /login/i);
+  assert.doesNotMatch(output, /markupAnnotations/);
+  assert.doesNotMatch(output, /markupFreehandStrokes/);
+  assert.doesNotMatch(output, /private-note-1/);
+  assert.doesNotMatch(output, /private-freehand-1/);
+  assert.doesNotMatch(output, /Internal annotation only/);
+  assert.doesNotMatch(output, /project\.json/);
+  assert.doesNotMatch(output, /token/i);
 });
 
 test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {
