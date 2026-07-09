@@ -1,53 +1,40 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderBlock, renderSiteDocument, renderSiteStyles } from "./generateSite.js";
-import type { Block, SBuildProject } from "@sbuild/shared";
+import { makeBlock, makeProject, makeTwoPageProject } from "./__fixtures__/syntheticProject.js";
+import type { Block, BlockStyles } from "@sbuild/shared";
 
 // renderBlock is the pure HTML renderer at the heart of generateSite(). These
 // tests exercise real rendering + escaping behavior without writing to disk
 // (generateSite() itself targets a fixed production dist directory).
 function block(type: Block["type"], data: any, id = `blk-${type}`): Block {
-  return { id, type, data };
+  return makeBlock(type, { id, data });
 }
 
-function projectWithBlocks(blocks: Block[]): SBuildProject {
-  return {
-    version: "0.1.0",
-    updatedAt: "2026-07-08T00:00:00.000Z",
+function projectWithBlocks(blocks: Block[]) {
+  return makeProject({
+    blocks,
     site: {
       siteName: "Public Site",
       title: "Public Site",
       description: "Public description",
       nav: []
-    },
-    globalStyles: {
-      headingFont: "Inter",
-      bodyFont: "Inter",
-      colors: {
-        bg: "#ffffff",
-        surface: "#f6f6f6",
-        text: "#111111",
-        accent: "#2b6dff",
-        muted: "#666666"
-      }
-    },
-    ai: {
-      provider: "disabled",
-      model: ""
-    },
-    deploy: {
-      method: "dry-run",
-      webRoot: ""
-    },
-    pages: [
-      {
-        id: "page-home",
-        slug: "/",
-        title: "Home",
-        blocks
-      }
-    ]
-  };
+    }
+  });
+}
+
+function cssForPreset(family: keyof Pick<BlockStyles, "backgroundStyle" | "borderStyle" | "shadowStyle" | "textEffect" | "buttonStyle">, value: string) {
+  const id = `preset-${family}-${value.replace(/[^a-z0-9-]/g, "-")}`;
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      makeBlock("hero", {
+        id,
+        data: { heading: "Preset", ctaLabel: "Go", ctaHref: "/go" },
+        styles: { [family]: value } as BlockStyles
+      })
+    ])
+  );
+  return { css, id };
 }
 
 test("renderBlock hero renders heading, subheading, and CTA", () => {
@@ -213,8 +200,213 @@ test("renderSiteStyles emits block buttonStyle preset styles scoped to the block
   assert.match(css, /\.block-hero-btn \.btn\{background:transparent;color:var\(--accent\);border:2px solid var\(--accent\);\}/);
 });
 
+for (const preset of [
+  { value: "clean", declarations: [] },
+  { value: "glass", declarations: ["backdrop-filter:blur(12px);", "-webkit-backdrop-filter:blur(12px);", "background:rgba(255,255,255,0.08);", "border:1px solid rgba(255,255,255,0.15);"] },
+  { value: "neon", declarations: ["box-shadow:0 0 20px rgba(0,255,170,0.35), inset 0 0 10px rgba(0,255,170,0.1);", "border:1px solid rgba(0,255,170,0.4);"] },
+  { value: "soft", declarations: ["box-shadow:0 8px 32px rgba(0,0,0,0.08);", "border-radius:16px;", "border:1px solid rgba(0,0,0,0.04);"] },
+  { value: "bold", declarations: ["box-shadow:0 12px 40px rgba(0,0,0,0.18);", "border-radius:8px;", "border:2px solid var(--accent);"] },
+  { value: "terminal", declarations: ["background:#0c0c0c;", "color:#33ff33;", "border:1px solid #3e5a3e;", "font-family:monospace;", "box-shadow:inset 0 0 20px rgba(51,255,51,0.05);"] },
+  { value: "image-overlay", declarations: ["background:linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7));", "color:#ffffff;"] }
+] as const) {
+  test(`renderSiteStyles maps backgroundStyle=${preset.value}`, () => {
+    const { css, id } = cssForPreset("backgroundStyle", preset.value);
+    assert.match(css, new RegExp(`\\.block-${id}\\{`));
+    for (const declaration of preset.declarations) assert.ok(css.includes(declaration), declaration);
+    if (preset.declarations.length === 0) assert.ok(css.includes(`.block-${id}{}`));
+  });
+}
+
+for (const preset of [
+  { value: "none", declarations: ["border:none;"] },
+  { value: "thin", declarations: ["border:1px solid rgba(0,0,0,.08);"] },
+  { value: "accent", declarations: ["border:2px solid var(--accent);"] },
+  { value: "double", declarations: ["border:3px double rgba(0,0,0,.08);"] },
+  { value: "dashed", declarations: ["border:2px dashed rgba(0,0,0,.08);"] },
+  { value: "glow-edge", declarations: ["border:1px solid rgba(0,255,170,0.5);"] }
+] as const) {
+  test(`renderSiteStyles maps borderStyle=${preset.value}`, () => {
+    const { css, id } = cssForPreset("borderStyle", preset.value);
+    assert.match(css, new RegExp(`\\.block-${id}\\{`));
+    for (const declaration of preset.declarations) assert.ok(css.includes(declaration), declaration);
+  });
+}
+
+for (const preset of [
+  { value: "none", declarations: [] },
+  { value: "soft", declarations: ["box-shadow:0 4px 16px rgba(0,0,0,0.06);"] },
+  { value: "lifted", declarations: ["box-shadow:0 12px 24px rgba(0,0,0,0.12);"] },
+  { value: "strong", declarations: ["box-shadow:0 16px 48px rgba(0,0,0,0.22);"] },
+  { value: "neon", declarations: ["box-shadow:0 0 24px rgba(0,255,170,0.35), 0 0 8px rgba(0,255,170,0.2);"] },
+  { value: "inner", declarations: ["box-shadow:inset 0 2px 12px rgba(0,0,0,0.08);"] }
+] as const) {
+  test(`renderSiteStyles maps shadowStyle=${preset.value}`, () => {
+    const { css, id } = cssForPreset("shadowStyle", preset.value);
+    assert.match(css, new RegExp(`\\.block-${id}\\{`));
+    for (const declaration of preset.declarations) assert.ok(css.includes(declaration), declaration);
+    if (preset.declarations.length === 0) assert.ok(css.includes(`.block-${id}{}`));
+  });
+}
+
+for (const preset of [
+  { value: "none", declarations: [] },
+  { value: "subtle-glow", declarations: ["text-shadow:0 0 8px rgba(255,255,255,0.35);"] },
+  { value: "strong-glow", declarations: ["text-shadow:0 0 16px rgba(0,255,170,0.6);"] },
+  { value: "outline", declarations: ["-webkit-text-stroke:1px currentColor;", "color:transparent;"] },
+  { value: "shadow", declarations: ["text-shadow:2px 2px 4px rgba(0,0,0,0.35);"] }
+] as const) {
+  test(`renderSiteStyles maps textEffect=${preset.value}`, () => {
+    const { css, id } = cssForPreset("textEffect", preset.value);
+    assert.match(css, new RegExp(`\\.block-${id}\\{`));
+    for (const declaration of preset.declarations) assert.ok(css.includes(declaration), declaration);
+    if (preset.declarations.length === 0) assert.ok(css.includes(`.block-${id}{}`));
+  });
+}
+
+for (const preset of [
+  { value: "solid", declarations: ["background:var(--accent);", "color:#ffffff;", "border:none;"] },
+  { value: "outline", declarations: ["background:transparent;", "color:var(--accent);", "border:2px solid var(--accent);"] },
+  { value: "ghost", declarations: ["background:transparent;", "color:var(--accent);", "border:1px solid rgba(0,0,0,0.1);"] },
+  { value: "pill", declarations: ["background:var(--accent);", "color:#ffffff;", "border:none;", "border-radius:999px;"] },
+  { value: "glow", declarations: ["background:var(--accent);", "color:#ffffff;", "border:none;", "box-shadow:0 0 16px rgba(0,255,170,0.45);"] }
+] as const) {
+  test(`renderSiteStyles maps buttonStyle=${preset.value}`, () => {
+    const { css, id } = cssForPreset("buttonStyle", preset.value);
+    assert.match(css, new RegExp(`\\.block-${id} \\.btn\\{`));
+    for (const declaration of preset.declarations) assert.ok(css.includes(declaration), declaration);
+  });
+}
+
+test("renderBlock covers generated output for extended block types", () => {
+  const cases: Array<{ block: Block; expected: RegExp[] }> = [
+    {
+      block: makeBlock("hours", { id: "hours-fixture", data: { title: "Pickup Hours", rows: [{ day: "Tuesday", open: "09:00", close: "13:00" }] } }),
+      expected: [/type-hours/, /<h2>Pickup Hours<\/h2>/, /<strong>Tuesday<\/strong> 09:00-13:00/]
+    },
+    {
+      block: makeBlock("gallery", { id: "gallery-fixture", data: { title: "Gallery", images: [{ id: "img-1", src: "/images/shed.png", alt: "Packing shed" }] } }),
+      expected: [/type-gallery/, /<div class="gallery">/, /<img src="\/images\/shed\.png" alt="Packing shed"\/>/]
+    },
+    {
+      block: makeBlock("contact", { id: "contact-fixture", data: { title: "Contact", phone: "555-0101", email: "team@example.test", address: "10 Test Lane" } }),
+      expected: [/type-contact/, /555-0101/, /team@example\.test/, /10 Test Lane/]
+    },
+    {
+      block: makeBlock("testimonial", { id: "testimonial-fixture", data: { quote: "Fresh synthetic produce.", author: "Test Customer" } }),
+      expected: [/type-testimonial/, /Fresh synthetic produce\./, /<cite>Test Customer<\/cite>/]
+    },
+    {
+      block: makeBlock("map", { id: "map-fixture", data: { embedUrl: "https://maps.example.test/embed?place=farm" } }),
+      expected: [/type-map/, /<h2>Map<\/h2>/, /<iframe src="https:\/\/maps\.example\.test\/embed\?place=farm"><\/iframe>/]
+    },
+    {
+      block: makeBlock("marquee", { id: "marquee-fixture", data: { text: "Market open Saturday" } }),
+      expected: [/type-marquee/, /<div class="marquee-track">Market open Saturday<\/div>/]
+    },
+    {
+      block: makeBlock("spacer", { id: "spacer-fixture", data: { height: 48 } }),
+      expected: [/type-spacer/, /style="height:48px"/]
+    }
+  ];
+
+  for (const item of cases) {
+    const html = renderBlock(item.block);
+    for (const expected of item.expected) assert.match(html, expected);
+  }
+});
+
+test("renderBlock html pins the current trusted embed boundary", () => {
+  // HTML blocks are trusted owner-authored embeds today; they intentionally render raw HTML.
+  const html = renderBlock(
+    makeBlock("html", {
+      id: "html-fixture",
+      data: { html: '<div data-synthetic-html="true"><strong>Trusted embed</strong></div>' }
+    })
+  );
+
+  assert.match(html, /type-html/);
+  assert.match(html, /<div data-synthetic-html="true"><strong>Trusted embed<\/strong><\/div>/);
+  assert.doesNotMatch(html, /&lt;strong&gt;Trusted embed/);
+});
+
+test("renderSiteStyles layers all accepted block preset families on one block", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      makeBlock("hero", {
+        id: "all-presets",
+        data: { heading: "Layered", ctaLabel: "Shop", ctaHref: "/shop" },
+        styles: {
+          backgroundStyle: "soft",
+          borderStyle: "accent",
+          shadowStyle: "lifted",
+          textEffect: "shadow",
+          buttonStyle: "pill"
+        }
+      })
+    ])
+  );
+
+  assert.match(css, /\.block-all-presets\{/);
+  assert.ok(css.includes("box-shadow:0 8px 32px rgba(0,0,0,0.08);"));
+  assert.ok(css.includes("border:2px solid var(--accent);"));
+  assert.ok(css.includes("box-shadow:0 12px 24px rgba(0,0,0,0.12);"));
+  assert.ok(css.includes("text-shadow:2px 2px 4px rgba(0,0,0,0.35);"));
+  assert.match(css, /\.block-all-presets \.btn\{background:var\(--accent\);color:#ffffff;border:none;border-radius:999px;\}/);
+});
+
+test("renderSiteStyles preserves legacy block fields when preset styles are present", () => {
+  const css = renderSiteStyles(
+    projectWithBlocks([
+      makeBlock("text", {
+        id: "legacy-with-presets",
+        styles: {
+          backgroundColor: "#123456",
+          textColor: "#fefefe",
+          padding: 22,
+          shadow: "0 1px 2px rgba(0,0,0,0.2)",
+          backgroundStyle: "terminal",
+          borderStyle: "thin"
+        }
+      })
+    ])
+  );
+
+  assert.match(css, /\.block-legacy-with-presets\{/);
+  assert.ok(css.includes("background:#123456;"));
+  assert.ok(css.includes("color:#fefefe;"));
+  assert.ok(css.includes("padding:22px;"));
+  assert.ok(css.includes("box-shadow:0 1px 2px rgba(0,0,0,0.2);"));
+  assert.ok(css.includes("background:#0c0c0c;"));
+  assert.ok(css.includes("font-family:monospace;"));
+  assert.ok(css.includes("border:1px solid rgba(0,0,0,.08);"));
+});
+
+test("renderSiteStyles pins the current page0-only per-block CSS boundary", () => {
+  const css = renderSiteStyles(
+    makeTwoPageProject(
+      [
+        makeBlock("text", {
+          id: "page0-styled-block",
+          styles: { backgroundStyle: "soft" }
+        })
+      ],
+      [
+        makeBlock("text", {
+          id: "page1-styled-block",
+          styles: { backgroundStyle: "bold" }
+        })
+      ]
+    )
+  );
+
+  assert.match(css, /\.block-page0-styled-block\{/);
+  assert.ok(css.includes("box-shadow:0 8px 32px rgba(0,0,0,0.08);"));
+  assert.doesNotMatch(css, /\.block-page1-styled-block\{/);
+  assert.doesNotMatch(css, /box-shadow:0 12px 40px rgba\(0,0,0,0\.18\);/);
+});
+
 test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {
-  const project: SBuildProject = {
+  const project = {
     version: "0.1.0",
     updatedAt: "2026-06-27T00:00:00.000Z",
     site: {
@@ -270,7 +462,7 @@ test("renderSiteDocument excludes editor-only Markup annotations from public out
         blocks: [block("text", { title: "Visible", body: "Public body" })]
       }
     ]
-  };
+  } satisfies ReturnType<typeof makeProject>;
 
   const html = renderSiteDocument(project);
 
