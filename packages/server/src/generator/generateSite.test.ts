@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
+  copyProjectImages,
   renderBlock,
   renderGeneratedSiteFiles,
   renderRobotsTxt,
@@ -78,6 +82,35 @@ function cssForPreset(family: keyof Pick<BlockStyles, "backgroundStyle" | "borde
     ])
   );
   return { css, id };
+}
+
+async function withImageCopyWorkspace(
+  fn: (workspace: { sourceRoot: string; outputRoot: string }) => Promise<void>
+) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "sbuild-image-copy-"));
+  try {
+    const sourceRoot = path.join(root, "project-images");
+    const outputRoot = path.join(root, "output-images");
+    await fs.mkdir(sourceRoot, { recursive: true });
+    await fn({ sourceRoot, outputRoot });
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function writeProjectImage(sourceRoot: string, relativePath: string, contents = "image") {
+  const target = path.join(sourceRoot, relativePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, contents);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 test("renderBlock hero renders heading, subheading, and CTA", () => {
@@ -556,6 +589,181 @@ test("renderGeneratedSiteFiles has no leakage of editor API admin auth markup or
   assert.doesNotMatch(output, /Internal annotation only/);
   assert.doesNotMatch(output, /project\.json/);
   assert.doesNotMatch(output, /token/i);
+});
+
+test("copyProjectImages copies referenced image block assets only", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "referenced.png");
+    await writeProjectImage(sourceRoot, "unreferenced.png");
+
+    const project = projectWithBlocks([
+      block("image", { src: "/project/images/referenced.png", alt: "Referenced" })
+    ]);
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied.map((file) => path.relative(outputRoot, file)), ["referenced.png"]);
+    assert.equal(await fileExists(path.join(outputRoot, "referenced.png")), true);
+    assert.equal(await fileExists(path.join(outputRoot, "unreferenced.png")), false);
+  });
+});
+
+test("copyProjectImages copies referenced gallery images", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "gallery/one.png");
+    await writeProjectImage(sourceRoot, "gallery/two.webp");
+    await writeProjectImage(sourceRoot, "gallery/not-rendered.png");
+
+    const project = projectWithBlocks([
+      makeBlock("gallery", {
+        id: "gallery-copy",
+        data: {
+          title: "Gallery",
+          images: [
+            { id: "one", src: "/project/images/gallery/one.png", alt: "One" },
+            { id: "two", src: "project/images/gallery/two.webp?cache=1", alt: "Two" }
+          ]
+        }
+      })
+    ]);
+
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied.map((file) => path.relative(outputRoot, file)).sort(), ["gallery/one.png", "gallery/two.webp"]);
+    assert.equal(await fileExists(path.join(outputRoot, "gallery/one.png")), true);
+    assert.equal(await fileExists(path.join(outputRoot, "gallery/two.webp")), true);
+    assert.equal(await fileExists(path.join(outputRoot, "gallery/not-rendered.png")), false);
+  });
+});
+
+test("copyProjectImages ignores external image URLs and data URLs", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "local.png");
+
+    const project = projectWithBlocks([
+      block("image", { src: "https://cdn.example.test/remote.png", alt: "Remote" }, "external-image"),
+      makeBlock("gallery", {
+        id: "data-gallery",
+        data: {
+          title: "Gallery",
+          images: [{ id: "inline", src: "data:image/png;base64,AAAA", alt: "Inline" }]
+        }
+      })
+    ]);
+
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied, []);
+    assert.equal(await fileExists(path.join(outputRoot, "local.png")), false);
+  });
+});
+
+test("copyProjectImages does not copy traversal attempts or absolute private filesystem paths", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "safe.png");
+
+    const project = projectWithBlocks([
+      block("image", { src: "/project/images/../private.png", alt: "Traversal" }, "traversal-image"),
+      block("image", { src: "/home/slimy/private.png", alt: "Private path" }, "absolute-private-image")
+    ]);
+
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied, []);
+    assert.equal(await fileExists(path.join(outputRoot, "private.png")), false);
+    assert.equal(await fileExists(path.join(outputRoot, "safe.png")), false);
+  });
+});
+
+test("copyProjectImages does not copy cards image fields because renderBlock does not render them", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "cards/private-card.png");
+
+    const project = projectWithBlocks([
+      makeBlock("cards", {
+        id: "cards-with-private-image",
+        data: {
+          title: "Cards",
+          cards: [
+            {
+              id: "card-1",
+              title: "Private image field",
+              body: "Body",
+              image: "/project/images/cards/private-card.png"
+            }
+          ]
+        }
+      })
+    ]);
+
+    const html = renderBlock(project.pages[0].blocks[0]);
+    assert.doesNotMatch(html, /private-card\.png/);
+
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied, []);
+    assert.equal(await fileExists(path.join(outputRoot, "cards/private-card.png")), false);
+  });
+});
+
+test("copyProjectImages copies referenced background images from generated CSS", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "backgrounds/hero.jpg");
+    await writeProjectImage(sourceRoot, "backgrounds/unreferenced.jpg");
+
+    const project = projectWithBlocks([
+      makeBlock("hero", {
+        id: "hero-background",
+        data: { heading: "Background" },
+        styles: { backgroundImage: "/project/images/backgrounds/hero.jpg" }
+      })
+    ]);
+
+    const copied = await copyProjectImages(project, renderGeneratedSiteFiles(project), {
+      projectImagesRoot: sourceRoot,
+      outputDir: outputRoot
+    });
+
+    assert.deepEqual(copied.map((file) => path.relative(outputRoot, file)), ["backgrounds/hero.jpg"]);
+    assert.equal(await fileExists(path.join(outputRoot, "backgrounds/hero.jpg")), true);
+    assert.equal(await fileExists(path.join(outputRoot, "backgrounds/unreferenced.jpg")), false);
+  });
+});
+
+test("copyProjectImages post-render verification guards unexpected local refs", async () => {
+  await withImageCopyWorkspace(async ({ sourceRoot, outputRoot }) => {
+    await writeProjectImage(sourceRoot, "unexpected.png");
+
+    const project = projectWithBlocks([
+      makeBlock("html", {
+        id: "html-unexpected-image",
+        data: { html: '<img src="/project/images/unexpected.png" alt="Unexpected" />' }
+      })
+    ]);
+
+    await assert.rejects(
+      copyProjectImages(project, renderGeneratedSiteFiles(project), {
+        projectImagesRoot: sourceRoot,
+        outputDir: outputRoot
+      }),
+      /Unexpected rendered local image reference\(s\): unexpected\.png/
+    );
+    assert.equal(await fileExists(path.join(outputRoot, "unexpected.png")), false);
+  });
 });
 
 test("renderSiteDocument excludes editor-only Markup annotations from public output", () => {

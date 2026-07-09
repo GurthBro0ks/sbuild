@@ -4,6 +4,11 @@ import { Block, SBuildProject } from "@sbuild/shared";
 import { distDir, projectImagesDir } from "../lib/paths.js";
 
 type GeneratedPage = SBuildProject["pages"][number];
+type GeneratedSiteFile = { relativePath: string; contents: string };
+type CopyProjectImagesOptions = {
+  projectImagesRoot?: string;
+  outputDir?: string;
+};
 
 function escapeHtml(value: string): string {
   return value
@@ -273,27 +278,107 @@ ${blockCss(project)}
 `;
 }
 
-async function copyProjectImages(): Promise<void> {
-  const outputImageDir = path.join(distDir, "images");
-  await fs.mkdir(outputImageDir, { recursive: true });
-  const copyRecursive = async (srcDir: string, destDir: string): Promise<void> => {
-    const entries = await fs.readdir(srcDir, { withFileTypes: true });
-    await fs.mkdir(destDir, { recursive: true });
-    for (const entry of entries) {
-      const src = path.join(srcDir, entry.name);
-      const dest = path.join(destDir, entry.name);
-      if (entry.isDirectory()) {
-        await copyRecursive(src, dest);
-      } else {
-        await fs.copyFile(src, dest);
+function isExternalOrInlineImageRef(raw: string): boolean {
+  return /^(?:https?:)?\/\//i.test(raw) || /^data:/i.test(raw);
+}
+
+function normalizeLocalProjectImageRef(input: unknown): string | null {
+  const raw = String(input || "").trim();
+  if (!raw || isExternalOrInlineImageRef(raw)) return null;
+
+  const pathOnly = raw.split(/[?#]/)[0].replace(/\\/g, "/");
+  let relative: string | null = null;
+  if (pathOnly.startsWith("/project/images/")) relative = pathOnly.slice("/project/images/".length);
+  else if (pathOnly.startsWith("project/images/")) relative = pathOnly.slice("project/images/".length);
+  else if (pathOnly.startsWith("/images/")) relative = pathOnly.slice("/images/".length);
+  else if (pathOnly.startsWith("images/")) relative = pathOnly.slice("images/".length);
+  else return null;
+
+  const normalized = path.posix.normalize(relative.replace(/^\/+/, ""));
+  if (!normalized || normalized === "." || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) {
+    return null;
+  }
+  if (path.posix.basename(normalized).startsWith(".")) return null;
+  return normalized;
+}
+
+function collectRenderedLocalImageAssets(project: SBuildProject): Set<string> {
+  const referenced = new Set<string>();
+  const record = (value: unknown): void => {
+    const normalized = normalizeLocalProjectImageRef(value);
+    if (normalized) referenced.add(normalized);
+  };
+
+  for (const page of generatedPages(project)) {
+    for (const block of page.blocks || []) {
+      const data = block.data as any;
+      if (block.styles?.backgroundImage) record(block.styles.backgroundImage);
+      if (block.type === "image") record(data.src);
+      if (block.type === "gallery") {
+        for (const image of data.images || []) record(image.src);
       }
     }
-  };
-  try {
-    await copyRecursive(projectImagesDir, outputImageDir);
-  } catch {
-    // no images yet
   }
+
+  return referenced;
+}
+
+function scanRenderedLocalImageRefs(files: GeneratedSiteFile[]): Set<string> {
+  const rendered = new Set<string>();
+  const attrPattern = /\b(?:src|href)=["']([^"']+)["']/gi;
+  const cssUrlPattern = /url\(\s*['"]?([^'")]+)['"]?\s*\)/gi;
+
+  for (const file of files) {
+    for (const pattern of [attrPattern, cssUrlPattern]) {
+      pattern.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(file.contents)) !== null) {
+        const normalized = normalizeLocalProjectImageRef(match[1]);
+        if (normalized) rendered.add(normalized);
+      }
+    }
+  }
+
+  return rendered;
+}
+
+function assertNoUnexpectedRenderedImageRefs(files: GeneratedSiteFile[], referenced: Set<string>): void {
+  const unexpected = [...scanRenderedLocalImageRefs(files)].filter((relative) => !referenced.has(relative));
+  if (unexpected.length > 0) {
+    throw new Error(`Unexpected rendered local image reference(s): ${unexpected.join(", ")}`);
+  }
+}
+
+export async function copyProjectImages(
+  project: SBuildProject,
+  renderedFiles: GeneratedSiteFile[] = renderGeneratedSiteFiles(project),
+  options: CopyProjectImagesOptions = {}
+): Promise<string[]> {
+  const referenced = collectRenderedLocalImageAssets(project);
+  assertNoUnexpectedRenderedImageRefs(renderedFiles, referenced);
+  if (referenced.size === 0) return [];
+
+  const sourceRoot = path.resolve(options.projectImagesRoot || projectImagesDir);
+  const outputImageDir = path.resolve(options.outputDir || path.join(distDir, "images"));
+  const copied: string[] = [];
+
+  for (const relative of [...referenced].sort()) {
+    const src = path.resolve(sourceRoot, relative);
+    if (!src.startsWith(sourceRoot + path.sep) && src !== sourceRoot) continue;
+
+    const dest = path.resolve(outputImageDir, relative);
+    if (!dest.startsWith(outputImageDir + path.sep) && dest !== outputImageDir) continue;
+
+    try {
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.copyFile(src, dest);
+      copied.push(dest);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
+  return copied;
 }
 
 export function renderSiteDocument(project: SBuildProject, page: GeneratedPage = generatedPages(project)[0]): string {
@@ -341,7 +426,7 @@ export function renderRobotsTxt(project: SBuildProject): string {
   return `User-agent: *\nAllow: /\nSitemap: ${siteBaseUrl(project)}/sitemap.xml\n`;
 }
 
-export function renderGeneratedSiteFiles(project: SBuildProject): Array<{ relativePath: string; contents: string }> {
+export function renderGeneratedSiteFiles(project: SBuildProject): GeneratedSiteFile[] {
   const htmlFiles = generatedPages(project).map((page, index) => ({
     relativePath: outputRelativePathForPage(page, index),
     contents: renderSiteDocument(project, page)
@@ -360,15 +445,16 @@ export async function generateSite(project: SBuildProject): Promise<{ outputDir:
   await fs.mkdir(path.join(distDir, "assets"), { recursive: true });
 
   const files: string[] = [];
+  const generatedFiles = renderGeneratedSiteFiles(project);
 
-  for (const file of renderGeneratedSiteFiles(project)) {
+  for (const file of generatedFiles) {
     const relativePath = file.relativePath;
     const absolutePath = path.join(distDir, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, file.contents, "utf8");
     files.push(absolutePath);
   }
-  await copyProjectImages();
+  files.push(...await copyProjectImages(project, generatedFiles));
 
   return {
     outputDir: distDir,
