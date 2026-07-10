@@ -440,24 +440,40 @@ export function renderGeneratedSiteFiles(project: SBuildProject): GeneratedSiteF
   ];
 }
 
-export async function generateSite(project: SBuildProject): Promise<{ outputDir: string; files: string[] }> {
-  await fs.mkdir(distDir, { recursive: true });
-  await fs.mkdir(path.join(distDir, "assets"), { recursive: true });
+export type GenerateSiteOptions = {
+  outputDir: string;
+  projectImagesRoot?: string;
+};
+
+export async function generateSiteToDirectory(
+  project: SBuildProject,
+  options: GenerateSiteOptions
+): Promise<{ outputDir: string; files: string[] }> {
+  const outputDir = path.resolve(options.outputDir);
+  await fs.mkdir(outputDir, { recursive: true });
+  await fs.mkdir(path.join(outputDir, "assets"), { recursive: true });
 
   const files: string[] = [];
   const generatedFiles = renderGeneratedSiteFiles(project);
 
   for (const file of generatedFiles) {
     const relativePath = file.relativePath;
-    const absolutePath = path.join(distDir, relativePath);
+    const absolutePath = path.join(outputDir, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, file.contents, "utf8");
     files.push(absolutePath);
   }
-  files.push(...await copyProjectImages(project, generatedFiles));
+  files.push(...await copyProjectImages(project, generatedFiles, {
+    ...(options.projectImagesRoot ? { projectImagesRoot: options.projectImagesRoot } : {}),
+    outputDir: path.join(outputDir, "images")
+  }));
 
   return {
-    outputDir: distDir,
+    outputDir,
     files
   };
+}
+
+export async function generateSite(project: SBuildProject): Promise<{ outputDir: string; files: string[] }> {
+  return generateSiteToDirectory(project, { outputDir: distDir });
 }
