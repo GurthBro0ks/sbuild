@@ -66,7 +66,7 @@ curl -iS "http://localhost:${PORT}/health" > "$PROOF_DIR/curl-health-i.txt"
 
 ROOT_STATUS="$(curl -sS -o "$PROOF_DIR/curl-root.txt" -w "%{http_code}" "http://localhost:${PORT}/")"
 LOGIN_STATUS="$(curl -sS -o "$PROOF_DIR/curl-login.txt" -w "%{http_code}" "http://localhost:${PORT}/login")"
-PUBLISH_UNAUTH_STATUS="$(curl -sS -o "$PROOF_DIR/curl-publish-unauth.json" -w "%{http_code}" -X POST "http://localhost:${PORT}/api/publish" -H 'content-type: application/json' -d '{}')"
+PUBLISH_UNAUTH_STATUS="$(curl -sS -o "$PROOF_DIR/curl-publish-unauth.json" -w "%{http_code}" -X POST "http://localhost:${PORT}/api/publish" -H 'content-type: application/json' -d '{"dryRun":true}')"
 
 if [[ "$ROOT_STATUS" != "200" && "$ROOT_STATUS" != "302" ]]; then
   log "FAIL unauth root status unexpected: $ROOT_STATUS"
@@ -120,7 +120,7 @@ else
   curl -fsS "http://localhost:${PORT}/api/ai/opencode/auth-status" "${CURL_AUTH[@]}" | tee "$PROOF_DIR/curl-opencode-auth-status.json"
   curl -fsS "http://localhost:${PORT}/api/secrets/status" "${CURL_AUTH[@]}" | tee "$PROOF_DIR/curl-secrets-status.json"
   curl -fsS -X POST "http://localhost:${PORT}/api/build" "${CURL_AUTH[@]}" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-build.json"
-  curl -fsS -X POST "http://localhost:${PORT}/api/publish" "${CURL_AUTH[@]}" -H 'content-type: application/json' -d '{}' | tee "$PROOF_DIR/curl-publish.json"
+  curl -fsS -X POST "http://localhost:${PORT}/api/publish" "${CURL_AUTH[@]}" -H 'content-type: application/json' -d '{"dryRun":true}' | tee "$PROOF_DIR/curl-publish.json"
   curl -iS "http://localhost:${PORT}/api/unknown-route" "${CURL_AUTH[@]}" > "$PROOF_DIR/curl-api-unknown-i.txt"
 
   node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));if(!p.sizeDecision||!p.sizeDecision.providerSize){throw new Error('sizeDecision missing from /api/ai/image response')}console.log('sizeDecision check ok')" "$PROOF_DIR/curl-ai-image.json" | tee -a "$PROOF_DIR/smoke.log"

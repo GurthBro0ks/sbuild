@@ -3924,11 +3924,13 @@ export function App() {
 
   async function runPublish() {
     setStatus("Running publish dry-run...");
-    const data = await fetchJson<{ ok: boolean; dryRun?: boolean; target?: string }>("/api/publish", { method: "POST", body: "{}" });
-    if (data.ok) {
-      const isDryRun = data.dryRun || !buildInfo?.publishAllowed;
-      setStatus(isDryRun ? `Dry-run complete: no public changes made → ${data.target}` : `Live publish complete → ${data.target}`);
+    try {
+      const data = await fetchJson<{ ok: boolean; dryRun?: boolean; target?: string }>("/api/publish", { method: "POST", body: JSON.stringify({ dryRun: true }) });
+      if (!data.ok || data.dryRun !== true) throw new Error("Server did not confirm a dry-run");
+      setStatus(`Dry-run complete: no public changes made → ${data.target}`);
       setLastAction("publish");
+    } catch (error) {
+      setStatus(`Publish dry-run failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
