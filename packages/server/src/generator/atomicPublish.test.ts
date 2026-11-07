@@ -81,7 +81,276 @@ test("promoteAtomicPublish creates a timestamp-sha release and atomically swaps 
     assert.equal(await getCurrentReleaseName(rootDir), result.releaseName);
     assert.equal(await currentSymlinkTarget(rootDir), path.join("releases", result.releaseName));
     assert.equal(await fs.readFile(path.join(result.releaseDir, "index.html"), "utf8"), "<html>release-one</html>");
+    assert.equal(await fs.readFile(path.join(result.releaseDir, "assets/styles.css"), "utf8"), 'body{content:"release-one"}');
+    assert.deepEqual((await fs.readdir(result.releaseDir)).sort(), ["assets", "index.html", "robots.txt", "sitemap.xml"]);
     assert.equal((await fs.lstat(path.join(rootDir, "current"))).isSymbolicLink(), true);
+  });
+});
+
+test("promotion copies hidden files and nested directories without changing the stage", async () => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir);
+    await fs.mkdir(path.join(stageDir, ".well-known", "nested"), { recursive: true });
+    await fs.writeFile(path.join(stageDir, ".well-known", "nested", "verification.txt"), "verification");
+    const result = await promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "abcdef1" });
+    for (const directory of [stageDir, result.releaseDir]) {
+      assert.equal(await fs.readFile(path.join(directory, ".well-known", "nested", "verification.txt"), "utf8"), "verification");
+      assert.equal(await fs.readFile(path.join(directory, "index.html"), "utf8"), "<html>site</html>");
+    }
+  });
+});
+
+test("promotion refuses existing release directories, files and dangling symlinks without removing them", async (t) => {
+  for (const kind of ["directory", "file", "symlink"] as const) {
+    await t.test(kind, async () => {
+      await withWorkspace(async ({ rootDir, stageDir }) => {
+        await writeStageSite(stageDir);
+        const releaseName = "20260709T171500Z-abcdef1";
+        const releaseDir = path.join(rootDir, "releases", releaseName);
+        await fs.mkdir(path.dirname(releaseDir));
+        if (kind === "directory") {
+          await fs.mkdir(releaseDir);
+          await fs.writeFile(path.join(releaseDir, "sentinel"), "existing");
+        } else if (kind === "file") {
+          await fs.writeFile(releaseDir, "existing");
+        } else {
+          await fs.symlink("missing-release", releaseDir);
+        }
+        await assert.rejects(
+          promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "abcdef1", releaseName }),
+          /Release already exists/
+        );
+        if (kind === "symlink") assert.equal(await fs.readlink(releaseDir), "missing-release");
+        else assert.equal(await fs.readFile(kind === "directory" ? path.join(releaseDir, "sentinel") : releaseDir, "utf8"), "existing");
+        assert.deepEqual(await fs.readdir(path.dirname(releaseDir)), [releaseName]);
+        await assert.rejects(fs.lstat(path.join(rootDir, "current")), { code: "ENOENT" });
+      });
+    });
+  }
+});
+
+test("concurrent promotions with the same name have exactly one owner", async () => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir);
+    const options = { rootDir, stageDir, domain: "example.com", gitSha: "abcdef1", releaseName: "20260709T171500Z-abcdef1" };
+    const outcomes = await Promise.allSettled([promoteAtomicPublish(options), promoteAtomicPublish(options)]);
+    assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+    const failure = outcomes.find((outcome) => outcome.status === "rejected");
+    assert.ok(failure?.status === "rejected");
+    assert.match(String(failure.reason), /Publish root is locked|Release already exists/);
+    assert.equal(await getCurrentReleaseName(rootDir), options.releaseName);
+    assert.equal(await fs.readFile(path.join(rootDir, "current", "index.html"), "utf8"), "<html>site</html>");
+  });
+});
+
+test("invalid current entries clean up only the newly owned release", async (t) => {
+  for (const kind of ["file", "directory", "malformed-symlink"] as const) {
+    await t.test(kind, async () => {
+      await withWorkspace(async ({ rootDir, stageDir }) => {
+        await writeStageSite(stageDir);
+        const current = path.join(rootDir, "current");
+        if (kind === "file") await fs.writeFile(current, "existing");
+        else if (kind === "directory") await fs.mkdir(current);
+        else await fs.symlink("releases/not-a-release", current);
+        const sentinel = "20260709T171500Z-1111111";
+        await fs.mkdir(path.join(rootDir, "releases", sentinel), { recursive: true });
+        await fs.writeFile(path.join(rootDir, "releases", sentinel, "sentinel"), "existing");
+        await assert.rejects(
+          promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "abcdef1", releaseName: "20260709T171600Z-abcdef1" }),
+          kind === "malformed-symlink" ? /Unsafe release name/ : /current must be a symlink/
+        );
+        assert.deepEqual(await fs.readdir(path.join(rootDir, "releases")), [sentinel]);
+        assert.equal(await fs.readFile(path.join(rootDir, "releases", sentinel, "sentinel"), "utf8"), "existing");
+        if (kind === "malformed-symlink") assert.equal(await fs.readlink(current), "releases/not-a-release");
+        else if (kind === "file") assert.equal(await fs.readFile(current, "utf8"), "existing");
+        else assert.equal((await fs.lstat(current)).isDirectory(), true);
+      });
+    });
+  }
+});
+
+test("a partial copy failure removes the new release and preserves current and stage", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir, "first");
+    const first = await promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "1111111" });
+    await resetStage(stageDir, "second");
+    const copy = fs.cp;
+    const failure = new Error("injected failure after copying a child");
+    const mock = t.mock.method(fs, "cp", async (...args: Parameters<typeof fs.cp>) => {
+      await copy(...args);
+      throw failure;
+    });
+    try {
+      await assert.rejects(promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "2222222" }), (error) => error === failure);
+      assert.equal(mock.mock.callCount(), 1);
+      assert.deepEqual(await listReleaseNames(rootDir), [first.releaseName]);
+      assert.equal(await currentSymlinkTarget(rootDir), path.join("releases", first.releaseName));
+      assert.equal(await fs.readFile(path.join(rootDir, "current", "index.html"), "utf8"), "<html>first</html>");
+      assert.equal(await fs.readFile(path.join(stageDir, "index.html"), "utf8"), "<html>second</html>");
+    } finally {
+      mock.mock.restore();
+    }
+  });
+});
+
+test("a destination child collision is refused and the owned release is cleaned up", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir);
+    const releaseName = "20260709T171500Z-abcdef1";
+    const read = fs.readdir;
+    const mock = t.mock.method(fs, "readdir", async (...args: Parameters<typeof fs.readdir>) => {
+      const entries = await read(...args);
+      if (args[0] === stageDir) {
+        await fs.writeFile(path.join(rootDir, "releases", releaseName, "index.html"), "collision");
+      }
+      return entries;
+    });
+    try {
+      await assert.rejects(
+        promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "abcdef1", releaseName }),
+        { code: "ERR_FS_CP_EEXIST" }
+      );
+      assert.deepEqual(await listReleaseNames(rootDir), []);
+      await assert.rejects(fs.lstat(path.join(rootDir, "current")), { code: "ENOENT" });
+      assert.equal(await fs.readFile(path.join(stageDir, "index.html"), "utf8"), "<html>site</html>");
+    } finally {
+      mock.mock.restore();
+    }
+  });
+});
+
+test("a failed current swap cleans up the new release and temporary symlink", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir, "first");
+    const first = await promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "1111111" });
+    await resetStage(stageDir, "second");
+    const failure = new Error("injected rename failure");
+    const mock = t.mock.method(fs, "rename", async () => { throw failure; });
+    try {
+      await assert.rejects(promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "2222222" }), (error) => error === failure);
+      assert.deepEqual(await listReleaseNames(rootDir), [first.releaseName]);
+      assert.deepEqual((await fs.readdir(rootDir)).sort(), ["current", "releases"]);
+      assert.equal(await currentSymlinkTarget(rootDir), path.join("releases", first.releaseName));
+      assert.equal(await fs.readFile(path.join(rootDir, "current", "index.html"), "utf8"), "<html>first</html>");
+    } finally {
+      mock.mock.restore();
+    }
+  });
+});
+
+test("rollback holds the root lock through failure cleanup and allows a later retry", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir);
+    const first = await promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "1111111" });
+    const second = await promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "2222222" });
+    let started!: () => void;
+    const startedGate = new Promise<void>((resolve) => { started = resolve; });
+    let release!: () => void;
+    const releaseGate = new Promise<void>((resolve) => { release = resolve; });
+    const failure = new Error("injected rollback rename failure");
+    const mock = t.mock.method(fs, "rename", async () => {
+      started();
+      await releaseGate;
+      throw failure;
+    });
+    const options = { rootDir, targetReleaseName: first.releaseName };
+    const failed = assert.rejects(rollbackAtomicPublish(options), (error) => error === failure);
+    try {
+      await startedGate;
+      await assert.rejects(rollbackAtomicPublish(options), /Publish root is locked/);
+      await assert.rejects(retainAtomicReleases({ rootDir, retainReleases: 0 }), /Publish root is locked/);
+      assert.equal(await getCurrentReleaseName(rootDir), second.releaseName);
+    } finally {
+      release();
+      await failed;
+      mock.mock.restore();
+    }
+    assert.deepEqual((await fs.readdir(rootDir)).sort(), ["current", "releases"]);
+    assert.equal((await rollbackAtomicPublish(options)).releaseName, first.releaseName);
+  });
+});
+
+test("retention and other publishers cannot delete an in-progress release", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir, "first");
+    const firstName = "20260709T171500Z-1111111";
+    const secondName = "20260709T171600Z-2222222";
+    let paused!: () => void;
+    const pausedGate = new Promise<void>((resolve) => { paused = resolve; });
+    let resume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => { resume = resolve; });
+    const copy = fs.cp;
+    const mock = t.mock.method(fs, "cp", async (...args: Parameters<typeof fs.cp>) => {
+      if (args[0] === path.join(stageDir, "index.html")) {
+        paused();
+        await resumeGate;
+      }
+      return copy(...args);
+    });
+    const options = { rootDir, stageDir, domain: "example.com", gitSha: "1111111" };
+    const first = promoteAtomicPublish({ ...options, releaseName: firstName });
+    try {
+      await pausedGate;
+      assert.equal(await fs.readFile(path.join(rootDir, "releases", firstName, "assets/styles.css"), "utf8"), 'body{content:"first"}');
+      await assert.rejects(promoteAtomicPublish({ ...options, releaseName: secondName, retainReleases: 0 }), /Publish root is locked/);
+      await assert.rejects(retainAtomicReleases({ rootDir, retainReleases: 0 }), /Publish root is locked/);
+      await assert.rejects(rollbackAtomicPublish({ rootDir, targetReleaseName: firstName }), /Publish root is locked/);
+      assert.deepEqual(await listReleaseNames(rootDir), [firstName]);
+    } finally {
+      resume();
+      await first;
+      mock.mock.restore();
+    }
+    assert.equal(await getCurrentReleaseName(rootDir), firstName);
+    assert.equal(await fs.readFile(path.join(rootDir, "current/assets/styles.css"), "utf8"), 'body{content:"first"}');
+    assert.equal(await fs.readFile(path.join(rootDir, "current/index.html"), "utf8"), "<html>first</html>");
+    const second = await promoteAtomicPublish({ ...options, releaseName: secondName, retainReleases: 0 });
+    assert.equal(second.previousReleaseName, firstName);
+    assert.deepEqual(await listReleaseNames(rootDir), [firstName, secondName]);
+    assert.deepEqual(await retainAtomicReleases({ rootDir, retainReleases: 0 }), [firstName]);
+    assert.equal(await getCurrentReleaseName(rootDir), secondName);
+  });
+});
+
+test("existing lock entries are refused without takeover or cleanup", async (t) => {
+  for (const kind of ["empty-directory", "nonempty-directory", "file", "symlink"] as const) {
+    await t.test(kind, async () => {
+      await withWorkspace(async ({ rootDir, stageDir }) => {
+        await writeStageSite(stageDir);
+        const lock = path.join(rootDir, ".atomic-publish.lock");
+        if (kind.endsWith("directory")) {
+          await fs.mkdir(lock);
+          if (kind === "nonempty-directory") await fs.writeFile(path.join(lock, "sentinel"), "existing");
+        } else if (kind === "file") await fs.writeFile(lock, "existing");
+        else await fs.symlink("missing-lock", lock);
+        await assert.rejects(promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "1111111" }), /Publish root is locked/);
+        await assert.rejects(retainAtomicReleases({ rootDir, retainReleases: 0 }), /Publish root is locked/);
+        await assert.rejects(rollbackAtomicPublish({ rootDir }), /Publish root is locked/);
+        if (kind === "symlink") assert.equal(await fs.readlink(lock), "missing-lock");
+        else if (kind === "file") assert.equal(await fs.readFile(lock, "utf8"), "existing");
+        else if (kind === "nonempty-directory") assert.equal(await fs.readFile(path.join(lock, "sentinel"), "utf8"), "existing");
+        else assert.deepEqual(await fs.readdir(lock), []);
+        assert.deepEqual(await fs.readdir(rootDir), [".atomic-publish.lock"]);
+      });
+    });
+  }
+});
+
+test("lock release failure preserves committed output and refuses subsequent mutation", async (t) => {
+  await withWorkspace(async ({ rootDir, stageDir }) => {
+    await writeStageSite(stageDir);
+    const lock = path.join(rootDir, ".atomic-publish.lock");
+    const failure = new Error("injected lock release failure");
+    const mock = t.mock.method(fs, "rmdir", async () => { throw failure; });
+    try {
+      await assert.rejects(promoteAtomicPublish({ rootDir, stageDir, domain: "example.com", gitSha: "1111111" }), (error) => error === failure);
+    } finally {
+      mock.mock.restore();
+    }
+    assert.equal((await fs.lstat(lock)).isDirectory(), true);
+    assert.equal(await fs.readFile(path.join(rootDir, "current/index.html"), "utf8"), "<html>site</html>");
+    await assert.rejects(retainAtomicReleases({ rootDir, retainReleases: 0 }), /Publish root is locked/);
+    assert.deepEqual(await listReleaseNames(rootDir), [await getCurrentReleaseName(rootDir)]);
   });
 });
 
