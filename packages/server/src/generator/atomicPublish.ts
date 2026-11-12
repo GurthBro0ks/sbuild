@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -103,11 +104,15 @@ async function swapCurrentSymlink(paths: AtomicPublishPaths, releaseName: string
   const releaseDir = path.join(paths.releasesDir, releaseName);
   assertInside(paths.releasesDir, releaseDir, "release directory");
   const relativeTarget = path.relative(paths.rootDir, releaseDir);
-  const tempLink = path.join(paths.rootDir, `.current-${releaseName}-${process.pid}.tmp`);
+  const tempLink = path.join(paths.rootDir, `.current-${releaseName}-${randomUUID()}.tmp`);
 
-  await fs.rm(tempLink, { force: true });
   await fs.symlink(relativeTarget, tempLink, "dir");
-  await fs.rename(tempLink, paths.currentLink);
+  try {
+    await fs.rename(tempLink, paths.currentLink);
+  } catch (error) {
+    await fs.rm(tempLink, { force: true });
+    throw error;
+  }
 }
 
 export function validatePublishDomain(domain: string): string {
@@ -174,7 +179,28 @@ export async function getCurrentReleaseName(rootDir: string): Promise<string | n
   return readCurrentReleaseName(resolvePublishPaths(rootDir).currentLink);
 }
 
-export async function retainAtomicReleases(options: RetainReleasesOptions): Promise<string[]> {
+async function withPublishRootLock<T>(rootDir: string, operation: () => Promise<T>): Promise<T> {
+  const root = path.resolve(rootDir);
+  await fs.mkdir(root, { recursive: true });
+  const lockDir = path.join(root, ".atomic-publish.lock");
+  try {
+    await fs.mkdir(lockDir, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error("Publish root is locked; another operation or an unrecovered lock exists");
+    }
+    throw error;
+  }
+  try {
+    return await operation();
+  } finally {
+    // Only the creator releases the lock. Never recover by age/PID or recursively
+    // delete it: an interrupted operation deliberately leaves a fail-closed lock.
+    await fs.rmdir(lockDir);
+  }
+}
+
+async function retainReleasesWhileLocked(options: RetainReleasesOptions): Promise<string[]> {
   const keep = Math.max(0, Math.floor(options.retainReleases));
   const paths = resolvePublishPaths(options.rootDir);
   const releases = await listReleaseNames(options.rootDir);
@@ -192,6 +218,17 @@ export async function retainAtomicReleases(options: RetainReleasesOptions): Prom
   return removed;
 }
 
+/** Fails closed if the root is already locked, including an unrecovered crash lock. */
+export async function retainAtomicReleases(options: RetainReleasesOptions): Promise<string[]> {
+  return withPublishRootLock(options.rootDir, () => retainReleasesWhileLocked(options));
+}
+
+/**
+ * Publishes within caller-owned, trusted filesystem trees. Atomicity applies to
+ * the current symlink rename, not crash durability or hostile symlink traversal.
+ * All mutating helper operations share an exclusive, fail-fast filesystem lock.
+ * After a crash, inspect the root before manually resolving its remaining lock.
+ */
 export async function promoteAtomicPublish(options: PromoteAtomicPublishOptions): Promise<PromoteAtomicPublishResult> {
   const paths = resolvePublishPaths(options.rootDir);
   const stageDir = path.resolve(options.stageDir);
@@ -206,61 +243,74 @@ export async function promoteAtomicPublish(options: PromoteAtomicPublishOptions)
   }
 
   await validateStageDirectory(stageDir, options.requiredFiles);
-  await fs.mkdir(paths.releasesDir, { recursive: true });
-  try {
-    await fs.mkdir(releaseDir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error(`Release already exists: ${releaseName}`);
+  return withPublishRootLock(paths.rootDir, async () => {
+    await fs.mkdir(paths.releasesDir, { recursive: true });
+    try {
+      await fs.mkdir(releaseDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new Error(`Release already exists: ${releaseName}`);
+      }
+      throw error;
     }
-    throw error;
-  }
 
-  const previousReleaseName = await readCurrentReleaseName(paths.currentLink);
-  try {
-    await fs.cp(stageDir, releaseDir, { recursive: true, errorOnExist: true, force: false });
-    await swapCurrentSymlink(paths, releaseName);
-  } catch (error) {
-    await fs.rm(releaseDir, { recursive: true, force: true });
-    throw error;
-  }
+    let previousReleaseName: string | null;
+    try {
+      previousReleaseName = await readCurrentReleaseName(paths.currentLink);
+      // mkdir above reserves this release exclusively. Copy into its empty children,
+      // rather than asking cp to exclusively create the already-owned directory.
+      for (const entry of await fs.readdir(stageDir)) {
+        await fs.cp(path.join(stageDir, entry), path.join(releaseDir, entry), {
+          recursive: true,
+          errorOnExist: true,
+          force: false
+        });
+      }
+      await swapCurrentSymlink(paths, releaseName);
+    } catch (error) {
+      await fs.rm(releaseDir, { recursive: true, force: true });
+      throw error;
+    }
 
-  const removedReleases = options.retainReleases === undefined
-    ? []
-    : await retainAtomicReleases({
-        rootDir: paths.rootDir,
-        retainReleases: options.retainReleases,
-        protectReleaseNames: previousReleaseName ? [previousReleaseName] : []
-      });
+    const removedReleases = options.retainReleases === undefined
+      ? []
+      : await retainReleasesWhileLocked({
+          rootDir: paths.rootDir,
+          retainReleases: options.retainReleases,
+          protectReleaseNames: previousReleaseName ? [previousReleaseName] : []
+        });
 
-  return {
-    releaseName,
-    releaseDir,
-    currentLink: paths.currentLink,
-    previousReleaseName,
-    removedReleases
-  };
+    return {
+      releaseName,
+      releaseDir,
+      currentLink: paths.currentLink,
+      previousReleaseName,
+      removedReleases
+    };
+  });
 }
 
 export async function rollbackAtomicPublish(options: RollbackAtomicPublishOptions): Promise<{ releaseName: string; currentLink: string; removedReleases: string[] }> {
   const paths = resolvePublishPaths(options.rootDir);
-  const currentReleaseName = await readCurrentReleaseName(paths.currentLink);
-  const releases = await listReleaseNames(paths.rootDir);
-  const targetReleaseName = options.targetReleaseName
-    ? validateReleaseName(options.targetReleaseName)
-    : releases.filter((releaseName) => releaseName !== currentReleaseName).at(-1);
+  return withPublishRootLock(paths.rootDir, async () => {
+    const currentReleaseName = await readCurrentReleaseName(paths.currentLink);
+    const releases = await listReleaseNames(paths.rootDir);
+    const targetReleaseName = options.targetReleaseName
+      ? validateReleaseName(options.targetReleaseName)
+      : releases.filter((releaseName) => releaseName !== currentReleaseName).at(-1);
 
-  if (!targetReleaseName) throw new Error("No rollback target release found");
-  if (!releases.includes(targetReleaseName)) throw new Error(`Rollback target does not exist: ${targetReleaseName}`);
+    if (!targetReleaseName) throw new Error("No rollback target release found");
+    if (!releases.includes(targetReleaseName)) throw new Error(`Rollback target does not exist: ${targetReleaseName}`);
 
-  await swapCurrentSymlink(paths, targetReleaseName);
-  const removedReleases = options.retainReleases === undefined
-    ? []
-    : await retainAtomicReleases({
-        rootDir: paths.rootDir,
-        retainReleases: options.retainReleases,
-        protectReleaseNames: [targetReleaseName]
-      });
+    await swapCurrentSymlink(paths, targetReleaseName);
+    const removedReleases = options.retainReleases === undefined
+      ? []
+      : await retainReleasesWhileLocked({
+          rootDir: paths.rootDir,
+          retainReleases: options.retainReleases,
+          protectReleaseNames: [targetReleaseName]
+        });
 
-  return { releaseName: targetReleaseName, currentLink: paths.currentLink, removedReleases };
+    return { releaseName: targetReleaseName, currentLink: paths.currentLink, removedReleases };
+  });
 }

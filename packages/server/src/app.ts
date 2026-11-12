@@ -635,7 +635,7 @@ async function sendEditorFallback(
   }
 }
 
-export function createApp(options?: { editorDistPath?: string; usersFilePath?: string; enableAuth?: boolean }): express.Express {
+export function createApp(options?: { editorDistPath?: string; usersFilePath?: string; enableAuth?: boolean; publishPaths?: { source: string; preview: string; live: string } }): express.Express {
   const app = express();
   if (options?.usersFilePath) setUsersFilePath(options.usersFilePath);
   if (options?.enableAuth) {
@@ -664,7 +664,19 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
       cb(null, corsAllowList.includes(origin));
     }
   }));
-  app.use(express.json({ limit: "4mb" }));
+  // The publish contract permits exactly one JSON member with a boolean value.
+  // Check its raw shape before JSON.parse can discard duplicate member names.
+  // Parsed-key validation below still verifies the decoded name is dryRun.
+  const unambiguousJsonRequests = new WeakSet<object>();
+  app.use(express.json({
+    limit: "4mb",
+    verify(req, _res, buffer, encoding) {
+      if ((encoding === "utf-8" || encoding === "utf8") &&
+          /^\s*\{\s*"(?:[^"\\]|\\.)*"\s*:\s*(?:true|false)\s*\}\s*$/s.test(buffer.toString("utf8"))) {
+        unambiguousJsonRequests.add(req);
+      }
+    }
+  }));
   app.use(express.urlencoded({ extended: false }));
   app.use("/project/images", express.static(projectImagesDir));
 
@@ -3425,13 +3437,26 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
     }
   });
 
-  app.post("/api/publish", async (_req, res) => {
+  app.post("/api/publish", async (req, res) => {
+    // Require one unambiguous intent before resolving or touching any target.
+    const body: unknown = req.body;
+    if (!unambiguousJsonRequests.has(req) || !body || typeof body !== "object" || Array.isArray(body) ||
+        Object.keys(body).length !== 1 || !("dryRun" in body) || typeof body.dryRun !== "boolean") {
+      res.status(400).json({ ok: false, error: "Specify exactly { dryRun: true } or { dryRun: false }" });
+      return;
+    }
+    const dryRun = body.dryRun;
+    if (!dryRun && process.env.SBUILD_ALLOW_PUBLISH !== "1") {
+      res.status(403).json({ ok: false, error: "Live publishing is disabled" });
+      return;
+    }
     try {
-      const allow = process.env.SBUILD_ALLOW_PUBLISH === "1";
-      const target = allow ? "/var/www/blackfishfarms.com" : publishedPreviewDir;
+      const target = dryRun
+        ? (options?.publishPaths?.preview ?? publishedPreviewDir)
+        : (options?.publishPaths?.live ?? "/var/www/blackfishfarms.com");
       await fs.mkdir(target, { recursive: true });
 
-      if (!allow) {
+      if (dryRun) {
         try {
           await fs.rm(target, { recursive: true, force: true });
           await fs.mkdir(target, { recursive: true });
@@ -3440,8 +3465,8 @@ export function createApp(options?: { editorDistPath?: string; usersFilePath?: s
         }
       }
 
-      await copyDir(distDir, target);
-      res.json({ ok: true, dryRun: !allow, target });
+      await copyDir(options?.publishPaths?.source ?? distDir, target);
+      res.json({ ok: true, dryRun, target });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }

@@ -186,7 +186,10 @@ See `docs/ops/project-json-live-data-policy.md` for full live data handling guid
 - Fallback image providers when primary fails
 
 ### Publishing
-- **Dry-run by default** for safety
+- The editor's **Run publish dry-run** button always sends `{ "dryRun": true }` to `POST /api/publish`, which copies to the local preview directory even when `SBUILD_ALLOW_PUBLISH=1`.
+- The API requires exactly one boolean `dryRun` field. Missing, non-boolean, duplicate (including escaped spellings), or extra intent fields return 400 before any publishing filesystem operation. Raw-body validation rejects ambiguity before parsed-object validation accepts the decoded intent.
+- Explicit `{ "dryRun": false }` requests require `SBUILD_ALLOW_PUBLISH=1`; otherwise they return 403. Existing authentication middleware still applies. Enabling the flag alone never selects live publishing.
+- The route still copies the existing build output; it does not build, atomically promote releases, or verify build freshness.
 - Explicit backup path payload required for restore flows
 
 ---

@@ -3090,10 +3090,10 @@ test("mobile-toolbar-spacer-v3 still absent after Website Manager", () => {
   assert.doesNotMatch(appSource, /mobile-toolbar-spacer-v3 active/);
 });
 
-test("publishAllowed false remains correct", () => {
+test("dry-run success requires an explicit server confirmation", () => {
   assert.match(appSource, /runPublish/);
   assert.match(appSource, /dryRun/);
-  assert.match(appSource, /!buildInfo\?\.publishAllowed/);
+  assert.match(appSource, /data\.dryRun !== true/);
   assert.match(publishReadinessPanelSource, /Dry-run only - Live publish disabled/);
 });
 
