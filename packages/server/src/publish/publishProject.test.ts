@@ -70,7 +70,7 @@ test("private test-root publisher stages multipage output, referenced assets, an
 
     const release = path.join(workspace.publishRoot, "releases", result.releaseName);
     assert.equal(await exists(path.join(release, "index.html")), true);
-    assert.equal(await exists(path.join(release, "about", "index.html")), true);
+    assert.equal(await exists(path.join(release, "second", "index.html")), true);
     assert.equal(await exists(path.join(release, "sitemap.xml")), true);
     assert.equal(await exists(path.join(release, "images", "used.png")), true);
     assert.equal(await exists(path.join(release, "images", "gallery-used.png")), true);
