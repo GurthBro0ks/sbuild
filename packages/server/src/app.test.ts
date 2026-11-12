@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "./app.js";
 import { loadSharp, resolveProjectImageAbsolutePath } from "./lib/imagePipeline.js";
-import { backupsDir, projectFile, secretsFile } from "./lib/paths.js";
+import { backupsDir, projectFile, repoRoot, secretsFile } from "./lib/paths.js";
 import { BUILD_META } from "@sbuild/shared";
 import {
   getChatHistory,
@@ -3098,7 +3098,7 @@ test("/health returns complete version identity", async () => {
 });
 
 test("/health implementation keeps runtime repo HEAD out of served build gitCommit", async () => {
-  const appSource = await fs.readFile(path.join(process.cwd(), "src", "app.ts"), "utf8");
+  const appSource = await fs.readFile(path.join(repoRoot, "packages", "server", "src", "app.ts"), "utf8");
   const getBuildInfoBlock = appSource.substring(appSource.indexOf("function getBuildInfo"), appSource.indexOf("import { applyDeterministicPaintFix"));
   assert.match(getBuildInfoBlock, /servedCommit = BUILD_META\.gitCommitShort/, "served gitCommit must come from BUILD_META");
   assert.match(getBuildInfoBlock, /repoHeadCommit = safeGitCommand\("git rev-parse --short HEAD"/, "runtime repo HEAD must be collected only as repoHeadCommit");
@@ -3247,15 +3247,17 @@ test("/api/ai/providers/status distinguishes OpenAI API provider from local key 
 });
 
 test("/api/ai/providers/status Local Ollama entry shows reachable/configured status when Ollama is reachable", async () => {
-  const res = await fetch(`${baseUrl}/api/ai/providers/status`);
-  const body = await res.json() as {
-    providers: Array<{ name: string; status: string; message: string; provider?: string; model?: string; source?: string }>;
-  };
-  const chat = body.providers.find((p) => p.name === "Local Ollama");
-  assert.ok(chat, "Local Ollama entry must exist");
-  assert.equal(chat.provider, "local", "Local Ollama card should report local provider");
-  assert.ok(["configured", "reachable"].includes(String(chat.status)), `unexpected local status ${chat.status}`);
-  assert.match(String(chat.model || ""), /qwen|gemma|llama|mistral|phi/, "model name should be present");
+  await withMockOllama({ tags: { models: [{ name: "qwen2.5:1.5b" }] } }, async () => {
+    const res = await fetch(`${baseUrl}/api/ai/providers/status`);
+    const body = await res.json() as {
+      providers: Array<{ name: string; status: string; message: string; provider?: string; model?: string; source?: string }>;
+    };
+    const chat = body.providers.find((p) => p.name === "Local Ollama");
+    assert.ok(chat, "Local Ollama entry must exist");
+    assert.equal(chat.provider, "local", "Local Ollama card should report local provider");
+    assert.ok(["configured", "reachable"].includes(String(chat.status)), `unexpected local status ${chat.status}`);
+    assert.match(String(chat.model || ""), /qwen|gemma|llama|mistral|phi/, "model name should be present");
+  });
 });
 
 test("image gen returns previewOnly:true by default when preview flag is set", async () => {
@@ -3909,7 +3911,7 @@ test("brain: /api/ai/suggest answers version question deterministically (engine=
       assert.equal(body.source, "brain");
       const text = String(body.suggestion || "");
       assert.match(text, /sBuild/);
-      assert.match(text, /branch main/);
+      assert.ok(text.includes(`branch ${BUILD_META.branch}`), "answer must include the actual built branch");
       assert.match(text, /commit/);
     });
   });
@@ -4670,7 +4672,7 @@ test("clearAiChat semantics: loadChatHistory is never auto-invoked on panel open
   // expression statement). Therefore closing/reopening the panel or
   // switching blocks cannot resurrect cleared history.
   const fs = await import("node:fs/promises");
-  const appSource = await fs.readFile("/opt/slimy/sbuild/packages/editor/src/App.tsx", "utf8");
+  const appSource = await fs.readFile(path.join(repoRoot, "packages", "editor", "src", "App.tsx"), "utf8");
   // Strip the declaration (function loadChatHistory() { ... }) and look
   // for any remaining call site.
   const withoutDecl = appSource.replace(/async function loadChatHistory\s*\([^)]*\)\s*\{[\s\S]*?^\s*\}/m, "");
